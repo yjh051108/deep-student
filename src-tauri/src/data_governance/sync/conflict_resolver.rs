@@ -39,7 +39,7 @@
 //!
 //! 冲突表保留在每个业务数据库内，跟随数据库一起备份/恢复。
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

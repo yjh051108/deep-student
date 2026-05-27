@@ -10,6 +10,7 @@
 import React, { memo, useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
+import { invoke } from '@tauri-apps/api/core';
 import { InputBarUI } from './InputBarUI';
 import { useInputBarV2 } from './useInputBarV2';
 import { useQueueSettings } from '../../queue/useQueueSettings';
@@ -30,6 +31,7 @@ import type { ModelInfo } from '../../utils/parseModelMentions';
 import { isMultiModelSelectEnabled } from '@/config/featureFlags';
 import { inferCapabilities, inferInputContextBudget } from '@/utils/modelCapabilities';
 import { deriveContextWindowUsage } from './contextWindowUsage';
+import { groupCache } from '../../core/store/groupCache';
 import {
   deepSeekV32EffortToBudget,
   normalizeDeepSeekV4Effort,
@@ -69,7 +71,14 @@ interface AggregatedStoreState {
   reasoningEffort?: string;
   thinkingBudget?: number;
   modelRetryTarget: string | null;
+  groupId: string | null;
   setChatParams: (params: any) => void;
+}
+
+interface ModelProfileDisplayRecord {
+  id: string;
+  label?: string;
+  model?: string;
 }
 
 const THINKING_DEPTH_LABELS: Record<DeepSeekReasoningControlKind, Partial<Record<DeepSeekReasoningOptionValue, string>>> = {
@@ -114,6 +123,33 @@ function matchesModelIdentity(model: ModelInfo, candidates: unknown[]): boolean 
 
 function getModelDisplayLabel(model: ModelInfo | undefined): string | undefined {
   return model?.model || model?.name || model?.id || undefined;
+}
+
+function looksLikeInternalModelConfigId(value: string | undefined): boolean {
+  if (!value) return false;
+  return /^builtin-[a-z0-9_-]+$/i.test(value) || /^vm_\d+_[a-z0-9]+$/i.test(value);
+}
+
+function resolveStoredModelDisplayName(
+  modelId: string | undefined,
+  modelDisplayName: string | undefined,
+  profileDisplayMap: Map<string, string>
+): string | undefined {
+  const normalizedDisplayName = typeof modelDisplayName === 'string' ? modelDisplayName.trim() : '';
+  const normalizedModelId = typeof modelId === 'string' ? modelId.trim() : '';
+  const mappedDisplayName = normalizedModelId ? profileDisplayMap.get(normalizedModelId) : undefined;
+
+  if (normalizedDisplayName) {
+    const shouldReplaceStoredDisplayName =
+      normalizedDisplayName === normalizedModelId ||
+      looksLikeInternalModelConfigId(normalizedDisplayName);
+    if (!shouldReplaceStoredDisplayName) {
+      return normalizedDisplayName;
+    }
+    return mappedDisplayName || normalizedDisplayName;
+  }
+
+  return mappedDisplayName || undefined;
 }
 
 function getModelProviderLabel(model: ModelInfo | undefined): string | undefined {
@@ -194,6 +230,7 @@ export const InputBarV2: React.FC<InputBarV2Props> = memo(
       thinkingBudget,
       lastAssistantUsage,
       modelRetryTarget,
+      groupId,
       setChatParams,
       // ★ Skills 系统（多选模式）
       activeSkillIds,
@@ -232,6 +269,7 @@ export const InputBarV2: React.FC<InputBarV2Props> = memo(
           return undefined;
         })(),
         modelRetryTarget: s.modelRetryTarget,
+        groupId: s.groupId,
         setChatParams: s.setChatParams,
         // ★ 2026-01 改造：Anki 工具已迁移到内置 MCP 服务器，移除 enableAnkiTools
         // ☆ Skills 系统（多选模式）
@@ -482,6 +520,16 @@ export const InputBarV2: React.FC<InputBarV2Props> = memo(
           return;
         }
 
+        if (thinkingControl.kind === 'openai-effort') {
+          const effort = value === 'max' ? 'xhigh' : value;
+          store.getState().setChatParams({
+            enableThinking: true,
+            reasoningEffort: effort,
+            thinkingBudget: undefined,
+          });
+          return;
+        }
+
         store.getState().setChatParams({ enableThinking: true });
       },
       [store, thinkingControl.kind, runtimeModelSupportsReasoning]
@@ -506,33 +554,91 @@ export const InputBarV2: React.FC<InputBarV2Props> = memo(
     const [selectedModels, setSelectedModels] = useState<ModelInfo[]>([]);
     // 🆕 ModelPicker 模式：single 替换会话模型；compare 多选并行
     const [compareMode, setCompareMode] = useState(false);
+    const [modelProfileDisplayMap, setModelProfileDisplayMap] = useState<Map<string, string>>(new Map());
 
     // 使用 ref 存储 selectedModels，让回调能访问最新值
     const selectedModelsRef = useRef(selectedModels);
     selectedModelsRef.current = selectedModels;
 
+    useEffect(() => {
+      let active = true;
+      void invoke<ModelProfileDisplayRecord[]>('get_model_profiles')
+        .then((profiles) => {
+          if (!active) return;
+          const displayMap = new Map<string, string>();
+          (profiles || []).forEach((profile) => {
+            const profileId = typeof profile.id === 'string' ? profile.id.trim() : '';
+            if (!profileId) return;
+            const displayName =
+              (typeof profile.model === 'string' ? profile.model.trim() : '') ||
+              (typeof profile.label === 'string' ? profile.label.trim() : '') ||
+              profileId;
+            if (displayName) {
+              displayMap.set(profileId, displayName);
+            }
+          });
+          setModelProfileDisplayMap(displayMap);
+        })
+        .catch(() => {
+          if (active) {
+            setModelProfileDisplayMap(new Map());
+          }
+        });
+      return () => {
+        active = false;
+      };
+    }, []);
+
+    const resolvedStoredModelDisplayName = useMemo(() => {
+      const effectiveModelId = model2OverrideId || modelId;
+      return resolveStoredModelDisplayName(
+        effectiveModelId ?? undefined,
+        modelDisplayName,
+        modelProfileDisplayMap
+      );
+    }, [model2OverrideId, modelDisplayName, modelId, modelProfileDisplayMap]);
+
+    useEffect(() => {
+      if (!resolvedStoredModelDisplayName) return;
+      if ((modelDisplayName ?? '') === resolvedStoredModelDisplayName) return;
+      setChatParams({ modelDisplayName: resolvedStoredModelDisplayName });
+    }, [modelDisplayName, resolvedStoredModelDisplayName, setChatParams]);
+
     const runtimeModelLabel = useMemo(() => {
       return (
         getModelDisplayLabel(runtimeOverrideModelInfo) ||
-        (model2OverrideId ? modelDisplayName : undefined) ||
+        (model2OverrideId ? resolvedStoredModelDisplayName : undefined) ||
         model2OverrideId ||
         getModelDisplayLabel(currentModelInfo) ||
-        modelDisplayName ||
+        resolvedStoredModelDisplayName ||
         modelId ||
         undefined
       );
-    }, [currentModelInfo, model2OverrideId, modelDisplayName, modelId, runtimeOverrideModelInfo]);
+    }, [
+      currentModelInfo,
+      model2OverrideId,
+      modelId,
+      resolvedStoredModelDisplayName,
+      runtimeOverrideModelInfo,
+    ]);
     const runtimeModelProviderLabel = useMemo(
       () => getModelProviderLabel(activeRuntimeModelInfo),
       [activeRuntimeModelInfo]
     );
+    const targetFolderId = useMemo(() => {
+      if (!groupId) return undefined;
+      return groupCache
+        .get(groupId)
+        ?.pinnedResourceIds
+        ?.find((id) => typeof id === 'string' && id.startsWith('fld_'));
+    }, [groupId]);
     const runtimeModelIconId = useMemo(() => {
       return (
         activeRuntimeModelInfo?.model ||
         activeRuntimeModelInfo?.name ||
         activeRuntimeModelInfo?.id ||
         runtimeModelLabel ||
-        modelDisplayName ||
+        resolvedStoredModelDisplayName ||
         model2OverrideId ||
         modelId ||
         ''
@@ -542,8 +648,8 @@ export const InputBarV2: React.FC<InputBarV2Props> = memo(
       activeRuntimeModelInfo?.model,
       activeRuntimeModelInfo?.name,
       model2OverrideId,
-      modelDisplayName,
       modelId,
+      resolvedStoredModelDisplayName,
       runtimeModelLabel,
     ]);
 
@@ -919,6 +1025,7 @@ export const InputBarV2: React.FC<InputBarV2Props> = memo(
         onRemoveAttachment={removeAttachment}
         onClearAttachments={clearAttachments}
         onFilesUpload={onFilesUpload}
+        targetFolderId={targetFolderId}
         onSetPanelState={setPanelState}
         // UI 配置
         placeholder={placeholder}

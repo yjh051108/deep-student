@@ -26,7 +26,6 @@ use tokio::time::{timeout, Duration};
 
 // ★ 2026-01 改造：tool_ids 不再需要，Anki 工具名通过前缀匹配识别
 use super::executor::{ExecutionContext, ToolExecutor, ToolSensitivity};
-use crate::chat_v2::events::event_types;
 use crate::chat_v2::types::{ToolCall, ToolResultInfo};
 
 const FRONTEND_BRIDGE_TIMEOUT_MS: u64 = 120_000;

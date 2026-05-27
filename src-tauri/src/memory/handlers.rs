@@ -41,6 +41,8 @@ pub struct MemoryBatchWriteItemInput {
     #[serde(default)]
     pub folder_path: Option<String>,
     #[serde(default)]
+    pub scope: Option<String>,
+    #[serde(default)]
     pub memory_type: Option<String>,
     #[serde(default)]
     pub memory_purpose: Option<String>,
@@ -220,6 +222,7 @@ pub async fn memory_get_or_create_root_folder(
 pub async fn memory_search(
     query: String,
     top_k: Option<usize>,
+    folder_path: Option<String>,
     vfs_db: State<'_, Arc<VfsDatabase>>,
     lance_store: State<'_, Arc<VfsLanceStore>>,
     llm_manager: State<'_, Arc<LLMManager>>,
@@ -227,7 +230,7 @@ pub async fn memory_search(
     let service = get_memory_service(&vfs_db, &lance_store, &llm_manager);
     let k = top_k.unwrap_or(5).clamp(1, 100);
     service
-        .search_with_rerank(&query, k, false)
+        .search_with_rerank_in_folder_path(&query, k, false, folder_path.as_deref())
         .await
         .map_err(|e| e.to_string())
 }
@@ -675,6 +678,7 @@ pub async fn memory_get_profile(
 #[tauri::command]
 pub async fn memory_write_smart(
     folder_path: Option<String>,
+    scope: Option<String>,
     title: String,
     content: String,
     memory_type: Option<String>,
@@ -694,9 +698,26 @@ pub async fn memory_write_smart(
     let service = get_memory_service(&vfs_db, &lance_store, &llm_manager);
     let mem_type = parse_memory_type(memory_type.as_deref())?;
     let purpose = parse_memory_purpose(memory_purpose.as_deref())?;
+    let memory_scope = scope
+        .as_deref()
+        .map(|s| crate::memory::MemoryScope::from_arg(Some(s)))
+        .transpose()?
+        .unwrap_or(crate::memory::MemoryScope::Global);
+    let scoped_folder = match memory_scope {
+        crate::memory::MemoryScope::Global => Some(crate::memory::join_memory_folder_paths(
+            crate::memory::GLOBAL_MEMORY_FOLDER,
+            folder_path.as_deref(),
+        )),
+        crate::memory::MemoryScope::Topic => {
+            return Err(
+                "memory_write_smart cannot write topic scope without Agent group context"
+                    .to_string(),
+            );
+        }
+    };
     let result = service
         .write_smart_with_source(
-            folder_path.as_deref(),
+            scoped_folder.as_deref(),
             &title,
             &content,
             super::audit_log::MemoryOpSource::Handler,
@@ -709,7 +730,7 @@ pub async fn memory_write_smart(
         .map_err(|e| e.to_string())?;
 
     if result.event != "NONE" && result.event != "FILTERED" {
-        service.spawn_post_write_maintenance();
+        service.spawn_post_write_maintenance_for_paths(scoped_folder.into_iter().collect());
     }
 
     Ok(result)
@@ -719,6 +740,7 @@ pub async fn memory_write_smart(
 pub async fn memory_write_batch(
     items: Vec<MemoryBatchWriteItemInput>,
     default_folder_path: Option<String>,
+    default_scope: Option<String>,
     default_memory_type: Option<String>,
     default_memory_purpose: Option<String>,
     vfs_db: State<'_, Arc<VfsDatabase>>,
@@ -745,6 +767,11 @@ pub async fn memory_write_batch(
         .transpose()?
         .unwrap_or(super::service::MemoryType::Study);
     let default_purpose = parse_memory_purpose(default_memory_purpose.as_deref())?;
+    let parsed_default_scope = default_scope
+        .as_deref()
+        .map(|s| crate::memory::MemoryScope::from_arg(Some(s)))
+        .transpose()?
+        .unwrap_or(crate::memory::MemoryScope::Global);
 
     let mut results = Vec::with_capacity(items.len());
     let mut added = 0usize;
@@ -752,6 +779,7 @@ pub async fn memory_write_batch(
     let mut skipped = 0usize;
     let mut filtered = 0usize;
     let mut resource_ids = Vec::new();
+    let mut maintenance_paths = Vec::new();
 
     for item in items {
         let mem_type = item
@@ -761,12 +789,32 @@ pub async fn memory_write_batch(
             .transpose()?
             .unwrap_or(default_type);
         let purpose = parse_memory_purpose(item.memory_purpose.as_deref())?.or(default_purpose);
+        let item_scope = item
+            .scope
+            .as_deref()
+            .map(|scope| crate::memory::MemoryScope::from_arg(Some(scope)))
+            .transpose()?
+            .unwrap_or(parsed_default_scope);
+        let raw_folder = item
+            .folder_path
+            .as_deref()
+            .or(default_folder_path.as_deref());
+        let scoped_folder = match item_scope {
+            crate::memory::MemoryScope::Global => Some(crate::memory::join_memory_folder_paths(
+                crate::memory::GLOBAL_MEMORY_FOLDER,
+                raw_folder,
+            )),
+            crate::memory::MemoryScope::Topic => {
+                return Err(
+                    "memory_write_batch cannot write topic scope without Agent group context"
+                        .to_string(),
+                );
+            }
+        };
         let output = match mem_type {
             super::service::MemoryType::Fact => service
                 .write_smart_with_source(
-                    item.folder_path
-                        .as_deref()
-                        .or(default_folder_path.as_deref()),
+                    scoped_folder.as_deref(),
                     &item.title,
                     &item.content,
                     super::audit_log::MemoryOpSource::Handler,
@@ -779,9 +827,7 @@ pub async fn memory_write_batch(
                 .map_err(|e| e.to_string())?,
             _ => service
                 .write_explicit_memory(
-                    item.folder_path
-                        .as_deref()
-                        .or(default_folder_path.as_deref()),
+                    scoped_folder.as_deref(),
                     &item.title,
                     &item.content,
                     mem_type,
@@ -799,6 +845,16 @@ pub async fn memory_write_batch(
         if let Some(resource_id) = &output.resource_id {
             resource_ids.push(resource_id.clone());
         }
+        if matches!(
+            output.event.as_str(),
+            "ADD" | "UPDATE" | "APPEND" | "DELETE"
+        ) {
+            if let Some(path) = scoped_folder.as_ref() {
+                if !maintenance_paths.contains(path) {
+                    maintenance_paths.push(path.clone());
+                }
+            }
+        }
         results.push(MemoryBatchWriteItemResult {
             title: item.title,
             output,
@@ -814,7 +870,7 @@ pub async fn memory_write_batch(
                 resource_id,
             );
         }
-        service.spawn_post_write_maintenance();
+        service.spawn_post_write_maintenance_for_paths(maintenance_paths);
     }
 
     let succeeded = added + updated;

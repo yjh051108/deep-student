@@ -14,6 +14,92 @@ use super::{ApiConfig, LLMManager, Result};
 
 // ==================== RAG相关扩展方法 ====================
 
+fn model_identity(config: &ApiConfig) -> String {
+    format!(
+        "{} {} {}",
+        config.id.to_lowercase(),
+        config.name.to_lowercase(),
+        config.model.to_lowercase()
+    )
+}
+
+fn is_text_embedding_candidate(config: &ApiConfig) -> bool {
+    if !config.enabled || !config.is_embedding || config.is_reranker || config.is_multimodal {
+        return false;
+    }
+
+    let identity = model_identity(config);
+    let visual_markers = [
+        "vision",
+        "visual",
+        "vl",
+        "multimodal",
+        "multi-modal",
+        "image",
+        "img",
+        "doubao-embedding-vision",
+        "qwen-vl",
+        "qwen2-vl",
+        "qwen2.5-vl",
+        "qwen-omni",
+    ];
+
+    !visual_markers
+        .iter()
+        .any(|marker| identity.contains(marker))
+}
+
+fn text_embedding_candidate_score(config: &ApiConfig) -> i32 {
+    let identity = model_identity(config);
+    let mut score = 0;
+
+    if config.id == "builtin-sf-embed" {
+        score += 1_000;
+    }
+    if identity.contains("bge-m3") {
+        score += 800;
+    }
+    if identity.contains("bge") {
+        score += 300;
+    }
+    if identity.contains("text-embedding") {
+        score += 250;
+    }
+    if identity.contains("gte") {
+        score += 200;
+    }
+    if identity.contains("jina-embeddings") || identity.contains("jina-embedding") {
+        score += 150;
+    }
+    if config.is_builtin {
+        score += 50;
+    }
+
+    score
+}
+
+fn infer_text_embedding_dimension(config: &ApiConfig) -> Option<i32> {
+    let identity = model_identity(config);
+    let known_dimensions = [
+        ("text-embedding-3-large", 3072),
+        ("text-embedding-3-small", 1536),
+        ("text-embedding-ada-002", 1536),
+        ("bge-m3", 1024),
+        ("bge-large", 1024),
+        ("bge-base", 768),
+        ("bge-small", 384),
+        ("gte-large", 1024),
+        ("gte-base", 768),
+        ("gte-small", 384),
+        ("jina-embeddings-v3", 1024),
+        ("jina-embedding-v3", 1024),
+    ];
+
+    known_dimensions
+        .iter()
+        .find_map(|(marker, dim)| identity.contains(marker).then_some(*dim))
+}
+
 impl LLMManager {
     /// 获取嵌入模型配置
     ///
@@ -53,7 +139,7 @@ impl LLMManager {
     /// 当用户未显式设置默认维度时，查找已配置的嵌入模型作为回退。
     /// 检查来源：
     /// 1. `embedding.default_text_dimension` + VFS 维度表中绑定的模型
-    /// 2. 已启用的嵌入类 API 配置（isEmbedding=true）
+    /// 2. 已启用的文本嵌入类 API 配置（isEmbedding=true）
     async fn auto_detect_embedding_model_id(&self) -> Option<String> {
         // 先检查是否已设置了默认维度（但缺少 model_config_id 的情况）
         if let Ok(Some(dim_str)) = self.db.get_setting("embedding.default_text_dimension") {
@@ -68,24 +154,71 @@ impl LLMManager {
         if let Ok(configs) = self.get_api_configs().await {
             let embedding_configs: Vec<_> = configs
                 .iter()
-                .filter(|c| c.enabled && c.is_embedding && !c.is_reranker)
+                .filter(|c| is_text_embedding_candidate(c))
                 .collect();
 
-            if embedding_configs.len() == 1 {
-                // 只有一个嵌入模型，自动使用
-                let config = embedding_configs[0];
+            let selected = if embedding_configs.len() == 1 {
+                Some(embedding_configs[0])
+            } else {
+                let scored = embedding_configs
+                    .iter()
+                    .copied()
+                    .max_by_key(|config| text_embedding_candidate_score(config));
+                scored.filter(|config| text_embedding_candidate_score(config) > 0)
+            };
+
+            if let Some(config) = selected {
+                let inferred_dim = infer_text_embedding_dimension(config);
                 info!(
-                    "[RAG] Auto-detected single embedding model: id={}, name={}",
-                    config.id, config.name
+                    "[RAG] Auto-detected text embedding model: id={}, name={}, model={}, dim={:?}, candidates={}",
+                    config.id,
+                    config.name,
+                    config.model,
+                    inferred_dim,
+                    embedding_configs.len()
                 );
                 let _ = self
                     .db
                     .save_setting("embedding.default_text_model_config_id", &config.id);
+                if let Some(dim) = inferred_dim {
+                    let _ = self
+                        .db
+                        .save_setting("embedding.default_text_dimension", &dim.to_string());
+                }
                 return Some(config.id.clone());
-            } else if embedding_configs.len() > 1 {
+            }
+
+            info!("[RAG] No enabled text embedding model available for auto-detect.");
+        }
+
+        None
+    }
+
+    /// 自动检测多模态嵌入模型 ID。
+    ///
+    /// 当没有显式设置默认多模态维度时，优先选择唯一一个已启用的
+    /// `is_embedding && is_multimodal` 模型作为 VL Embedding 回退。
+    async fn auto_detect_vl_embedding_model_id(&self) -> Option<String> {
+        if let Ok(configs) = self.get_api_configs().await {
+            let vl_embedding_configs: Vec<_> = configs
+                .iter()
+                .filter(|c| c.enabled && c.is_embedding && c.is_multimodal && !c.is_reranker)
+                .collect();
+
+            if vl_embedding_configs.len() == 1 {
+                let config = vl_embedding_configs[0];
                 info!(
-                    "[RAG] Found {} embedding models, cannot auto-select. User must configure default.",
-                    embedding_configs.len()
+                    "[RAG] Auto-detected single multimodal embedding model: id={}, name={}",
+                    config.id, config.name
+                );
+                let _ = self
+                    .db
+                    .save_setting("embedding.default_multimodal_model_config_id", &config.id);
+                return Some(config.id.clone());
+            } else if vl_embedding_configs.len() > 1 {
+                info!(
+                    "[RAG] Found {} multimodal embedding models, cannot auto-select. User must configure default.",
+                    vl_embedding_configs.len()
                 );
             }
         }
@@ -114,15 +247,22 @@ impl LLMManager {
     /// 从维度管理的默认设置中获取多模态嵌入模型配置ID
     pub async fn get_vl_embedding_model_config(&self) -> Result<ApiConfig> {
         // 从 settings 读取默认多模态嵌入模型配置ID
-        let vl_embedding_model_id = self
+        let vl_embedding_model_id_opt = self
             .db
             .get_setting("embedding.default_multimodal_model_config_id")
-            .map_err(|e| AppError::configuration(format!("读取多模态嵌入模型配置失败: {}", e)))?
-            .ok_or_else(|| {
-                AppError::configuration(
+            .map_err(|e| AppError::configuration(format!("读取多模态嵌入模型配置失败: {}", e)))?;
+
+        let vl_embedding_model_id = match vl_embedding_model_id_opt {
+            Some(id) => id,
+            None => self
+                .auto_detect_vl_embedding_model_id()
+                .await
+                .ok_or_else(|| {
+                    AppError::configuration(
                 "未配置默认多模态嵌入维度。请在「模型分配 > 嵌入维度管理」中设置默认多模态维度。"
             )
-            })?;
+                })?,
+        };
 
         let configs = self.get_api_configs().await?;
         configs
@@ -158,12 +298,7 @@ impl LLMManager {
     /// 只要任一方案可用即返回 true
     pub async fn is_multimodal_rag_configured(&self) -> bool {
         // 方案一：VL-Embedding 直接向量化（从维度管理获取）
-        let mode1_available = self
-            .db
-            .get_setting("embedding.default_multimodal_model_config_id")
-            .ok()
-            .flatten()
-            .is_some();
+        let mode1_available = self.get_vl_embedding_model_config().await.is_ok();
 
         // 方案二：VL 摘要 + 文本嵌入已废弃
         mode1_available

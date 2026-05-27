@@ -230,6 +230,7 @@ mcp-debug = ["tauri-plugin-mcp-bridge"]
 db_migration = []
 # 仅为消除条件编译告警：不产生实际功能影响
 http = []
+examples = []
 old_migration_impl = []
 # 内置免费模型（发行版使用）。开源版本可禁用
 builtin_free_models = []

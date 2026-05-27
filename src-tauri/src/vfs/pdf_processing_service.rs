@@ -751,7 +751,7 @@ impl PdfProcessingService {
         // 确定初始就绪模式
         // ★ P0 架构改造：image 模式必须等到页面压缩完成后才就绪
         let mut ready_modes: Vec<String> = vec![];
-        let mut issues: Vec<ProcessingIssue> = Vec::new();
+        let _issues: Vec<ProcessingIssue> = Vec::new();
         let mut issues: Vec<ProcessingIssue> = Vec::new();
         if has_extracted_text {
             ready_modes.push("text".to_string());
@@ -1168,7 +1168,7 @@ impl PdfProcessingService {
         let mut ready_modes: Vec<String> = vec![];
         let mut issues: Vec<ProcessingIssue> = Vec::new();
         // 检查是否已有压缩版本（compressed_blob_hash 不为空且 blob 存在）
-        let has_compressed: bool = conn
+        let _has_compressed: bool = conn
             .query_row(
                 "SELECT compressed_blob_hash FROM files WHERE id = ?1",
                 params![file_id],

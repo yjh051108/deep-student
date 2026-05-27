@@ -177,6 +177,8 @@ export const MemoryFolderBanner: React.FC<MemoryFolderBannerProps> = React.memo(
         items.map(item => ({ ...item, memoryType: batchImportType })),
         undefined,
         batchImportType,
+        undefined,
+        'global',
       );
       showGlobalNotification(
         result.filtered > 0 ? 'warning' : 'success',
@@ -204,7 +206,7 @@ export const MemoryFolderBanner: React.FC<MemoryFolderBannerProps> = React.memo(
     }
     setIsCreating(true);
     try {
-      const result = await writeMemorySmart(newTitle, newContent, undefined, newType);
+      const result = await writeMemorySmart(newTitle, newContent, undefined, newType, undefined, 'global');
       const succeeded = result.event === 'ADD' || result.event === 'UPDATE' || result.event === 'APPEND';
       if (result.event === 'FILTERED') {
         showGlobalNotification('warning', result.reason || t('memory.create_filtered', '内容触发安全拦截'));

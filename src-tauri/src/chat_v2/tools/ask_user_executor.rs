@@ -25,7 +25,6 @@ use tokio::sync::oneshot;
 
 use super::arg_utils::get_string_array_arg;
 use super::executor::{ExecutionContext, ToolExecutor, ToolSensitivity};
-use crate::chat_v2::events::event_types;
 use crate::chat_v2::types::{ToolCall, ToolResultInfo};
 
 // ============================================================================

@@ -104,7 +104,7 @@ pub async fn tts_stop() -> Result<(), AppError> {
 
 #[cfg(target_os = "windows")]
 async fn speak_windows(
-    text: &str,
+    _text: &str,
     _lang: Option<&str>,
     _rate: Option<f32>,
     _volume: Option<f32>,

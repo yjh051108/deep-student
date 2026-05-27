@@ -10,7 +10,7 @@
 use base64::Engine;
 use image::GenericImageView;
 use pdfium_render::prelude::PdfRenderConfig;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::document_parser::DocumentParser;
 use crate::models::AppError;

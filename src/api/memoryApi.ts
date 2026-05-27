@@ -17,6 +17,7 @@ export interface MemorySearchResult {
   folderPath: string;
   chunkText: string;
   score: number;
+  scope?: MemoryScopeValue;
 }
 
 export interface MemoryListItem {
@@ -56,11 +57,13 @@ export interface SmartWriteOutput {
 }
 
 export type MemoryTypeValue = 'fact' | 'study' | 'note';
+export type MemoryScopeValue = 'topic' | 'global';
 
 export interface MemoryBatchWriteItemInput {
   title: string;
   content: string;
   folderPath?: string;
+  scope?: MemoryScopeValue;
   memoryType?: MemoryTypeValue;
   memoryPurpose?: MemoryPurposeType;
   idempotencyKey?: string;
@@ -138,9 +141,10 @@ export async function createMemoryRootFolder(title: string): Promise<string> {
 
 export async function searchMemory(
   query: string,
-  topK?: number
+  topK?: number,
+  folderPath?: string
 ): Promise<MemorySearchResult[]> {
-  return invoke<MemorySearchResult[]>('memory_search', { query, topK });
+  return invoke<MemorySearchResult[]>('memory_search', { query, topK, folderPath });
 }
 
 export async function readMemory(
@@ -288,10 +292,12 @@ export async function writeMemorySmart(
   folderPath?: string,
   memoryType?: MemoryTypeValue,
   memoryPurpose?: MemoryPurposeType,
+  scope?: MemoryScopeValue,
   idempotencyKey?: string
 ): Promise<SmartWriteOutput> {
   return invoke<SmartWriteOutput>('memory_write_smart', {
     folderPath,
+    scope,
     title,
     content,
     memoryType,
@@ -304,11 +310,13 @@ export async function writeMemoryBatch(
   items: MemoryBatchWriteItemInput[],
   defaultFolderPath?: string,
   defaultMemoryType?: MemoryTypeValue,
-  defaultMemoryPurpose?: MemoryPurposeType
+  defaultMemoryPurpose?: MemoryPurposeType,
+  defaultScope?: MemoryScopeValue
 ): Promise<MemoryBatchWriteOutput> {
   return invoke<MemoryBatchWriteOutput>('memory_write_batch', {
     items,
     defaultFolderPath,
+    defaultScope,
     defaultMemoryType,
     defaultMemoryPurpose,
   });

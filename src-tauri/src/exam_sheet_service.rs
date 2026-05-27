@@ -9,7 +9,6 @@ use crate::models::{
     ExamSheetSessionSummary, ImportSource, QuestionBankStats, QuestionType, SourceType,
     UpdateExamSheetCardsRequest,
 };
-use image::GenericImageView;
 
 /// 带时间戳的日志宏
 macro_rules! log_with_time {
@@ -20,7 +19,7 @@ macro_rules! log_with_time {
         let _millis = now.as_millis() % 1000;
         // 转换 u128 到 i64，截断到秒
         let seconds = (now.as_millis() / 1000) as i64;
-        let time_str = chrono::NaiveDateTime::from_timestamp_millis(seconds * 1000)
+        let time_str = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(seconds * 1000)
             .map(|dt| dt.format("%H:%M:%S").to_string())
             .unwrap_or_else(|| "??:??:??".to_string());
         println!("{} [{}] [exam-sheet] {}", time_str, stringify!($level), format_args!($($arg)*));

@@ -240,6 +240,11 @@ pub async fn workspace_create_agent(
     use crate::chat_v2::repo::ChatV2Repo;
     use crate::chat_v2::types::{ChatSession, PersistStatus};
 
+    let requester_group_id =
+        ChatV2Repo::get_session_with_conn(&conn, &request.requester_session_id)
+            .map_err(|e| format!("Failed to get requester session: {}", e))?
+            .and_then(|session| session.group_id);
+
     let now = chrono::Utc::now();
     let session = ChatSession {
         id: agent_session_id.clone(),
@@ -265,7 +270,7 @@ pub async fn workspace_create_agent(
             "system_prompt": request.system_prompt,
             "recommended_models": Vec::<String>::new(),
         })),
-        group_id: None,
+        group_id: requester_group_id,
         tags_hash: None,
         tags: None,
     };

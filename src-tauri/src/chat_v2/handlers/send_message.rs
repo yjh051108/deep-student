@@ -10,7 +10,6 @@ use tauri::{Emitter, State, Window};
 
 use crate::chat_v2::database::ChatV2Database;
 use crate::chat_v2::error::ChatV2Error;
-use crate::chat_v2::events::ChatV2EventEmitter;
 use crate::chat_v2::pipeline::ChatV2Pipeline;
 use crate::chat_v2::repo::ChatV2Repo;
 use crate::chat_v2::resource_types::{ContentBlock, ContextRef, ContextSnapshot, SendContextRef};
@@ -74,6 +73,15 @@ async fn is_model_multimodal(llm_manager: &LLMManager, model_id: Option<&str>) -
             false
         }
     }
+}
+
+fn effective_request_model_id(options: Option<&SendOptions>) -> Option<&str> {
+    options.and_then(|o| {
+        o.model2_override_id
+            .as_deref()
+            .filter(|id| !id.trim().is_empty())
+            .or_else(|| o.model_id.as_deref().filter(|id| !id.trim().is_empty()))
+    })
 }
 
 #[derive(Debug, Serialize)]
@@ -425,7 +433,7 @@ pub async fn chat_v2_send_message(
         .into());
     }
 
-    let model_id = request.options.as_ref().and_then(|o| o.model_id.as_deref());
+    let model_id = effective_request_model_id(request.options.as_ref());
     let is_multimodal_model = is_model_multimodal(&llm_manager, model_id).await;
     let request_audit_payload =
         build_backend_request_audit_payload(&request, model_id, is_multimodal_model);
@@ -535,7 +543,7 @@ pub async fn chat_v2_send_message(
 pub async fn chat_v2_cancel_stream(
     session_id: String,
     message_id: String,
-    window: Window,
+    _window: Window,
     chat_v2_state: State<'_, Arc<ChatV2State>>,
 ) -> Result<(), String> {
     log::info!(
@@ -638,7 +646,7 @@ pub async fn chat_v2_retry_message(
 
     // ★ VFS 统一存储：从上下文快照恢复 SendContextRef（包含附件）
     // ★ 2026-01-26 修复：根据新模型的能力决定注入图片还是文本
-    let model_id = options.as_ref().and_then(|o| o.model_id.as_deref());
+    let model_id = effective_request_model_id(options.as_ref());
     let is_multimodal = is_model_multimodal(&llm_manager, model_id).await;
     log::info!(
         "[ChatV2::handlers] Retry: model_id={:?}, is_multimodal={}",
@@ -1009,7 +1017,7 @@ pub async fn chat_v2_edit_and_resend(
         None => {
             // 🆕 VFS 统一存储：从原消息的 context_snapshot 恢复上下文引用
             // ★ 2026-01-26 修复：根据新模型的能力决定注入图片还是文本
-            let model_id = options.as_ref().and_then(|o| o.model_id.as_deref());
+            let model_id = effective_request_model_id(options.as_ref());
             let is_multimodal = is_model_multimodal(&llm_manager, model_id).await;
             log::info!(
                 "[ChatV2::handlers] Edit and resend: model_id={:?}, is_multimodal={}",
@@ -1723,7 +1731,7 @@ pub async fn chat_v2_continue_message(
 
     // 恢复上下文引用
     // ★ 2026-01-26 修复：根据模型能力决定注入图片还是文本
-    let model_id = options.as_ref().and_then(|o| o.model_id.as_deref());
+    let model_id = effective_request_model_id(options.as_ref());
     let is_multimodal = is_model_multimodal(&llm_manager, model_id).await;
     log::info!(
         "[ChatV2::handlers] Continue: model_id={:?}, is_multimodal={}",

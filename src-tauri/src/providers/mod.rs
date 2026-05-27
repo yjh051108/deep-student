@@ -55,6 +55,76 @@ pub trait ProviderAdapter: Send + Sync {
     fn parse_stream(&self, line: &str) -> Vec<StreamEvent>;
 }
 
+fn build_openai_compatible_endpoint(base_url: &str, endpoint: &str) -> String {
+    let trimmed = base_url.trim().trim_end_matches('/');
+    let lower = trimmed.to_lowercase();
+    let endpoint = endpoint.trim_start_matches('/');
+
+    for known_suffix in ["/chat/completions", "/responses"] {
+        if lower.ends_with(known_suffix) {
+            let root = &trimmed[..trimmed.len() - known_suffix.len()];
+            return format!("{}/{}", root.trim_end_matches('/'), endpoint);
+        }
+    }
+
+    format!("{}/{}", trimmed, endpoint)
+}
+
+fn sanitize_openai_tool_parameters(parameters: &Value) -> Value {
+    let mut schema = match parameters {
+        Value::Object(map) => Value::Object(map.clone()),
+        _ => json!({
+            "type": "object",
+            "properties": {}
+        }),
+    };
+
+    if let Value::Object(ref mut map) = schema {
+        for key in ["anyOf", "oneOf", "allOf", "enum", "not"] {
+            map.remove(key);
+        }
+
+        if map.get("type").and_then(|value| value.as_str()) != Some("object") {
+            map.insert("type".to_string(), json!("object"));
+        }
+
+        if !map.contains_key("properties") {
+            map.insert("properties".to_string(), json!({}));
+        }
+    }
+
+    schema
+}
+
+fn sanitize_openai_tools_in_body(body: &mut Value) {
+    let Some(tools) = body.get_mut("tools").and_then(|value| value.as_array_mut()) else {
+        return;
+    };
+
+    for tool in tools {
+        let Some(obj) = tool.as_object_mut() else {
+            continue;
+        };
+        if obj.get("type").and_then(|value| value.as_str()) != Some("function") {
+            continue;
+        }
+        let Some(function) = obj
+            .get_mut("function")
+            .and_then(|value| value.as_object_mut())
+        else {
+            continue;
+        };
+        let parameters = function
+            .get("parameters")
+            .cloned()
+            .unwrap_or_else(|| json!({ "type": "object", "properties": {} }));
+        function.insert(
+            "parameters".to_string(),
+            sanitize_openai_tool_parameters(&parameters),
+        );
+    }
+}
+
 pub struct OpenAIAdapter;
 
 impl ProviderAdapter for OpenAIAdapter {
@@ -65,9 +135,12 @@ impl ProviderAdapter for OpenAIAdapter {
         _model: &str,
         body: &Value,
     ) -> Result<ProviderRequest, ProviderError> {
-        let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+        let url = build_openai_compatible_endpoint(base_url, "chat/completions");
         // 确保 API key 被 trim，移除首尾空白字符
         let trimmed_key = api_key.trim();
+
+        let mut body = body.clone();
+        sanitize_openai_tools_in_body(&mut body);
 
         Ok(ProviderRequest {
             url,
@@ -78,7 +151,7 @@ impl ProviderAdapter for OpenAIAdapter {
                 ),
                 ("Content-Type".to_string(), "application/json".to_string()),
             ],
-            body: body.clone(),
+            body,
         })
     }
 
@@ -286,6 +359,37 @@ impl OpenAIResponsesAdapter {
         None
     }
 
+    fn convert_tool_to_response_format(tool: &Value) -> Value {
+        let Some(obj) = tool.as_object() else {
+            return tool.clone();
+        };
+
+        if obj.get("type").and_then(|v| v.as_str()) != Some("function") {
+            return tool.clone();
+        }
+
+        let function = obj
+            .get("function")
+            .and_then(|v| v.as_object())
+            .unwrap_or(obj);
+
+        let mut converted = Map::new();
+        converted.insert("type".to_string(), json!("function"));
+
+        for key in ["name", "description", "parameters", "strict"] {
+            if let Some(value) = function.get(key).or_else(|| obj.get(key)) {
+                let converted_value = if key == "parameters" {
+                    sanitize_openai_tool_parameters(value)
+                } else {
+                    value.clone()
+                };
+                converted.insert(key.to_string(), converted_value);
+            }
+        }
+
+        Value::Object(converted)
+    }
+
     fn convert_response_tool_call(item: &Value) -> Option<Value> {
         let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
         if item_type != "function_call" {
@@ -387,7 +491,7 @@ impl OpenAIResponsesAdapter {
         let mut payload = json!({
             "model": model,
             "input": input_blocks,
-            "stream": true,
+            "stream": body.get("stream").cloned().unwrap_or(json!(true)),
         });
 
         if !instructions.is_empty() {
@@ -453,7 +557,12 @@ impl OpenAIResponsesAdapter {
 
         if let Some(tools) = body.get("tools").and_then(|v| v.as_array()) {
             if !tools.is_empty() {
-                payload["tools"] = Value::Array(tools.clone());
+                payload["tools"] = Value::Array(
+                    tools
+                        .iter()
+                        .map(Self::convert_tool_to_response_format)
+                        .collect(),
+                );
             }
         }
 
@@ -527,7 +636,7 @@ impl ProviderAdapter for OpenAIResponsesAdapter {
         model: &str,
         body: &Value,
     ) -> Result<ProviderRequest, ProviderError> {
-        let url = format!("{}/responses", base_url.trim_end_matches('/'));
+        let url = build_openai_compatible_endpoint(base_url, "responses");
         let trimmed_key = api_key.trim();
 
         Ok(ProviderRequest {
@@ -1834,8 +1943,8 @@ impl ProviderAdapter for GeminiAdapter {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_usage_event, is_meaningful_openai_tool_delta, AnthropicAdapter, OpenAIAdapter,
-        OpenAIResponsesAdapter, ProviderAdapter, StreamEvent,
+        build_openai_compatible_endpoint, build_usage_event, is_meaningful_openai_tool_delta,
+        AnthropicAdapter, OpenAIAdapter, OpenAIResponsesAdapter, ProviderAdapter, StreamEvent,
     };
     use serde_json::json;
 
@@ -1881,6 +1990,46 @@ mod tests {
     }
 
     #[test]
+    fn openai_adapter_sanitizes_tool_parameter_root_schema() {
+        let adapter = OpenAIAdapter;
+        let body = json!({
+            "messages": [{ "role": "user", "content": "hi" }],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "memory_update",
+                        "description": "update",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "note_id": { "type": "string" },
+                                "title": { "type": "string" },
+                                "content": { "type": "string" }
+                            },
+                            "required": ["note_id"],
+                            "anyOf": [
+                                { "required": ["title"] },
+                                { "required": ["content"] }
+                            ]
+                        }
+                    }
+                }
+            ]
+        });
+
+        let request = adapter
+            .build_request("https://api.openai.com/v1", "sk-test", "gpt-4o-mini", &body)
+            .expect("request should build");
+        let parameters = &request.body["tools"][0]["function"]["parameters"];
+
+        assert_eq!(parameters["type"], json!("object"));
+        assert!(parameters.get("anyOf").is_none());
+        assert_eq!(parameters["required"], json!(["note_id"]));
+        assert!(parameters["properties"].get("note_id").is_some());
+    }
+
+    #[test]
     fn openai_responses_adapter_converts_messages_and_reasoning() {
         let body = json!({
             "messages": [
@@ -1915,6 +2064,36 @@ mod tests {
     }
 
     #[test]
+    fn openai_responses_adapter_preserves_nonstream_requests() {
+        let body = json!({
+            "messages": [{ "role": "user", "content": "hi" }],
+            "stream": false
+        });
+
+        let payload = OpenAIResponsesAdapter::convert_to_responses_format("gpt-5.2", &body);
+
+        assert_eq!(payload["stream"], json!(false));
+    }
+
+    #[test]
+    fn openai_endpoint_builder_replaces_full_endpoint_suffixes() {
+        assert_eq!(
+            build_openai_compatible_endpoint(
+                "https://proxy.example.com/v1/chat/completions",
+                "responses"
+            ),
+            "https://proxy.example.com/v1/responses"
+        );
+        assert_eq!(
+            build_openai_compatible_endpoint(
+                "https://proxy.example.com/v1/responses",
+                "chat/completions"
+            ),
+            "https://proxy.example.com/v1/chat/completions"
+        );
+    }
+
+    #[test]
     fn openai_responses_adapter_maps_reasoning_effort_and_verbosity() {
         let body = json!({
             "messages": [{ "role": "user", "content": "hi" }],
@@ -1939,7 +2118,11 @@ mod tests {
                     "function": {
                         "name": "lookup_weather",
                         "description": "lookup",
-                        "parameters": { "type": "object", "properties": {} }
+                        "parameters": {
+                            "type": "object",
+                            "properties": {},
+                            "anyOf": [{ "required": ["city"] }]
+                        }
                     }
                 }
             ],
@@ -1951,10 +2134,12 @@ mod tests {
         });
 
         let payload = OpenAIResponsesAdapter::convert_to_responses_format("gpt-5.2", &body);
-        assert_eq!(
-            payload["tools"][0]["function"]["name"],
-            json!("lookup_weather")
-        );
+        assert_eq!(payload["tools"][0]["type"], json!("function"));
+        assert_eq!(payload["tools"][0]["name"], json!("lookup_weather"));
+        assert_eq!(payload["tools"][0]["description"], json!("lookup"));
+        assert_eq!(payload["tools"][0]["parameters"]["type"], json!("object"));
+        assert!(payload["tools"][0]["parameters"].get("anyOf").is_none());
+        assert!(payload["tools"][0].get("function").is_none());
         assert_eq!(payload["tool_choice"]["type"], json!("function"));
         assert_eq!(payload["tool_choice"]["name"], json!("lookup_weather"));
         assert_eq!(payload["parallel_tool_calls"], json!(false));

@@ -1,8 +1,8 @@
 // ==================== ZIP 导出/导入命令 ====================
 
 use std::path::PathBuf;
-use tauri::{Manager, State};
-use tracing::{debug, error, info, warn};
+use tauri::State;
+use tracing::{error, info, warn};
 
 #[cfg(feature = "data_governance")]
 use super::audit::{AuditLog, AuditOperation};
@@ -13,9 +13,8 @@ use super::backup::{
 use crate::backup_common::log_and_skip_entry_err;
 use crate::backup_job_manager::{
     BackupJobContext, BackupJobKind, BackupJobManagerState, BackupJobParams, BackupJobPhase,
-    BackupJobResultPayload, BackupJobStatus, BackupJobSummary,
+    BackupJobResultPayload,
 };
-use crate::utils::text::safe_truncate_chars;
 use std::time::Instant;
 
 #[cfg(feature = "data_governance")]
@@ -562,7 +561,6 @@ async fn execute_zip_export_with_progress(
     compression_level: u32,
     include_checksums: bool,
 ) {
-    use sha2::Digest;
     use std::fs::File;
     use std::io::Write;
     use std::time::Instant;

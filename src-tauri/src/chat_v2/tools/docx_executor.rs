@@ -18,8 +18,8 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 
 use super::executor::{ExecutionContext, ToolExecutor, ToolSensitivity};
+use super::resource_scope;
 use super::strip_tool_namespace;
-use crate::chat_v2::events::event_types;
 use crate::chat_v2::types::{ToolCall, ToolResultInfo};
 use crate::document_parser::DocumentParser;
 
@@ -234,6 +234,12 @@ impl DocxToolExecutor {
             Some("docx"),
         )
         .map_err(|e| format!("VFS Blob 存储失败: {}", e))?;
+        let scoped_folder_id = resource_scope::resolve_scoped_folder_id_for_write(
+            ctx,
+            vfs_db,
+            None,
+            "docx_replace_text",
+        )?;
 
         // ★ GAP4 修复：使用 create_file_in_folder 确保文件在学习资源中可见
         let vfs_file = VfsFileRepo::create_file_in_folder(
@@ -245,7 +251,7 @@ impl DocxToolExecutor {
             Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
             Some(&blob.hash),
             None, // original_path
-            None, // folder_id = None → 根"全部文件"视图
+            scoped_folder_id.as_deref(),
         )
         .map_err(|e| format!("VFS 文件创建失败: {}", e))?;
 
@@ -256,6 +262,8 @@ impl DocxToolExecutor {
             "file_name": file_name,
             "file_size": new_bytes.len(),
             "replacements_made": total_count,
+            "scope": if resource_scope::is_topic_scoped(ctx) { "topic" } else { "all" },
+            "folderId": scoped_folder_id,
             "message": format!("已完成 {} 处替换，保存为「{}」", total_count, file_name),
         }))
     }
@@ -275,7 +283,7 @@ impl DocxToolExecutor {
             .get("file_name")
             .and_then(|v| v.as_str())
             .unwrap_or("generated.docx");
-        let folder_id = call.arguments.get("folder_id").and_then(|v| v.as_str());
+        let folder_id = resource_scope::normalize_folder_arg(call.arguments.get("folder_id"));
 
         // spawn_blocking 防止同步生成阻塞 tokio 线程
         let spec = spec.clone();
@@ -300,9 +308,14 @@ impl DocxToolExecutor {
             Some("docx"),
         )
         .map_err(|e| format!("VFS Blob 存储失败: {}", e))?;
+        let scoped_folder_id = resource_scope::resolve_scoped_folder_id_for_write(
+            ctx,
+            vfs_db,
+            folder_id,
+            "docx_create",
+        )?;
 
         // 2. 创建文件记录（始终使用 create_file_in_folder 确保 folder_item 可见）
-        // ★ GAP4 修复：不指定 folder_id 时传 None，文件出现在根"全部文件"视图
         let vfs_file = VfsFileRepo::create_file_in_folder(
             vfs_db,
             &blob.hash,
@@ -312,7 +325,7 @@ impl DocxToolExecutor {
             Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
             Some(&blob.hash),
             None, // original_path
-            folder_id,
+            scoped_folder_id.as_deref(),
         )
         .map_err(|e| format!("VFS 文件创建失败: {}", e))?;
 
@@ -322,6 +335,8 @@ impl DocxToolExecutor {
             "file_name": file_name,
             "file_size": file_size,
             "format": "docx",
+            "scope": if resource_scope::is_topic_scoped(ctx) { "topic" } else { "all" },
+            "folderId": scoped_folder_id,
             "message": format!("已生成 DOCX 文件「{}」({}KB)", file_name, file_size / 1024),
         }))
     }
@@ -339,6 +354,7 @@ impl DocxToolExecutor {
         let file = VfsFileRepo::get_file(vfs_db, resource_id)
             .map_err(|e| format!("VFS 查询失败: {}", e))?
             .ok_or_else(|| format!("文件不存在: {}", resource_id))?;
+        resource_scope::ensure_item_in_scope(ctx, vfs_db, resource_id, &file.id)?;
 
         // 优先使用 original_path 读取文件（本地导入的文件）
         // 安全检查：验证路径不包含目录遍历，且文件确实存在

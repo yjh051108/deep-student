@@ -96,6 +96,11 @@ import type { ResourceListItem } from '../types';
 // ============================================================================
 
 const AUDIT_LOG_PAGE_SIZE = 30;
+type MemoryManagementScope = 'global' | 'all';
+
+const folderPathForManagementScope = (scope: MemoryManagementScope): string | undefined => {
+  return scope === 'global' ? '全局' : undefined;
+};
 
 interface MemoryViewProps {
   className?: string;
@@ -148,6 +153,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
   const [batchImportType, setBatchImportType] = useState<MemoryTypeValue>('study');
   const [batchImportPurpose, setBatchImportPurpose] = useState<string>('memorized');
   const [newRootFolderTitle, setNewRootFolderTitle] = useState('');
+  const [memoryScopeFilter, setMemoryScopeFilter] = useState<MemoryManagementScope>('global');
 
   // ★ 批量选择状态
   const [batchMode, setBatchMode] = useState(false);
@@ -190,7 +196,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
 
     setIsLoading(true);
     try {
-      const items = await listMemory(undefined, 100);
+      const items = await listMemory(folderPathForManagementScope(memoryScopeFilter), 100);
       setMemories(items);
       setLoadError(null);
     } catch (error: unknown) {
@@ -200,7 +206,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
     } finally {
       setIsLoading(false);
     }
-  }, [config?.memoryRootFolderId, t]);
+  }, [config?.memoryRootFolderId, memoryScopeFilter, t]);
 
   const loadTree = useCallback(async () => {
     if (!config?.memoryRootFolderId) return;
@@ -259,7 +265,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
     setIsSearchMode(true);
     setViewMode('list');
     try {
-      const results = await searchMemory(searchQuery, 20);
+      const results = await searchMemory(searchQuery, 20, folderPathForManagementScope(memoryScopeFilter));
       setSearchResults(results);
     } catch (error: unknown) {
       console.error('[MemoryView] Search failed:', error);
@@ -268,7 +274,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
     } finally {
       setIsLoading(false);
     }
-  }, [searchQuery, isSearchMode, viewMode, t]);
+  }, [searchQuery, isSearchMode, memoryScopeFilter, viewMode, t]);
 
   const handleClearSearch = useCallback(() => {
     setSearchQuery('');
@@ -287,7 +293,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
     setIsLoading(true);
     try {
       const purposeArg = newMemoryPurpose !== 'memorized' ? newMemoryPurpose as MemoryPurposeType : undefined;
-      const result = await writeMemorySmart(newMemoryTitle, newMemoryContent, undefined, newMemoryType, purposeArg);
+      const result = await writeMemorySmart(newMemoryTitle, newMemoryContent, undefined, newMemoryType, purposeArg, 'global');
       let msg: string;
       let level: 'success' | 'warning' = 'success';
       const writeSucceeded = result.event === 'ADD' || result.event === 'UPDATE' || result.event === 'APPEND' || result.event === 'DELETE';
@@ -375,6 +381,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
         undefined,
         batchImportType,
         purposeArg,
+        'global',
       );
 
       const summary = t(
@@ -975,6 +982,33 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
           </NotionButton>
         </div>
         <div className="flex items-center gap-2">
+          <Funnel size={14} />
+          <span>{t('memory.scope_filter', '管理范围')}:</span>
+          <div className="flex items-center gap-0.5 ml-1">
+            {([
+              { value: 'global' as const, label: t('memory.scope_global', '全局') },
+              { value: 'all' as const, label: t('memory.scope_all', '全部管理') },
+            ]).map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => {
+                  setMemoryScopeFilter(opt.value);
+                  setIsSearchMode(false);
+                  setSearchResults([]);
+                }}
+                className={cn(
+                  'px-2 py-0.5 rounded text-[11px] transition-colors',
+                  memoryScopeFilter === opt.value
+                    ? 'bg-primary/15 text-primary font-medium'
+                    : 'text-muted-foreground hover:bg-[var(--interactive-hover)] hover:text-foreground'
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
           <Lightning size={14} />
           <span>{t('memory.auto_extract', '自动提取')}:</span>
           <div className="flex items-center gap-0.5 ml-1">
@@ -1154,6 +1188,10 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
                 className="w-full bg-muted/30 border-transparent rounded-md resize-y focus-visible:border-border focus-visible:bg-background"
               />
 
+              <div className="text-xs text-muted-foreground leading-relaxed">
+                {t('memory.global_write_hint', '管理页新建内容会写入全局记忆；课题记忆由对应课题会话自动写入。')}
+              </div>
+
               <div className="flex items-center gap-1 flex-wrap">
                 <span className="text-xs text-muted-foreground mr-1.5">{t('memory.type', '类型')}:</span>
                 {([
@@ -1249,6 +1287,10 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
                 rows={5}
                 className="w-full bg-muted/30 border-transparent rounded-md resize-none focus-visible:border-border focus-visible:bg-background"
               />
+
+              <div className="text-xs text-muted-foreground leading-relaxed">
+                {t('memory.global_write_hint', '管理页新建内容会写入全局记忆；课题记忆由对应课题会话自动写入。')}
+              </div>
 
               <div className="flex items-center gap-1 flex-wrap">
                 <span className="text-xs text-muted-foreground mr-1.5">{t('memory.type', '类型')}:</span>

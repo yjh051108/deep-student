@@ -12,7 +12,6 @@ use crate::vfs::types::VfsCreateNoteParams;
 use crate::vfs::{VfsLanceStore, VfsNoteRepo};
 use chrono::Utc;
 use encoding_rs::{GB18030, GBK, UTF_16BE, UTF_16LE};
-use rusqlite::params;
 use serde::Serialize;
 use std::path::Path;
 use std::sync::Arc;

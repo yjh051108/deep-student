@@ -564,6 +564,49 @@ describe('InputBarV2 stale context ref guard', () => {
     });
   });
 
+  it('sets runtime OpenAI effort from the input bar without sticking to model defaults', () => {
+    const { store, setChatParams } = createMockStore();
+
+    act(() => {
+      store.setState({
+        chatParams: {
+          ...store.getState().chatParams,
+          modelId: 'openai-gpt-55',
+          modelDisplayName: 'gpt-5.5',
+          enableThinking: true,
+          reasoningEffort: undefined,
+          thinkingBudget: undefined,
+        },
+      });
+    });
+
+    render(
+      <InputBarV2
+        store={store as any}
+        availableModels={[
+          {
+            id: 'openai-gpt-55',
+            name: 'GPT 5.5',
+            model: 'gpt-5.5',
+            providerType: 'openai',
+            providerScope: 'openai',
+            reasoningEffort: 'medium',
+          },
+        ]}
+      />
+    );
+
+    expect(capturedInputBarUIProps?.thinkingDepthOptions?.map((option: any) => option.value)).toEqual(['low', 'medium', 'high', 'xhigh']);
+
+    capturedInputBarUIProps?.onSetThinkingDepth?.('high');
+
+    expect(setChatParams).toHaveBeenCalledWith({
+      enableThinking: true,
+      reasoningEffort: 'high',
+      thinkingBudget: undefined,
+    });
+  });
+
   it('uses modelDisplayName as a fallback when the current config id is not in the available model cache', () => {
     const { store } = createMockStore();
 
@@ -672,7 +715,7 @@ describe('InputBarV2 stale context ref guard', () => {
       />
     );
 
-    expect(capturedInputBarUIProps?.thinkingStateLabel).toBe('推理: 超高');
+    expect(capturedInputBarUIProps?.thinkingStateLabel).toBe('推理: 极高');
     expect(capturedInputBarUIProps?.thinkingDepthOptions?.map((option: any) => option.value)).toEqual(['low', 'medium', 'high', 'xhigh']);
     expect(capturedInputBarUIProps?.thinkingDepthOptions?.map((option: any) => option.labelKey)).toEqual([
       'settings:api.modal.deepseek.depth.low',

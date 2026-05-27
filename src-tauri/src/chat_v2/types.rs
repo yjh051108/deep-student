@@ -1910,6 +1910,18 @@ pub struct SendOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model2_override_id: Option<String>,
 
+    /// 当前会话分组/课题 ID，用于检索和记忆的默认作用域
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group_id: Option<String>,
+
+    /// 当前会话分组/课题名称，用于生成用户可读的默认资源/记忆路径
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group_name: Option<String>,
+
+    /// 当前课题绑定资源 ID 列表（可为 DSTU sourceId 或 VFS resourceId）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group_pinned_resource_ids: Option<Vec<String>>,
+
     // ========== RAG 选项 ==========
     /// 启用 RAG
     #[serde(skip_serializing_if = "Option::is_none")]

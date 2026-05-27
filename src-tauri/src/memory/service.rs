@@ -190,6 +190,8 @@ pub struct MemorySearchResult {
     pub folder_path: String,
     pub chunk_text: String,
     pub score: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
     /// 笔记的 updated_at（ISO 8601），用于时间衰减计算
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
@@ -572,21 +574,31 @@ impl MemoryService {
     /// - 设计为 fire-and-forget，不阻塞主写路径
     /// - 分类刷新使用频率档位阈值控制，避免每次写入都触发 LLM 聚合
     pub fn spawn_post_write_maintenance(&self) {
+        self.spawn_post_write_maintenance_for_paths(Vec::new());
+    }
+
+    /// 触发指定路径范围内的维护流程。
+    ///
+    /// 空路径列表保留旧的全局维护行为；非空列表只刷新 scoped category 摘要，
+    /// 避免对话写入当前课题后重扫整棵记忆树或刷新混合 `__user_profile__`。
+    pub fn spawn_post_write_maintenance_for_paths(&self, scope_paths: Vec<String>) {
         let svc = self.clone();
         let vfs_db = self.vfs_db.clone();
         let llm_manager = self.llm_manager.clone();
 
         crate::background_tasks::BACKGROUND_TASKS.spawn(async move {
-            let svc_for_profile = svc.clone();
-            match tokio::task::spawn_blocking(move || svc_for_profile.refresh_profile_summary())
-                .await
-            {
-                Ok(Ok(())) => {}
-                Ok(Err(e)) => warn!("[Memory] Post-write profile refresh failed: {}", e),
-                Err(e) => warn!(
-                    "[Memory] Post-write profile refresh task join failed: {}",
-                    e
-                ),
+            if scope_paths.is_empty() {
+                let svc_for_profile = svc.clone();
+                match tokio::task::spawn_blocking(move || svc_for_profile.refresh_profile_summary())
+                    .await
+                {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => warn!("[Memory] Post-write profile refresh failed: {}", e),
+                    Err(e) => warn!(
+                        "[Memory] Post-write profile refresh task join failed: {}",
+                        e
+                    ),
+                }
             }
 
             let mem_cfg = MemoryConfig::new(vfs_db.clone());
@@ -606,7 +618,14 @@ impl MemoryService {
                         vfs_db.clone(),
                         llm_manager,
                     );
-                    if let Err(e) = cat_mgr.refresh_all_categories(&svc).await {
+                    let refresh_result = if scope_paths.is_empty() {
+                        cat_mgr.refresh_all_categories(&svc).await
+                    } else {
+                        cat_mgr
+                            .refresh_categories_for_paths(&svc, &scope_paths)
+                            .await
+                    };
+                    if let Err(e) = refresh_result {
                         warn!("[Memory] Post-write category refresh failed: {}", e);
                     }
                 }
@@ -672,6 +691,73 @@ impl MemoryService {
         top_k: usize,
         purpose: SearchPurpose,
     ) -> VfsResult<Vec<MemorySearchResult>> {
+        self.search_with_embedding_in_folder_for_purpose(
+            query,
+            query_embedding,
+            top_k,
+            purpose,
+            None,
+        )
+        .await
+    }
+
+    pub async fn search_for_purpose_in_folder_path(
+        &self,
+        query: &str,
+        top_k: usize,
+        purpose: SearchPurpose,
+        folder_path: Option<&str>,
+    ) -> VfsResult<Vec<MemorySearchResult>> {
+        if top_k == 0 {
+            return Ok(vec![]);
+        }
+
+        if self.config.is_privacy_mode()? {
+            warn!("[Memory] Privacy mode enabled, skipping embedding API call for scoped search");
+            return Ok(vec![]);
+        }
+
+        let embedding = self
+            .llm_manager
+            .generate_embedding(query)
+            .await
+            .map_err(|e| VfsError::Other(format!("Embedding failed: {}", e)))?;
+
+        self.search_with_embedding_in_folder_for_purpose(
+            query,
+            &embedding,
+            top_k,
+            purpose,
+            folder_path,
+        )
+        .await
+    }
+
+    pub async fn search_with_embedding_in_folder(
+        &self,
+        query: &str,
+        query_embedding: &[f32],
+        top_k: usize,
+        folder_path: Option<&str>,
+    ) -> VfsResult<Vec<MemorySearchResult>> {
+        self.search_with_embedding_in_folder_for_purpose(
+            query,
+            query_embedding,
+            top_k,
+            SearchPurpose::UserRetrieval,
+            folder_path,
+        )
+        .await
+    }
+
+    pub async fn search_with_embedding_in_folder_for_purpose(
+        &self,
+        query: &str,
+        query_embedding: &[f32],
+        top_k: usize,
+        purpose: SearchPurpose,
+        folder_path: Option<&str>,
+    ) -> VfsResult<Vec<MemorySearchResult>> {
         if top_k == 0 {
             return Ok(vec![]);
         }
@@ -682,8 +768,17 @@ impl MemoryService {
         }
 
         let root_id = self.ensure_root_folder_id()?;
+        let target_root_id = match folder_path {
+            Some(path) if !path.trim().is_empty() => {
+                match self.resolve_path_to_folder_id(&root_id, path)? {
+                    Some(folder_id) => folder_id,
+                    None => return Ok(vec![]),
+                }
+            }
+            _ => root_id.clone(),
+        };
 
-        let folder_ids = self.get_memory_folder_ids(&root_id)?;
+        let folder_ids = self.get_memory_folder_ids(&target_root_id)?;
         if folder_ids.is_empty() {
             return Ok(vec![]);
         }
@@ -706,7 +801,7 @@ impl MemoryService {
         for r in lance_results {
             let note = self.get_note_by_resource_id(&r.resource_id)?;
             if let Some(note) = note {
-                if !self.is_note_in_memory_root(&note.id, &root_id)? {
+                if !self.is_note_in_memory_root(&note.id, &target_root_id)? {
                     continue;
                 }
                 if !seen_note_ids.insert(note.id.clone()) {
@@ -721,6 +816,7 @@ impl MemoryService {
                     folder_path,
                     chunk_text: r.text,
                     score: r.score * tag_weight,
+                    scope: None,
                     updated_at: Some(note.updated_at),
                 });
 
@@ -748,6 +844,61 @@ impl MemoryService {
             results.len()
         );
         Ok(results)
+    }
+
+    pub async fn search_with_embedding_in_folder_paths(
+        &self,
+        query: &str,
+        query_embedding: &[f32],
+        top_k: usize,
+        folder_paths: &[String],
+    ) -> VfsResult<Vec<MemorySearchResult>> {
+        if top_k == 0 {
+            return Ok(vec![]);
+        }
+        if folder_paths.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let mut merged = Vec::new();
+        let mut seen = HashSet::new();
+        let per_scope_k = top_k.saturating_mul(2).max(top_k);
+
+        for folder_path in folder_paths {
+            let mut results = self
+                .search_with_embedding_in_folder(
+                    query,
+                    query_embedding,
+                    per_scope_k,
+                    Some(folder_path.as_str()),
+                )
+                .await?;
+
+            for mut item in results.drain(..) {
+                if !seen.insert(item.note_id.clone()) {
+                    continue;
+                }
+                item.scope = Some(
+                    if super::scope::is_folder_path_within_scope(
+                        &item.folder_path,
+                        super::scope::GLOBAL_MEMORY_FOLDER,
+                    ) {
+                        "global".to_string()
+                    } else {
+                        "topic".to_string()
+                    },
+                );
+                merged.push(item);
+            }
+        }
+
+        merged.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        merged.truncate(top_k);
+        Ok(merged)
     }
 
     pub fn read(&self, note_id: &str) -> VfsResult<Option<(VfsNote, String)>> {
@@ -1261,7 +1412,12 @@ impl MemoryService {
         // 1. 先搜索相似记忆（扩大范围以提高冲突检测覆盖率）
         //    embedding 不可用时降级为空结果（跳过去重，直接走 ADD 路径）
         let similar_results = match self
-            .search_for_purpose(content, 15, SearchPurpose::InternalDedup)
+            .search_for_purpose_in_folder_path(
+                content,
+                15,
+                SearchPurpose::InternalDedup,
+                folder_path,
+            )
             .await
         {
             Ok(r) => r,
@@ -1704,6 +1860,17 @@ impl MemoryService {
         top_k: usize,
         use_query_rewrite: bool,
     ) -> VfsResult<Vec<MemorySearchResult>> {
+        self.search_with_rerank_in_folder_path(query, top_k, use_query_rewrite, None)
+            .await
+    }
+
+    pub async fn search_with_rerank_in_folder_path(
+        &self,
+        query: &str,
+        top_k: usize,
+        use_query_rewrite: bool,
+        folder_path: Option<&str>,
+    ) -> VfsResult<Vec<MemorySearchResult>> {
         if self.config.is_privacy_mode()? {
             warn!("[Memory] Privacy mode enabled, skipping search_with_rerank (no external API calls)");
             return Ok(vec![]);
@@ -1729,7 +1896,69 @@ impl MemoryService {
             top_k
         };
 
-        let results = self.search(&final_query, retrieval_k).await?;
+        let results = self
+            .search_for_purpose_in_folder_path(
+                &final_query,
+                retrieval_k,
+                SearchPurpose::UserRetrieval,
+                folder_path,
+            )
+            .await?;
+
+        let reranked = reranker
+            .rerank(query, results)
+            .await
+            .map_err(|e| VfsError::Other(format!("Rerank failed: {}", e)))?;
+
+        Ok(reranked.into_iter().take(top_k).collect())
+    }
+
+    pub async fn search_with_rerank_in_folder_paths(
+        &self,
+        query: &str,
+        top_k: usize,
+        use_query_rewrite: bool,
+        folder_paths: &[String],
+    ) -> VfsResult<Vec<MemorySearchResult>> {
+        if self.config.is_privacy_mode()? {
+            warn!("[Memory] Privacy mode enabled, skipping scoped multi-path search");
+            return Ok(vec![]);
+        }
+
+        let final_query = if use_query_rewrite {
+            let rewriter = MemoryQueryRewriter::new(self.llm_manager.clone());
+            match rewriter.rewrite_simple(query).await {
+                Ok(q) => q,
+                Err(e) => {
+                    warn!("[Memory] Query rewrite failed: {}, using original", e);
+                    query.to_string()
+                }
+            }
+        } else {
+            query.to_string()
+        };
+
+        let embedding = self
+            .llm_manager
+            .generate_embedding(&final_query)
+            .await
+            .map_err(|e| VfsError::Other(format!("Embedding failed: {}", e)))?;
+
+        let reranker = MemoryReranker::new(self.llm_manager.clone()).await;
+        let retrieval_k = if reranker.has_reranker_api() {
+            top_k * 2
+        } else {
+            top_k
+        };
+
+        let results = self
+            .search_with_embedding_in_folder_paths(
+                &final_query,
+                &embedding,
+                retrieval_k,
+                folder_paths,
+            )
+            .await?;
 
         let reranked = reranker
             .rerank(query, results)
@@ -1755,6 +1984,34 @@ impl MemoryService {
         offset: u32,
     ) -> VfsResult<Vec<MemoryListItem>> {
         self.list_internal(folder_path, limit, offset, false)
+    }
+
+    pub fn list_folder_paths(
+        &self,
+        folder_paths: &[String],
+        limit: u32,
+        offset: u32,
+    ) -> VfsResult<Vec<MemoryListItem>> {
+        if folder_paths.is_empty() {
+            return self.list(None, limit, offset);
+        }
+
+        let mut items = Vec::new();
+        let mut seen = HashSet::new();
+        for folder_path in folder_paths {
+            for item in self.list(Some(folder_path.as_str()), limit, 0)? {
+                if seen.insert(item.id.clone()) {
+                    items.push(item);
+                }
+            }
+        }
+        items.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        let start = offset as usize;
+        if start >= items.len() {
+            return Ok(vec![]);
+        }
+        let end = (start + limit as usize).min(items.len());
+        Ok(items[start..end].to_vec())
     }
 
     pub fn count_active_memories(&self) -> VfsResult<u32> {

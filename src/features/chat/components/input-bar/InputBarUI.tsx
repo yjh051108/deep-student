@@ -463,6 +463,7 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
   onRemoveAttachment,
   onClearAttachments,
   onFilesUpload,
+  targetFolderId,
   onSetPanelState,
   // UI 配置
   placeholder,
@@ -734,6 +735,7 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
             mimeType: file.type || 'application/octet-stream',
             base64Content: base64Result,
             type: isImage ? 'image' : 'file',
+            folderId: targetFolderId,
           });
 
           logAttachment('ui', 'vfs_upload_done', {

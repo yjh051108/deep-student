@@ -258,11 +258,6 @@ export const BUILTIN_TOOLS: BuiltinToolSchema[] = [
           description: '写入模式：create=新建, update=替换同名记忆, append=追加到同名记忆末尾（传 note_id 时改为按 ID 更新）',
         },
       },
-      anyOf: [
-        { required: ['title', 'content'] },
-        { required: ['note_id', 'title'] },
-        { required: ['note_id', 'content'] },
-      ],
     },
   },
   {
@@ -409,7 +404,7 @@ export const BUILTIN_TOOLS: BuiltinToolSchema[] = [
     displayNameKey: 'mcp.tools.resource_list',
     description:
       '列出用户的学习资源。可按类型（笔记、教材、文件、图片、整卷、作文、翻译、思维导图）和文件夹筛选。' +
-      '当需要了解用户有哪些学习材料、浏览用户的笔记或教材列表时使用。',
+      '当需要了解用户有哪些学习材料、浏览用户的笔记或教材列表时使用。课题会话中默认只列出当前课题资源文件夹。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -421,7 +416,7 @@ export const BUILTIN_TOOLS: BuiltinToolSchema[] = [
         },
         folder_id: {
           type: 'string',
-          description: '可选：文件夹 ID。指定后只列出该文件夹下的资源。不指定则列出根目录。',
+          description: '可选：文件夹 ID。指定后只列出该文件夹下的资源。课题会话中不指定或传 "root" 表示当前课题文件夹，非课题会话中才表示根目录。',
         },
         search: {
           type: 'string',
@@ -480,7 +475,7 @@ export const BUILTIN_TOOLS: BuiltinToolSchema[] = [
     displayNameKey: 'mcp.tools.resource_search',
     description:
       '在学习资源中全文搜索。当用户询问特定知识点、想查找某个主题的笔记、或寻找相关学习材料时使用。' +
-      '返回匹配的资源列表和相关片段。',
+      '返回匹配的资源列表和相关片段。课题会话中默认只搜索当前课题资源文件夹。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -498,7 +493,7 @@ export const BUILTIN_TOOLS: BuiltinToolSchema[] = [
         },
         folder_id: {
           type: 'string',
-          description: '可选：限制搜索范围到指定文件夹。不指定则全局搜索。',
+          description: '可选：限制搜索范围到指定文件夹。课题会话中不指定或传 "root" 表示当前课题文件夹，不表示全局搜索。',
         },
         top_k: {
           type: 'integer',

@@ -28,7 +28,6 @@ use crate::file_manager::FileManager;
 use crate::pdf_ocr_service::PdfOcrService;
 use crate::unified_file_manager;
 use serde::{Deserialize, Serialize};
-use sha2::Digest;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -1595,17 +1594,16 @@ fn resolve_test_api_protocol(
     supports_openai_responses: Option<bool>,
 ) -> &'static str {
     if let Some(protocol) = explicit_protocol {
-        return if protocol == "openai_responses" {
-            "openai_responses"
-        } else {
-            "openai_chat_completions"
-        };
+        if protocol != "openai_responses" {
+            return "openai_chat_completions";
+        }
     }
 
     let mut inferred_config = ApiConfig {
         base_url: api_base.to_string(),
         model: model.unwrap_or_default().to_string(),
         model_adapter: "general".to_string(),
+        api_protocol: explicit_protocol.map(str::to_string),
         ..Default::default()
     };
     inferred_config.supports_openai_responses = supports_openai_responses;
@@ -1618,6 +1616,23 @@ fn resolve_test_api_protocol(
     } else {
         "openai_chat_completions"
     }
+}
+
+fn build_test_api_endpoint(api_base: &str, protocol: &str) -> String {
+    let endpoint = if protocol == "openai_responses" {
+        "responses"
+    } else {
+        "chat/completions"
+    };
+    let trimmed = api_base.trim().trim_end_matches('/');
+    let lower = trimmed.to_lowercase();
+    for known_suffix in ["/chat/completions", "/responses"] {
+        if lower.ends_with(known_suffix) {
+            let root = &trimmed[..trimmed.len() - known_suffix.len()];
+            return format!("{}/{}", root.trim_end_matches('/'), endpoint);
+        }
+    }
+    format!("{}/{}", trimmed, endpoint)
 }
 
 #[tauri::command]
@@ -1713,10 +1728,7 @@ pub async fn test_api_connection(
     );
 
     // 构建请求 URL
-    let url = match protocol {
-        "openai_responses" => format!("{}/responses", api_base.trim_end_matches('/')),
-        _ => format!("{}/chat/completions", api_base.trim_end_matches('/')),
-    };
+    let url = build_test_api_endpoint(&api_base, protocol);
 
     // 构建最小化请求体
     let model_id = model.unwrap_or_else(|| {
@@ -3089,7 +3101,8 @@ fn parse_version_parts(version: &str) -> Option<Vec<u64>> {
 #[cfg(test)]
 mod tests {
     use super::{
-        compare_template_version, resolve_test_api_protocol, should_update_builtin_template,
+        build_test_api_endpoint, compare_template_version, resolve_test_api_protocol,
+        should_update_builtin_template,
     };
     use std::cmp::Ordering;
 
@@ -3111,13 +3124,13 @@ mod tests {
     }
 
     #[test]
-    fn resolve_test_api_protocol_prefers_explicit_protocol() {
+    fn resolve_test_api_protocol_respects_explicit_supported_responses_protocol() {
         assert_eq!(
             resolve_test_api_protocol(
                 "https://proxy.example.com/v1",
                 Some("openai_responses"),
                 Some("gpt-4o-mini"),
-                None
+                Some(true)
             ),
             "openai_responses"
         );
@@ -3129,6 +3142,37 @@ mod tests {
                 None
             ),
             "openai_chat_completions"
+        );
+    }
+
+    #[test]
+    fn resolve_test_api_protocol_falls_back_for_unsupported_explicit_responses_protocol() {
+        assert_eq!(
+            resolve_test_api_protocol(
+                "https://proxy.example.com/v1",
+                Some("openai_responses"),
+                Some("gpt-4o-mini"),
+                None
+            ),
+            "openai_chat_completions"
+        );
+    }
+
+    #[test]
+    fn build_test_api_endpoint_replaces_existing_endpoint_suffix() {
+        assert_eq!(
+            build_test_api_endpoint(
+                "https://proxy.example.com/v1/chat/completions",
+                "openai_responses"
+            ),
+            "https://proxy.example.com/v1/responses"
+        );
+        assert_eq!(
+            build_test_api_endpoint(
+                "https://proxy.example.com/v1/responses",
+                "openai_chat_completions"
+            ),
+            "https://proxy.example.com/v1/chat/completions"
         );
     }
 

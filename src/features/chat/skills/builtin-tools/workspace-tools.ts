@@ -24,6 +24,12 @@ export const workspaceToolsSkill: SkillDefinition = {
 
 当你需要协调多个 Agent 完成复杂任务时，使用这些工具：
 
+## 当前工作区规则
+
+- 如果用户说“当前工作区”或没有提供工作区 ID，直接省略 \`workspace_id\` 参数；后端会使用当前会话关联的工作区。
+- 如果还没有当前工作区，并且用户想使用工作区能力，先调用 \`builtin-workspace_create\` 创建工作区，不要向用户索要工作区 ID。
+- \`builtin-workspace_create\` 返回的 \`workspace_id\` 是本轮后续工作区工具调用的默认工作区。
+
 ## ⚠️ 重要：创建子代理后必须调用 sleep
 
 创建 Worker Agent（使用 builtin-workspace_create_agent 并提供 initial_task）后，你**必须立即调用 builtin-coordinator_sleep 工具**进入睡眠状态等待结果。
@@ -71,7 +77,7 @@ export const workspaceToolsSkill: SkillDefinition = {
       inputSchema: {
         type: 'object',
         properties: {
-          workspace_id: { type: 'string', description: '【必填】工作区 ID' },
+          workspace_id: { type: 'string', description: '可选：工作区 ID。省略时使用当前工作区；没有当前工作区时先调用 builtin-workspace_create。' },
           role: {
             type: 'string',
             enum: ['coordinator', 'worker'],
@@ -80,7 +86,6 @@ export const workspaceToolsSkill: SkillDefinition = {
           skill_id: { type: 'string', description: '技能 ID，指定 Worker 使用的预置技能（可选）' },
           initial_task: { type: 'string', description: '【推荐】初始任务描述。提供此参数后 Worker 会立即自动启动执行任务并返回结果，不提供则 Worker 保持空闲' },
         },
-        required: ['workspace_id'],
       },
     },
     {
@@ -90,7 +95,7 @@ export const workspaceToolsSkill: SkillDefinition = {
       inputSchema: {
         type: 'object',
         properties: {
-          workspace_id: { type: 'string', description: '【必填】工作区 ID' },
+          workspace_id: { type: 'string', description: '可选：工作区 ID。省略时使用当前工作区；没有当前工作区时先调用 builtin-workspace_create。' },
           content: { type: 'string', description: '【必填】消息内容文本，注意参数名是 content 不是 message' },
           target_session_id: { type: 'string', description: '目标 Agent 的会话 ID（可选，不指定则广播给所有 Agent）' },
           message_type: {
@@ -99,7 +104,7 @@ export const workspaceToolsSkill: SkillDefinition = {
             description: '消息类型（可选，默认 task）',
           },
         },
-        required: ['workspace_id', 'content'],
+        required: ['content'],
       },
     },
     {
@@ -108,7 +113,7 @@ export const workspaceToolsSkill: SkillDefinition = {
       inputSchema: {
         type: 'object',
         properties: {
-          workspace_id: { type: 'string', description: '【必填】工作区 ID' },
+          workspace_id: { type: 'string', description: '可选：工作区 ID。省略时查询当前工作区；没有当前工作区时先调用 builtin-workspace_create。' },
           query_type: {
             type: 'string',
             enum: ['agents', 'messages', 'documents', 'context', 'all'],
@@ -116,7 +121,6 @@ export const workspaceToolsSkill: SkillDefinition = {
           },
           limit: { type: 'integer', description: '返回结果数量限制，默认 50', default: 50, minimum: 1, maximum: 200 },
         },
-        required: ['workspace_id'],
       },
     },
     {
@@ -126,23 +130,23 @@ export const workspaceToolsSkill: SkillDefinition = {
       inputSchema: {
         type: 'object',
         properties: {
-          workspace_id: { type: 'string', description: '【必填】工作区 ID' },
+          workspace_id: { type: 'string', description: '可选：工作区 ID。省略时使用当前工作区；没有当前工作区时先调用 builtin-workspace_create。' },
           key: { type: 'string', description: '【必填】上下文键名' },
           value: { description: '【必填】上下文值（任意 JSON 值）' },
         },
-        required: ['workspace_id', 'key', 'value'],
+        required: ['key', 'value'],
       },
     },
     {
       name: 'builtin-workspace_get_context',
-      description: '获取工作区共享上下文变量。必须已创建工作区。注意：必须同时提供 workspace_id 和 key 两个参数。',
+      description: '获取工作区共享上下文变量。必须已创建工作区。key 必填；workspace_id 可省略以使用当前工作区。',
       inputSchema: {
         type: 'object',
         properties: {
-          workspace_id: { type: 'string', description: '【必填】工作区 ID' },
+          workspace_id: { type: 'string', description: '可选：工作区 ID。省略时使用当前工作区；没有当前工作区时先调用 builtin-workspace_create。' },
           key: { type: 'string', description: '【必填】上下文键名，如 "messages"、"state" 等' },
         },
-        required: ['workspace_id', 'key'],
+        required: ['key'],
       },
     },
     {
@@ -152,7 +156,7 @@ export const workspaceToolsSkill: SkillDefinition = {
       inputSchema: {
         type: 'object',
         properties: {
-          workspace_id: { type: 'string', description: '【必填】工作区 ID' },
+          workspace_id: { type: 'string', description: '可选：工作区 ID。省略时使用当前工作区；没有当前工作区时先调用 builtin-workspace_create。' },
           title: { type: 'string', description: '【必填】文档标题' },
           content: { type: 'string', description: '【必填】文档内容' },
           doc_type: {
@@ -161,7 +165,7 @@ export const workspaceToolsSkill: SkillDefinition = {
             description: '文档类型',
           },
         },
-        required: ['workspace_id', 'title', 'content'],
+        required: ['title', 'content'],
       },
     },
     {
@@ -170,10 +174,10 @@ export const workspaceToolsSkill: SkillDefinition = {
       inputSchema: {
         type: 'object',
         properties: {
-          workspace_id: { type: 'string', description: '【必填】工作区 ID' },
+          workspace_id: { type: 'string', description: '可选：工作区 ID。省略时使用当前工作区；没有当前工作区时先调用 builtin-workspace_create。' },
           document_id: { type: 'string', description: '【必填】文档 ID' },
         },
-        required: ['workspace_id', 'document_id'],
+        required: ['document_id'],
       },
     },
     {
@@ -183,7 +187,7 @@ export const workspaceToolsSkill: SkillDefinition = {
       inputSchema: {
         type: 'object',
         properties: {
-          workspace_id: { type: 'string', description: '【必填】工作区 ID' },
+          workspace_id: { type: 'string', description: '可选：工作区 ID。省略时使用当前工作区；没有当前工作区时使用刚刚创建的工作区。' },
           awaiting_agents: {
             type: 'array',
             items: { type: 'string' },
@@ -199,7 +203,6 @@ export const workspaceToolsSkill: SkillDefinition = {
             description: '超时时间（毫秒），超时后自动唤醒。可选，默认无超时',
           },
         },
-        required: ['workspace_id'],
       },
     },
   ],

@@ -1,11 +1,9 @@
 // ==================== 资产备份相关命令 ====================
 
-use std::path::PathBuf;
 use std::time::Instant;
-use tauri::Manager;
 use tracing::{error, info, warn};
 
-use super::backup::{AssetBackupConfig, AssetType, AssetTypeStats, BackupManager};
+use super::backup::{AssetType, AssetTypeStats, BackupManager};
 use crate::backup_common::BACKUP_GLOBAL_LIMITER;
 
 use super::commands_backup::{

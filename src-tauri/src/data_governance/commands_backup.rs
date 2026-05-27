@@ -1,16 +1,12 @@
 // ==================== 备份相关命令 ====================
 
 use std::path::{Path, PathBuf};
-use std::time::Instant;
 use tauri::{Manager, State};
 use tracing::{debug, error, info, warn};
 
 #[cfg(feature = "data_governance")]
 use super::audit::{AuditLog, AuditOperation};
-use super::backup::{
-    export_backup_to_zip, AssetBackupConfig, AssetType, AssetTypeStats, BackupManager,
-    BackupSelection, TieredAssetConfig, ZipExportOptions,
-};
+use super::backup::{AssetType, AssetTypeStats, BackupManager};
 use super::schema_registry::DatabaseId;
 use super::sync::{ChangeOperation, MergeStrategy, SyncChangeWithData, SyncManager};
 use crate::backup_common::BACKUP_GLOBAL_LIMITER;
@@ -18,7 +14,6 @@ use crate::backup_job_manager::{
     BackupJobContext, BackupJobKind, BackupJobManagerState, BackupJobParams, BackupJobPhase,
     BackupJobResultPayload, BackupJobStatus, BackupJobSummary, PersistedJob,
 };
-use crate::utils::text::safe_truncate_chars;
 
 #[cfg(feature = "data_governance")]
 use super::commands::try_save_audit_log;

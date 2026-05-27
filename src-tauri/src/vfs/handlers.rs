@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 
 use crate::utils::unicode::sanitize_unicode;
 use crate::vfs::attachment_config::AttachmentConfig;
@@ -3328,23 +3328,44 @@ pub async fn vfs_get_default_embedding_dimension(
         .parse()
         .map_err(|_| format!("无效的维度值: {}", dim_str))?;
 
-    // M3 fix: 从 vfs_embedding_dims 获取完整信息，如果维度已不存在则自动清除设置
+    // M3 fix: 从 vfs_embedding_dims 获取完整信息，如果维度已不存在则自动修复或清除设置
     let conn = vfs_db.get_conn().map_err(|e| e.to_string())?;
     let dim_info = crate::vfs::repos::embedding_dim_repo::get_by_key(&conn, dimension, &modality)
         .map_err(|e| e.to_string())?;
 
     if dim_info.is_none() {
-        // 维度记录不存在（可能被删除或数据库恢复导致），自动清除 settings
-        log::warn!(
-            "[VFS::handlers] Default dimension {}:{} no longer exists in VFS DB, auto-clearing setting",
-            dimension, modality
-        );
-        let _ = database.delete_setting(key);
         let model_key = match modality.as_str() {
             "text" => "embedding.default_text_model_config_id",
             "multimodal" => "embedding.default_multimodal_model_config_id",
             _ => "",
         };
+
+        if !model_key.is_empty() {
+            if let Ok(Some(model_config_id)) = database.get_setting(model_key) {
+                log::warn!(
+                    "[VFS::handlers] Default dimension {}:{} missing in VFS DB; repairing from bound model {}",
+                    dimension,
+                    modality,
+                    model_config_id
+                );
+                let repaired = crate::vfs::repos::embedding_dim_repo::register_with_model(
+                    &conn,
+                    dimension,
+                    &modality,
+                    Some(&model_config_id),
+                    Some(&model_config_id),
+                )
+                .map_err(|e| e.to_string())?;
+                return Ok(Some(repaired));
+            }
+        }
+
+        // 维度记录不存在且没有模型绑定（可能被删除或数据库恢复导致），自动清除 settings
+        log::warn!(
+            "[VFS::handlers] Default dimension {}:{} no longer exists in VFS DB, auto-clearing setting",
+            dimension, modality
+        );
+        let _ = database.delete_setting(key);
         if !model_key.is_empty() {
             let _ = database.delete_setting(model_key);
         }
@@ -3395,6 +3416,59 @@ pub struct BatchIndexResult {
     pub total: usize,
 }
 
+fn requeue_embedding_dimension_config_failures(
+    conn: &rusqlite::Connection,
+) -> rusqlite::Result<usize> {
+    let now = chrono::Utc::now().timestamp_millis();
+    let unit_error_pattern = "%未配置默认嵌入维度%";
+
+    let affected_resources = conn.execute(
+        r#"
+        UPDATE resources
+        SET index_state = 'pending',
+            index_error = NULL,
+            index_retry_count = 0,
+            updated_at = ?1
+        WHERE id IN (
+            SELECT DISTINCT resource_id
+            FROM vfs_index_units
+            WHERE text_state = 'failed'
+              AND text_error LIKE ?2
+              AND resource_id IS NOT NULL
+        )
+        "#,
+        rusqlite::params![now, unit_error_pattern],
+    )?;
+
+    let direct_resources = conn.execute(
+        r#"
+        UPDATE resources
+        SET index_state = 'pending',
+            index_error = NULL,
+            index_retry_count = 0,
+            updated_at = ?1
+        WHERE index_state = 'failed'
+          AND index_error LIKE ?2
+        "#,
+        rusqlite::params![now, unit_error_pattern],
+    )?;
+
+    let affected_units = conn.execute(
+        r#"
+        UPDATE vfs_index_units
+        SET text_state = 'pending',
+            text_error = NULL,
+            text_embedding_dim = NULL,
+            updated_at = ?1
+        WHERE text_state = 'failed'
+          AND text_error LIKE ?2
+        "#,
+        rusqlite::params![now, unit_error_pattern],
+    )?;
+
+    Ok(affected_resources + direct_resources + affected_units)
+}
+
 /// 批量索引待处理资源（带进度事件）
 #[tauri::command]
 pub async fn vfs_batch_index_pending(
@@ -3415,6 +3489,25 @@ pub async fn vfs_batch_index_pending(
     let config = indexing_service
         .get_indexing_config()
         .map_err(|e| e.to_string())?;
+
+    if let Ok(conn) = vfs_db.get_conn_safe() {
+        match requeue_embedding_dimension_config_failures(&conn) {
+            Ok(updated) if updated > 0 => {
+                log::info!(
+                    "[VFS::handlers] Requeued {} embedding-dimension configuration failures",
+                    updated
+                );
+            }
+            Ok(_) => {}
+            Err(e) => {
+                log::warn!(
+                    "[VFS::handlers] Failed to requeue embedding-dimension configuration failures: {}",
+                    e
+                );
+            }
+        }
+    }
+
     // ★ 2026-02 修复：使用 claim_pending_resources 原子抢占，避免并发重复索引
     // 之前使用 get_pending_resources 仅查询不锁定，快速双击或多窗口操作会导致同批资源被重复处理
     log::info!("[VFS::handlers] vfs_batch_index_pending: 原子抢占待处理资源...");
@@ -4473,7 +4566,7 @@ pub async fn vfs_rag_search(
 #[tauri::command]
 pub async fn vfs_get_lance_stats(
     modality: Option<String>,
-    vfs_db: State<'_, Arc<VfsDatabase>>,
+    _vfs_db: State<'_, Arc<VfsDatabase>>,
     lance_store: State<'_, Arc<crate::vfs::lance_store::VfsLanceStore>>,
 ) -> Result<Vec<(String, usize)>, String> {
     use crate::vfs::repos::MODALITY_TEXT;
@@ -4492,7 +4585,7 @@ pub async fn vfs_get_lance_stats(
 #[tauri::command]
 pub async fn vfs_optimize_lance(
     modality: Option<String>,
-    vfs_db: State<'_, Arc<VfsDatabase>>,
+    _vfs_db: State<'_, Arc<VfsDatabase>>,
     lance_store: State<'_, Arc<crate::vfs::lance_store::VfsLanceStore>>,
 ) -> Result<usize, String> {
     use crate::vfs::repos::MODALITY_TEXT;
@@ -5764,7 +5857,7 @@ pub async fn vfs_multimodal_index_resource(
 #[tauri::command]
 pub async fn vfs_diagnose_lance_schema(
     modality: Option<String>,
-    vfs_db: State<'_, Arc<VfsDatabase>>,
+    _vfs_db: State<'_, Arc<VfsDatabase>>,
     lance_store: State<'_, Arc<crate::vfs::lance_store::VfsLanceStore>>,
 ) -> Result<Vec<crate::vfs::lance_store::LanceTableDiagnostic>, String> {
     use crate::vfs::repos::MODALITY_TEXT;

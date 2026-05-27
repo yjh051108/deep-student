@@ -19,6 +19,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 
 use super::executor::{ExecutionContext, ToolExecutor, ToolSensitivity};
+use super::resource_scope;
 use super::strip_tool_namespace;
 use crate::chat_v2::events::event_types;
 use crate::chat_v2::types::{SourceInfo, ToolCall, ToolResultInfo};
@@ -62,6 +63,177 @@ impl BuiltinRetrievalExecutor {
         Self
     }
 
+    fn parse_string_array_arg(arguments: &Value, key: &str) -> Option<Vec<String>> {
+        arguments.get(key).and_then(|v| v.as_array()).map(|arr| {
+            arr.iter()
+                .filter_map(|v| {
+                    let value = v.as_str()?.trim();
+                    if value.is_empty() {
+                        None
+                    } else {
+                        Some(value.to_string())
+                    }
+                })
+                .collect()
+        })
+    }
+
+    fn normalize_filter_list(values: Option<Vec<String>>) -> Option<Vec<String>> {
+        let filtered: Vec<String> = values
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|value| {
+                let trimmed = value.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            })
+            .collect();
+        if filtered.is_empty() {
+            None
+        } else {
+            Some(filtered)
+        }
+    }
+
+    fn query_resource_id_by_source(
+        conn: &rusqlite::Connection,
+        sql: &str,
+        source_id: &str,
+    ) -> Option<String> {
+        conn.query_row(sql, rusqlite::params![source_id], |row| {
+            row.get::<_, Option<String>>(0)
+        })
+        .ok()
+        .flatten()
+        .filter(|value| !value.trim().is_empty())
+    }
+
+    fn resolve_resource_id(conn: &rusqlite::Connection, id: &str) -> Option<String> {
+        let id = id.trim();
+        if id.is_empty() {
+            return None;
+        }
+
+        if id.starts_with("res_") {
+            if conn
+                .query_row(
+                    "SELECT 1 FROM resources WHERE id = ?1 AND deleted_at IS NULL",
+                    rusqlite::params![id],
+                    |_| Ok(()),
+                )
+                .is_ok()
+            {
+                return Some(id.to_string());
+            }
+        }
+
+        if let Some(resource_id) = Self::query_resource_id_by_source(
+            conn,
+            "SELECT id FROM resources WHERE source_id = ?1 AND deleted_at IS NULL",
+            id,
+        ) {
+            return Some(resource_id);
+        }
+
+        let lookups = [
+            "SELECT resource_id FROM notes WHERE id = ?1 AND deleted_at IS NULL",
+            "SELECT resource_id FROM textbooks WHERE id = ?1 AND deleted_at IS NULL",
+            "SELECT resource_id FROM files WHERE id = ?1 AND deleted_at IS NULL",
+            "SELECT resource_id FROM exam_sheets WHERE id = ?1 AND deleted_at IS NULL",
+            "SELECT resource_id FROM translations WHERE id = ?1 AND deleted_at IS NULL",
+            "SELECT resource_id FROM essays WHERE id = ?1 AND deleted_at IS NULL",
+            "SELECT resource_id FROM mindmaps WHERE id = ?1 AND deleted_at IS NULL",
+        ];
+
+        lookups
+            .iter()
+            .find_map(|sql| Self::query_resource_id_by_source(conn, sql, id))
+    }
+
+    fn resolve_resource_ids(
+        vfs_db: &std::sync::Arc<crate::vfs::database::VfsDatabase>,
+        ids: &[String],
+    ) -> Vec<String> {
+        let Ok(conn) = vfs_db.get_conn_safe() else {
+            return Vec::new();
+        };
+        let mut resolved: Vec<String> = ids
+            .iter()
+            .filter_map(|id| Self::resolve_resource_id(&conn, id))
+            .collect();
+        resolved.sort();
+        resolved.dedup();
+        resolved
+    }
+
+    fn scoped_filters(
+        &self,
+        ctx: &ExecutionContext,
+        vfs_db: &std::sync::Arc<crate::vfs::database::VfsDatabase>,
+        explicit_folder_ids: Option<Vec<String>>,
+        explicit_resource_ids: Option<Vec<String>>,
+    ) -> (Option<Vec<String>>, Option<Vec<String>>) {
+        let folder_ids = Self::normalize_filter_list(explicit_folder_ids);
+        let resource_ids = Self::normalize_filter_list(explicit_resource_ids);
+        if folder_ids.is_some() || resource_ids.is_some() {
+            let resolved_resource_ids = resource_ids.as_deref().map(|ids| {
+                let resolved = Self::resolve_resource_ids(vfs_db, ids);
+                if resolved.is_empty() {
+                    vec!["__no_matching_explicit_resources__".to_string()]
+                } else {
+                    resolved
+                }
+            });
+            return (
+                folder_ids,
+                Self::normalize_filter_list(resolved_resource_ids),
+            );
+        }
+
+        if !resource_scope::is_topic_scoped(ctx) {
+            return (None, None);
+        }
+
+        let mut pinned_folder_ids = Vec::new();
+        let mut pinned_resource_ids = Vec::new();
+        for id in resource_scope::current_topic_pinned_resource_ids(ctx) {
+            let trimmed = id.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if trimmed.starts_with("fld_") {
+                pinned_folder_ids.push(trimmed.to_string());
+            } else {
+                pinned_resource_ids.push(trimmed.to_string());
+            }
+        }
+
+        let resolved_resource_ids = Self::resolve_resource_ids(vfs_db, &pinned_resource_ids);
+        let folder_ids = Self::normalize_filter_list(Some(pinned_folder_ids));
+        let resource_ids = Self::normalize_filter_list(Some(resolved_resource_ids));
+
+        if folder_ids.is_none() && resource_ids.is_none() {
+            // 当前课题没有绑定资源时，不回落到全局知识库，避免跨课题泄漏。
+            (
+                None,
+                Some(vec!["__no_resources_for_current_group__".to_string()]),
+            )
+        } else {
+            (folder_ids, resource_ids)
+        }
+    }
+
+    fn sanitize_scope_segment(value: &str) -> String {
+        crate::memory::sanitize_scope_segment(value)
+    }
+
+    fn topic_memory_root(ctx: &ExecutionContext) -> Option<String> {
+        crate::memory::topic_memory_root(ctx.group_id.as_deref(), ctx.group_name.as_deref())
+    }
+
     /// 执行 VFS RAG 知识检索（统一方案）
     async fn execute_vfs_rag(
         &self,
@@ -84,25 +256,9 @@ impl BuiltinRetrievalExecutor {
             .get("query")
             .and_then(|v| v.as_str())
             .ok_or("Missing 'query' parameter")?;
-        let folder_ids: Option<Vec<String>> = call
-            .arguments
-            .get("folder_ids")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            });
+        let explicit_folder_ids = Self::parse_string_array_arg(&call.arguments, "folder_ids");
         // 🆕 精确到特定资源的过滤
-        let resource_ids: Option<Vec<String>> = call
-            .arguments
-            .get("resource_ids")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            });
+        let explicit_resource_ids = Self::parse_string_array_arg(&call.arguments, "resource_ids");
         let resource_types: Option<Vec<String>> = call
             .arguments
             .get("resource_types")
@@ -131,6 +287,11 @@ impl BuiltinRetrievalExecutor {
             .or(ctx.rag_enable_reranking)
             .unwrap_or(true);
 
+        // 获取 VFS 数据库，并应用课题默认作用域
+        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
+        let (folder_ids, resource_ids) =
+            self.scoped_filters(ctx, vfs_db, explicit_folder_ids, explicit_resource_ids);
+
         // 发射 start 事件
         ctx.emitter.emit_start(
             event_types::RAG,
@@ -148,9 +309,6 @@ impl BuiltinRetrievalExecutor {
         );
 
         let start_time = Instant::now();
-
-        // 获取 VFS 数据库
-        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
 
         // 创建 Lance 存储
         let lance_store = std::sync::Arc::new(
@@ -415,25 +573,9 @@ impl BuiltinRetrievalExecutor {
             .get("query")
             .and_then(|v| v.as_str())
             .ok_or("Missing 'query' parameter")?;
-        let folder_ids: Option<Vec<String>> = call
-            .arguments
-            .get("folder_ids")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            });
+        let explicit_folder_ids = Self::parse_string_array_arg(&call.arguments, "folder_ids");
         // 🔧 批判性检查修复：解析 resource_ids 参数
-        let resource_ids: Option<Vec<String>> = call
-            .arguments
-            .get("resource_ids")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            });
+        let explicit_resource_ids = Self::parse_string_array_arg(&call.arguments, "resource_ids");
         let resource_types: Option<Vec<String>> = call
             .arguments
             .get("resource_types")
@@ -455,6 +597,15 @@ impl BuiltinRetrievalExecutor {
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as usize;
 
+        // 获取必要的上下文，并应用课题默认作用域
+        let llm_manager = ctx
+            .llm_manager
+            .as_ref()
+            .ok_or("LLM manager not available")?;
+        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
+        let (folder_ids, resource_ids) =
+            self.scoped_filters(ctx, vfs_db, explicit_folder_ids, explicit_resource_ids);
+
         // 发射 start 事件
         ctx.emitter.emit_start(
             event_types::MULTIMODAL_RAG,
@@ -471,13 +622,6 @@ impl BuiltinRetrievalExecutor {
         );
 
         let start_time = Instant::now();
-
-        // 获取必要的上下文
-        let llm_manager = ctx
-            .llm_manager
-            .as_ref()
-            .ok_or("LLM manager not available")?;
-        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
 
         // 检查多模态 RAG 是否配置
         if !llm_manager.is_multimodal_rag_configured().await {
@@ -703,25 +847,9 @@ impl BuiltinRetrievalExecutor {
             .get("query")
             .and_then(|v| v.as_str())
             .ok_or("Missing 'query' parameter")?;
-        let folder_ids: Option<Vec<String>> = call
-            .arguments
-            .get("folder_ids")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            });
+        let explicit_folder_ids = Self::parse_string_array_arg(&call.arguments, "folder_ids");
         // 🔧 批判性检查修复：解析 resource_ids 参数
-        let resource_ids: Option<Vec<String>> = call
-            .arguments
-            .get("resource_ids")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            });
+        let explicit_resource_ids = Self::parse_string_array_arg(&call.arguments, "resource_ids");
         let resource_types: Option<Vec<String>> = call
             .arguments
             .get("resource_types")
@@ -748,6 +876,15 @@ impl BuiltinRetrievalExecutor {
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
 
+        // 获取必要的上下文，并应用课题默认作用域
+        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
+        let llm_manager = ctx
+            .llm_manager
+            .as_ref()
+            .ok_or("LLM manager not available")?;
+        let (folder_ids, resource_ids) =
+            self.scoped_filters(ctx, vfs_db, explicit_folder_ids, explicit_resource_ids);
+
         // 发射 start 事件
         ctx.emitter.emit_start(
             event_types::RAG,
@@ -770,13 +907,6 @@ impl BuiltinRetrievalExecutor {
         //   稍后用 RRF 融合 + VL-Reranker 精排，最后再与记忆合并。
         let mut kb_text_pool: Vec<SourceInfo> = Vec::new();
         let mut kb_mm_pool: Vec<SourceInfo> = Vec::new();
-
-        // 获取必要的上下文
-        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
-        let llm_manager = ctx
-            .llm_manager
-            .as_ref()
-            .ok_or("LLM manager not available")?;
 
         // ========== 0. 预计算 query embedding（全局复用） ==========
         if ctx.is_cancelled() {
@@ -1053,12 +1183,16 @@ impl BuiltinRetrievalExecutor {
                 std::sync::Arc::clone(&lance_store),
                 std::sync::Arc::clone(llm_manager),
             );
+            let scoped_memory_folders = crate::memory::visible_scope_roots(
+                ctx.group_id.as_deref(),
+                ctx.group_name.as_deref(),
+            );
 
             let memory_top_k = (top_k / 2).max(3).min(10);
 
             let memory_result = if let Some(cancel_token) = ctx.cancellation_token() {
                 tokio::select! {
-                    res = memory_service.search_with_embedding(query, &shared_embedding, memory_top_k) => {
+                    res = memory_service.search_with_embedding_in_folder_paths(query, &shared_embedding, memory_top_k, &scoped_memory_folders) => {
                         res.map_err(|e| {
                             log::warn!("[BuiltinRetrievalExecutor] Unified memory search failed: {}", e);
                             e
@@ -1071,7 +1205,12 @@ impl BuiltinRetrievalExecutor {
                 }
             } else {
                 memory_service
-                    .search_with_embedding(query, &shared_embedding, memory_top_k)
+                    .search_with_embedding_in_folder_paths(
+                        query,
+                        &shared_embedding,
+                        memory_top_k,
+                        &scoped_memory_folders,
+                    )
                     .await
                     .map_err(|e| {
                         log::warn!(
@@ -1100,6 +1239,7 @@ impl BuiltinRetrievalExecutor {
                             "sourceType": "memory",
                             "noteId": r.note_id,
                             "folderPath": r.folder_path,
+                            "scope": r.scope,
                         })),
                     });
                 }

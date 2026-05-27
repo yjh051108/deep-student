@@ -13,6 +13,7 @@ use anyhow::Result;
 use tracing::{debug, info, warn};
 
 use super::audit_log::{MemoryOpSource, OpTimer};
+use super::scope::{self, MemoryScope};
 use super::service::MemoryService;
 use crate::llm_manager::LLMManager;
 
@@ -22,6 +23,7 @@ pub struct CandidateMemory {
     pub title: String,
     pub content: String,
     pub folder: Option<String>,
+    pub scope: MemoryScope,
 }
 
 pub struct MemoryAutoExtractor {
@@ -75,9 +77,38 @@ impl MemoryAutoExtractor {
         user_content: &str,
         assistant_content: &str,
     ) -> Result<usize> {
+        self.extract_and_store_in_folder(memory_service, user_content, assistant_content, None)
+            .await
+    }
+
+    pub async fn extract_and_store_in_folder(
+        &self,
+        memory_service: &MemoryService,
+        user_content: &str,
+        assistant_content: &str,
+        default_folder_path: Option<&str>,
+    ) -> Result<usize> {
+        self.extract_and_store_scoped(
+            memory_service,
+            user_content,
+            assistant_content,
+            default_folder_path,
+            Some(scope::GLOBAL_MEMORY_FOLDER),
+        )
+        .await
+    }
+
+    pub async fn extract_and_store_scoped(
+        &self,
+        memory_service: &MemoryService,
+        user_content: &str,
+        assistant_content: &str,
+        topic_folder_path: Option<&str>,
+        global_folder_path: Option<&str>,
+    ) -> Result<usize> {
         let pipeline_timer = OpTimer::start();
 
-        let existing_profile = memory_service.get_profile_summary().ok().flatten();
+        let existing_profile: Option<String> = None;
         let candidates = self
             .extract_candidates(user_content, assistant_content, existing_profile.as_deref())
             .await?;
@@ -92,14 +123,15 @@ impl MemoryAutoExtractor {
         let mut seen_keys: HashSet<String> = HashSet::new();
 
         for candidate in &candidates {
+            let base_folder = match candidate.scope {
+                MemoryScope::Global => global_folder_path,
+                MemoryScope::Topic => topic_folder_path,
+            };
+            let scoped_folder = base_folder
+                .map(|base| scope::join_memory_folder_paths(base, candidate.folder.as_deref()));
             let dedup_key = format!(
                 "{}|{}|{}",
-                candidate
-                    .folder
-                    .as_deref()
-                    .unwrap_or("")
-                    .trim()
-                    .to_lowercase(),
+                scoped_folder.as_deref().unwrap_or("").trim().to_lowercase(),
                 candidate.title.trim().to_lowercase(),
                 candidate.content.trim().to_lowercase(),
             );
@@ -112,7 +144,7 @@ impl MemoryAutoExtractor {
             }
             match memory_service
                 .write_smart_with_source(
-                    candidate.folder.as_deref(),
+                    scoped_folder.as_deref(),
                     &candidate.title,
                     &candidate.content,
                     MemoryOpSource::AutoExtract,
@@ -157,15 +189,6 @@ impl MemoryAutoExtractor {
             None,
         );
 
-        if stored_count > 0 {
-            if let Err(e) = memory_service.refresh_profile_summary() {
-                warn!(
-                    "[MemoryAutoExtractor] Profile refresh after batch store failed: {}",
-                    e
-                );
-            }
-        }
-
         info!(
             "[MemoryAutoExtractor] Pipeline complete: {}/{} candidates stored",
             stored_count,
@@ -205,6 +228,9 @@ impl MemoryAutoExtractor {
 6. 最多提取 5 条，宁缺毋滥
 7. **跳过已有记忆中已记录的事实**——只提取新增或更新的信息
 8. 如果对话中没有关于用户的新事实，返回空数组
+9. 必须为每条记忆选择 scope：
+   - "global"：跨课题长期有效的用户偏好、身份背景、稳定交流习惯、长期目标
+   - "topic"：只和当前课程/项目/论文/实验/资料/bug/学习进度相关的信息
 {existing_section}
 ## 对话内容
 
@@ -222,7 +248,7 @@ impl MemoryAutoExtractor {
 
 ## 输出格式（JSON 数组）
 [
-  {{"title": "关键词概括", "content": "一个简短陈述句", "folder": "分类路径"}},
+  {{"title": "关键词概括", "content": "一个简短陈述句", "folder": "分类路径", "scope": "global 或 topic"}},
   ...
 ]
 
@@ -279,10 +305,16 @@ impl MemoryAutoExtractor {
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.is_empty())
                     .map(|s| s.to_string());
+                let scope = item
+                    .get("scope")
+                    .and_then(|v| v.as_str())
+                    .map(|s| MemoryScope::from_arg(Some(s)).unwrap_or(MemoryScope::Topic))
+                    .unwrap_or(MemoryScope::Topic);
                 Some(CandidateMemory {
                     title,
                     content,
                     folder,
+                    scope,
                 })
             })
             .take(5)
@@ -353,6 +385,22 @@ impl MemoryAutoExtractor {
             }
         }
         None
+    }
+}
+
+fn join_memory_folder_paths(base: Option<&str>, child: Option<&str>) -> Option<String> {
+    let base = base.map(str::trim).filter(|s| !s.is_empty());
+    let child = child.map(str::trim).filter(|s| !s.is_empty());
+
+    match (base, child) {
+        (Some(base), Some(child)) => Some(format!(
+            "{}/{}",
+            base.trim_end_matches('/'),
+            child.trim_start_matches('/')
+        )),
+        (Some(base), None) => Some(base.to_string()),
+        (None, Some(child)) => Some(child.to_string()),
+        (None, None) => None,
     }
 }
 

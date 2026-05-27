@@ -17,8 +17,8 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 
 use super::executor::{ExecutionContext, ToolExecutor, ToolSensitivity};
+use super::resource_scope;
 use super::strip_tool_namespace;
-use crate::chat_v2::events::event_types;
 use crate::chat_v2::types::{ToolCall, ToolResultInfo};
 use crate::document_parser::DocumentParser;
 
@@ -231,6 +231,12 @@ impl XlsxToolExecutor {
             Some("xlsx"),
         )
         .map_err(|e| format!("VFS Blob 存储失败: {}", e))?;
+        let scoped_folder_id = resource_scope::resolve_scoped_folder_id_for_write(
+            ctx,
+            vfs_db,
+            None,
+            "xlsx_edit_cells",
+        )?;
 
         let vfs_file = VfsFileRepo::create_file_in_folder(
             vfs_db,
@@ -241,7 +247,7 @@ impl XlsxToolExecutor {
             Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
             Some(&blob.hash),
             None,
-            None,
+            scoped_folder_id.as_deref(),
         )
         .map_err(|e| format!("VFS 文件创建失败: {}", e))?;
 
@@ -252,6 +258,8 @@ impl XlsxToolExecutor {
             "file_name": file_name,
             "file_size": new_bytes.len(),
             "edits_made": edit_count,
+            "scope": if resource_scope::is_topic_scoped(ctx) { "topic" } else { "all" },
+            "folderId": scoped_folder_id,
             "message": format!("已编辑 {} 个单元格，保存为「{}」", edit_count, file_name),
         }))
     }
@@ -322,6 +330,12 @@ impl XlsxToolExecutor {
             Some("xlsx"),
         )
         .map_err(|e| format!("VFS Blob 存储失败: {}", e))?;
+        let scoped_folder_id = resource_scope::resolve_scoped_folder_id_for_write(
+            ctx,
+            vfs_db,
+            None,
+            "xlsx_replace_text",
+        )?;
 
         let vfs_file = VfsFileRepo::create_file_in_folder(
             vfs_db,
@@ -332,7 +346,7 @@ impl XlsxToolExecutor {
             Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
             Some(&blob.hash),
             None,
-            None,
+            scoped_folder_id.as_deref(),
         )
         .map_err(|e| format!("VFS 文件创建失败: {}", e))?;
 
@@ -343,6 +357,8 @@ impl XlsxToolExecutor {
             "file_name": file_name,
             "file_size": new_bytes.len(),
             "replacements_made": total_count,
+            "scope": if resource_scope::is_topic_scoped(ctx) { "topic" } else { "all" },
+            "folderId": scoped_folder_id,
             "message": format!("已完成 {} 个单元格替换，保存为「{}」", total_count, file_name),
         }))
     }
@@ -362,7 +378,7 @@ impl XlsxToolExecutor {
             .get("file_name")
             .and_then(|v| v.as_str())
             .unwrap_or("generated.xlsx");
-        let folder_id = call.arguments.get("folder_id").and_then(|v| v.as_str());
+        let folder_id = resource_scope::normalize_folder_arg(call.arguments.get("folder_id"));
 
         // 🔧 2026-02-16: spawn_blocking 防止同步生成阻塞 tokio 线程
         let spec = spec.clone();
@@ -384,6 +400,12 @@ impl XlsxToolExecutor {
             Some("xlsx"),
         )
         .map_err(|e| format!("VFS Blob 存储失败: {}", e))?;
+        let scoped_folder_id = resource_scope::resolve_scoped_folder_id_for_write(
+            ctx,
+            vfs_db,
+            folder_id,
+            "xlsx_create",
+        )?;
 
         let vfs_file = VfsFileRepo::create_file_in_folder(
             vfs_db,
@@ -394,7 +416,7 @@ impl XlsxToolExecutor {
             Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
             Some(&blob.hash),
             None,
-            folder_id,
+            scoped_folder_id.as_deref(),
         )
         .map_err(|e| format!("VFS 文件创建失败: {}", e))?;
 
@@ -404,6 +426,8 @@ impl XlsxToolExecutor {
             "file_name": file_name,
             "file_size": file_size,
             "format": "xlsx",
+            "scope": if resource_scope::is_topic_scoped(ctx) { "topic" } else { "all" },
+            "folderId": scoped_folder_id,
             "message": format!("已生成 XLSX 文件「{}」({}KB)", file_name, file_size / 1024),
         }))
     }
@@ -421,6 +445,7 @@ impl XlsxToolExecutor {
         let file = VfsFileRepo::get_file(vfs_db, resource_id)
             .map_err(|e| format!("VFS 查询失败: {}", e))?
             .ok_or_else(|| format!("文件不存在: {}", resource_id))?;
+        resource_scope::ensure_item_in_scope(ctx, vfs_db, resource_id, &file.id)?;
 
         if let Some(ref path) = file.original_path {
             if crate::unified_file_manager::is_virtual_uri(path) {

@@ -72,6 +72,7 @@ impl MemoryCompressor {
                     folder_path: String::new(),
                     chunk_text: compressed_text,
                     score: results.first().map(|r| r.score).unwrap_or(0.5),
+                    scope: None,
                     updated_at: None,
                 }]
             }

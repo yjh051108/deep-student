@@ -1,16 +1,14 @@
 // ==================== 恢复相关命令 ====================
 
 use std::path::PathBuf;
-use tauri::{Manager, State};
+use tauri::State;
 use tracing::{debug, error, info, warn};
 
 #[cfg(feature = "data_governance")]
 use super::audit::{AuditLog, AuditOperation};
-use super::schema_registry::DatabaseId;
-use crate::backup_common::BACKUP_GLOBAL_LIMITER;
 use crate::backup_job_manager::{
     BackupJobContext, BackupJobKind, BackupJobManagerState, BackupJobParams, BackupJobPhase,
-    BackupJobResultPayload, BackupJobStatus, BackupJobSummary,
+    BackupJobResultPayload,
 };
 
 #[cfg(feature = "data_governance")]

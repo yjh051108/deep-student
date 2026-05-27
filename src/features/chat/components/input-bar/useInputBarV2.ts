@@ -239,7 +239,9 @@ export function useInputBarV2(
       ? (selectedModels.length >= 2 && multiModelSelectEnabled
           ? selectedModels.map(m => m.id)
           : [selectedModels[selectedModels.length - 1].id])
-      : (state.chatParams.modelId ? [state.chatParams.modelId] : []);
+      : ((state.chatParams.model2OverrideId || state.chatParams.modelId)
+          ? [state.chatParams.model2OverrideId || state.chatParams.modelId].filter((id): id is string => !!id)
+          : []);
 
     let hasNonMultimodalTarget = false;
     let hasMultimodalTarget = false;

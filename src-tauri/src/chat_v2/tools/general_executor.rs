@@ -12,7 +12,6 @@ use serde_json::json;
 
 use super::executor::{ExecutionContext, ToolExecutor, ToolSensitivity};
 use super::is_canvas_tool;
-use crate::chat_v2::events::event_types;
 use crate::chat_v2::types::{ToolCall, ToolResultInfo};
 use crate::tools::ToolContext;
 

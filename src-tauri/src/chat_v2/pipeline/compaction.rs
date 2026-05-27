@@ -83,7 +83,7 @@ pub fn usable_tokens(config: Option<&ApiConfig>) -> u32 {
 ///
 /// 🔧 P1-W1 修复：不再把 `cached_tokens` 加到 prompt+completion（cache 是 prompt 的
 /// **子集**，不是额外量，相加会双计 → 阈值被提前触发）
-pub fn should_compact(ctx: &PipelineContext, config: Option<&ApiConfig>) -> bool {
+pub(crate) fn should_compact(ctx: &PipelineContext, config: Option<&ApiConfig>) -> bool {
     let usable = usable_tokens(config);
     if usable == 0 {
         return false;
@@ -114,7 +114,7 @@ pub fn should_compact(ctx: &PipelineContext, config: Option<&ApiConfig>) -> bool
 }
 
 /// 预估工具输出大小是否会让下一轮 prompt 溢出（检查点 B：工具执行后）
-pub fn should_compact_after_tool(
+pub(crate) fn should_compact_after_tool(
     ctx: &PipelineContext,
     config: Option<&ApiConfig>,
     predicted_tool_output_tokens: u32,

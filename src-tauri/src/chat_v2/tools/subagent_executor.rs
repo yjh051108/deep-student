@@ -138,7 +138,7 @@ impl SubagentExecutor {
                 "parent_session_id": ctx.session_id,
                 "subagent_depth": current_depth + 1,
             })),
-            group_id: None,
+            group_id: ctx.group_id.clone(),
             tags_hash: None,
             tags: None,
         };

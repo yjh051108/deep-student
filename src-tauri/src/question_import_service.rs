@@ -35,7 +35,7 @@ use crate::vfs::repos::{
     CreateQuestionParams, QuestionFilters, QuestionImage, VfsBlobRepo, VfsExamRepo, VfsQuestionRepo,
 };
 use crate::vfs::types::VfsCreateExamSheetParams;
-use crate::vlm_grounding_service::{VlmExtractedQuestion, VlmGroundingService, VlmPageAnalysis};
+use crate::vlm_grounding_service::{VlmGroundingService, VlmPageAnalysis};
 
 // ============================================================================
 // 公共类型

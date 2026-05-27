@@ -23,6 +23,121 @@ use super::{
     Result,
 };
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct PendingStreamToolCall {
+    id: String,
+    name: String,
+    accumulated_args: String,
+    start_emitted: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct ToolCallDeltaMerge {
+    start: Option<(String, String)>,
+    args_delta: Option<(String, String)>,
+    progress_marker: bool,
+}
+
+fn extract_stream_tool_args_fragment(tool_call_value: &Value, tool_name: &str) -> Option<String> {
+    tool_call_value
+        .get("function")
+        .and_then(|f| f.get("arguments"))
+        .and_then(|a| {
+            if let Some(s) = a.as_str() {
+                Some(s.to_string())
+            } else if a.is_null() {
+                None
+            } else {
+                warn!(
+                    "[llm_manager] 工具调用 arguments 不是字符串而是 JSON 值 (tool={}), 自动序列化",
+                    tool_name
+                );
+                Some(serde_json::to_string(a).unwrap_or_default())
+            }
+        })
+}
+
+fn merge_stream_tool_call_delta(
+    pending_tool_calls: &mut HashMap<i32, PendingStreamToolCall>,
+    tool_call_value: &Value,
+) -> Option<ToolCallDeltaMerge> {
+    let index = tool_call_value
+        .get("index")
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32)?;
+
+    let maybe_id = tool_call_value
+        .get("id")
+        .and_then(|v| v.as_str())
+        .map(|v| v.trim())
+        .filter(|v| !v.is_empty());
+    let maybe_name = tool_call_value
+        .get("function")
+        .and_then(|f| f.get("name"))
+        .and_then(|n| n.as_str())
+        .map(|v| v.trim())
+        .filter(|v| !v.is_empty());
+    let args_fragment_opt =
+        extract_stream_tool_args_fragment(tool_call_value, maybe_name.unwrap_or("unknown"));
+
+    if maybe_id.is_none() && maybe_name.is_none() && args_fragment_opt.is_none() {
+        return None;
+    }
+
+    let entry = pending_tool_calls
+        .entry(index)
+        .or_insert_with(|| PendingStreamToolCall {
+            id: maybe_id
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("stream_call_{}", index)),
+            name: maybe_name
+                .map(str::to_string)
+                .unwrap_or_else(|| "unknown".to_string()),
+            accumulated_args: String::new(),
+            start_emitted: false,
+        });
+
+    if let Some(id) = maybe_id {
+        if entry.id == id || entry.id.is_empty() || entry.id.starts_with("stream_call_") {
+            entry.id = id.to_string();
+        } else if !entry.start_emitted {
+            entry.id = id.to_string();
+        } else {
+            warn!(
+                "[llm_manager] 工具调用 index={} 收到不同 id='{}'，保留已发出的 id='{}'",
+                index, id, entry.id
+            );
+        }
+    }
+
+    if let Some(name) = maybe_name {
+        if entry.name == "unknown" || entry.name.is_empty() || entry.name == name {
+            entry.name = name.to_string();
+        } else {
+            warn!(
+                "[llm_manager] 工具调用 index={} 收到不同 name='{}'，使用最新工具名覆盖 '{}'",
+                index, name, entry.name
+            );
+            entry.name = name.to_string();
+        }
+    }
+
+    let mut result = ToolCallDeltaMerge::default();
+    if let Some(args_fragment) = args_fragment_opt {
+        let previous_len = entry.accumulated_args.len();
+        entry.accumulated_args.push_str(&args_fragment);
+        result.progress_marker = previous_len / 200 != entry.accumulated_args.len() / 200;
+        result.args_delta = Some((entry.id.clone(), args_fragment));
+    }
+
+    if !entry.start_emitted && !entry.name.trim().is_empty() && entry.name != "unknown" {
+        entry.start_emitted = true;
+        result.start = Some((entry.id.clone(), entry.name.clone()));
+    }
+
+    Some(result)
+}
+
 #[inline]
 fn is_qwen_config(config: &ApiConfig) -> bool {
     config
@@ -181,51 +296,63 @@ pub(crate) fn sanitize_request_body_for_audit(body: &serde_json::Value) -> serde
         body,
         crate::debug_log_service::DebugFilterLevel::Standard,
     );
-    redact_user_profile_blocks_in_value(&mut sanitized);
+    redact_memory_profile_blocks_in_value(&mut sanitized);
     redact_skill_instruction_blocks_in_value(&mut sanitized);
     sanitized
 }
 
-fn redact_user_profile_blocks_in_value(value: &mut serde_json::Value) {
+fn redact_memory_profile_blocks_in_value(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::String(s) => {
-            *s = redact_user_profile_blocks_in_text(s);
+            *s = redact_memory_profile_blocks_in_text(s);
         }
         serde_json::Value::Array(items) => {
             for v in items {
-                redact_user_profile_blocks_in_value(v);
+                redact_memory_profile_blocks_in_value(v);
             }
         }
         serde_json::Value::Object(map) => {
             for (_, v) in map {
-                redact_user_profile_blocks_in_value(v);
+                redact_memory_profile_blocks_in_value(v);
             }
         }
         _ => {}
     }
 }
 
-fn redact_user_profile_blocks_in_text(text: &str) -> String {
-    const START: &str = "<user_profile>";
-    const END: &str = "</user_profile>";
-    if !text.contains(START) {
+fn redact_memory_profile_blocks_in_text(text: &str) -> String {
+    let mut out = text.to_string();
+    for tag in [
+        "user_profile",
+        "global_memory_profile",
+        "topic_memory_profile",
+    ] {
+        out = redact_xml_tag_block(&out, tag);
+    }
+    out
+}
+
+fn redact_xml_tag_block(text: &str, tag: &str) -> String {
+    let start = format!("<{}>", tag);
+    let end = format!("</{}>", tag);
+    if !text.contains(&start) {
         return text.to_string();
     }
 
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
     loop {
-        let Some(start_idx) = rest.find(START) else {
+        let Some(start_idx) = rest.find(&start) else {
             out.push_str(rest);
             break;
         };
         out.push_str(&rest[..start_idx]);
-        let after_start = &rest[start_idx + START.len()..];
-        if let Some(end_rel) = after_start.find(END) {
-            out.push_str("<user_profile>[REDACTED]</user_profile>");
-            rest = &after_start[end_rel + END.len()..];
+        let after_start = &rest[start_idx + start.len()..];
+        if let Some(end_rel) = after_start.find(&end) {
+            out.push_str(&format!("<{}>[REDACTED]</{}>", tag, tag));
+            rest = &after_start[end_rel + end.len()..];
         } else {
-            out.push_str("[REDACTED:user_profile]");
+            out.push_str(&format!("[REDACTED:{}]", tag));
             break;
         }
     }
@@ -298,9 +425,19 @@ mod tests {
     #[test]
     fn test_redact_user_profile_blocks_in_text() {
         let input = "A<user_profile>\nsecret\n</user_profile>B";
-        let redacted = redact_user_profile_blocks_in_text(input);
+        let redacted = redact_memory_profile_blocks_in_text(input);
         assert!(redacted.contains("<user_profile>[REDACTED]</user_profile>"));
         assert!(!redacted.contains("secret"));
+    }
+
+    #[test]
+    fn test_redact_scoped_memory_profile_blocks_in_text() {
+        let input = "A<global_memory_profile>global secret</global_memory_profile><topic_memory_profile>topic secret</topic_memory_profile>B";
+        let redacted = redact_memory_profile_blocks_in_text(input);
+        assert!(redacted.contains("<global_memory_profile>[REDACTED]</global_memory_profile>"));
+        assert!(redacted.contains("<topic_memory_profile>[REDACTED]</topic_memory_profile>"));
+        assert!(!redacted.contains("global secret"));
+        assert!(!redacted.contains("topic secret"));
     }
 
     #[test]
@@ -368,10 +505,25 @@ mod tests {
     }
 
     #[test]
-    fn test_explicit_openai_responses_protocol_overrides_legacy_heuristics() {
+    fn test_explicit_openai_responses_protocol_requires_provider_support() {
         let config = ApiConfig {
             model_adapter: "general".to_string(),
             api_protocol: Some("openai_responses".to_string()),
+            model: "gpt-4o-mini".to_string(),
+            is_reasoning: false,
+            supports_reasoning: false,
+            ..Default::default()
+        };
+
+        assert!(!should_use_openai_responses_for_config(&config));
+    }
+
+    #[test]
+    fn test_explicit_openai_responses_protocol_works_when_declared_supported() {
+        let config = ApiConfig {
+            model_adapter: "general".to_string(),
+            api_protocol: Some("openai_responses".to_string()),
+            supports_openai_responses: Some(true),
             model: "gpt-4o-mini".to_string(),
             is_reasoning: false,
             supports_reasoning: false,
@@ -408,6 +560,21 @@ mod tests {
         };
 
         assert!(should_use_openai_responses_for_config(&config));
+    }
+
+    #[test]
+    fn test_openai_labeled_relay_stays_on_chat_completions_without_explicit_support() {
+        let config = ApiConfig {
+            model_adapter: "general".to_string(),
+            provider_type: Some("openai".to_string()),
+            base_url: "https://proxy.example.com/v1".to_string(),
+            model: "gpt-4o-mini".to_string(),
+            is_reasoning: false,
+            supports_reasoning: false,
+            ..Default::default()
+        };
+
+        assert!(!should_use_openai_responses_for_config(&config));
     }
 
     #[test]
@@ -483,6 +650,61 @@ mod tests {
 
         assert_eq!(config.reasoning_effort.as_deref(), Some("max"));
         assert_eq!(config.thinking_budget, Some(32768));
+    }
+
+    #[test]
+    fn test_stream_tool_delta_merge_preserves_name_across_empty_id_chunks() {
+        let mut pending_tool_calls: HashMap<i32, PendingStreamToolCall> = HashMap::new();
+
+        let first = merge_stream_tool_call_delta(
+            &mut pending_tool_calls,
+            &json!({
+                "index": 0,
+                "id": "call_1",
+                "function": {
+                    "name": "mcp_load_skills",
+                    "arguments": ""
+                }
+            }),
+        )
+        .expect("first tool delta should be accepted");
+        assert_eq!(
+            first.start,
+            Some(("call_1".to_string(), "mcp_load_skills".to_string()))
+        );
+
+        let empty_repeat = merge_stream_tool_call_delta(
+            &mut pending_tool_calls,
+            &json!({
+                "index": 0,
+                "id": "call_1",
+                "function": {}
+            }),
+        )
+        .expect("repeated id-only tool delta should be accepted");
+        assert!(empty_repeat.start.is_none());
+        assert_eq!(
+            pending_tool_calls.get(&0).map(|call| call.name.as_str()),
+            Some("mcp_load_skills")
+        );
+
+        merge_stream_tool_call_delta(
+            &mut pending_tool_calls,
+            &json!({
+                "index": 0,
+                "function": {
+                    "arguments": "{\"skill_ids\":[\"knowledge-retrieval\"]}"
+                }
+            }),
+        );
+
+        let tool_call = pending_tool_calls.get(&0).expect("pending tool call");
+        assert_eq!(tool_call.id, "call_1");
+        assert_eq!(tool_call.name, "mcp_load_skills");
+        assert_eq!(
+            tool_call.accumulated_args,
+            "{\"skill_ids\":[\"knowledge-retrieval\"]}"
+        );
     }
 
     #[test]
@@ -744,7 +966,6 @@ impl LLMManager {
 
         // 记录开始时间和统计信息
         let _start_instant = std::time::Instant::now();
-        let mut request_bytes = 0usize;
         let _response_bytes = 0usize;
         let _chunk_count = 0usize;
 
@@ -1516,11 +1737,6 @@ impl LLMManager {
         // 注入阶段可能修改 messages，此处确保请求体携带最新副本
         request_body["messages"] = serde_json::Value::Array(messages.clone());
 
-        // 计算请求体大小
-        request_bytes = serde_json::to_string(&request_body)
-            .unwrap_or_default()
-            .len();
-
         // 简化：不再在此处估算输入token
 
         apply_generation_params(&mut request_body, &config);
@@ -1749,8 +1965,7 @@ impl LLMManager {
         let mut captured_usage: Option<serde_json::Value> = None;
 
         // 工具调用聚合状态 - 用于处理流式分块的工具调用
-        let mut pending_tool_calls: std::collections::HashMap<i32, (String, String, String)> =
-            std::collections::HashMap::new(); // index -> (id, name, accumulated_args)
+        let mut pending_tool_calls: HashMap<i32, PendingStreamToolCall> = HashMap::new();
 
         let mut stream_ended = false;
         // 初始化SSE行缓冲器
@@ -1938,122 +2153,30 @@ impl LLMManager {
                                 }
                                 crate::providers::StreamEvent::ToolCall(tool_call_value) => {
                                     // 聚合分块的工具调用（不再发送原始分块事件）
-                                    if let Some(index) = tool_call_value
-                                        .get("index")
-                                        .and_then(|v| v.as_i64())
-                                        .map(|v| v as i32)
-                                    {
-                                        let maybe_id = tool_call_value
-                                            .get("id")
-                                            .and_then(|v| v.as_str())
-                                            .map(|v| v.trim())
-                                            .filter(|v| !v.is_empty());
-                                        let maybe_name = tool_call_value
-                                            .get("function")
-                                            .and_then(|f| f.get("name"))
-                                            .and_then(|n| n.as_str())
-                                            .map(|v| v.trim())
-                                            .filter(|v| !v.is_empty());
-                                        if let Some(id) = maybe_id {
-                                            // 这是一个新的工具调用的开始（有完整的id）
-                                            let name = maybe_name.unwrap_or("unknown");
-                                            // 🔧 修复：某些 OpenAI 兼容 API 返回 arguments 为 JSON 对象而非字符串
-                                            // 此时 as_str() 返回 None，导致参数被静默丢弃为 ""
-                                            let args = tool_call_value
-                                                .get("function")
-                                                .and_then(|f| f.get("arguments"))
-                                                .map(|a| {
-                                                    if let Some(s) = a.as_str() {
-                                                        s.to_string()
-                                                    } else if a.is_null() {
-                                                        String::new()
-                                                    } else {
-                                                        // arguments 是 JSON 对象/数组，序列化为字符串
-                                                        warn!("[llm_manager] 工具调用 arguments 不是字符串而是 JSON 值 (tool={}), 自动序列化", name);
-                                                        serde_json::to_string(a).unwrap_or_default()
-                                                    }
-                                                })
-                                                .unwrap_or_default();
-
-                                            pending_tool_calls.insert(
-                                                index,
-                                                (id.to_string(), name.to_string(), args),
-                                            );
-                                            // 🆕 2026-01-15: 工具调用参数开始累积时通知前端
-                                            // 让前端立即显示"正在准备工具调用"状态
+                                    if let Some(merged) = merge_stream_tool_call_delta(
+                                        &mut pending_tool_calls,
+                                        &tool_call_value,
+                                    ) {
+                                        if let Some((id, name)) = merged.start {
                                             if let Some(h) = self.get_hook(stream_event).await {
-                                                h.on_tool_call_start(id, name);
+                                                h.on_tool_call_start(&id, &name);
                                             }
                                             // 简化日志：工具调用开始时输出一次
                                             print!("🔧");
                                             use std::io::Write;
                                             let _ = std::io::stdout().flush();
-                                        } else if let Some((id, mut name, mut accumulated_args)) =
-                                            pending_tool_calls.get(&index).cloned()
-                                        {
-                                            // 这是工具调用的后续块（没有id，只有arguments片段）
-                                            // 🔧 修复：同样处理 arguments 为 JSON 对象的情况
-                                            let args_fragment_opt = tool_call_value
-                                                .get("function")
-                                                .and_then(|f| f.get("arguments"))
-                                                .and_then(|a| {
-                                                    if let Some(s) = a.as_str() {
-                                                        Some(s.to_string())
-                                                    } else if a.is_null() {
-                                                        None
-                                                    } else {
-                                                        Some(
-                                                            serde_json::to_string(a)
-                                                                .unwrap_or_default(),
-                                                        )
-                                                    }
-                                                });
-                                            if let Some(args_fragment) = args_fragment_opt {
-                                                if name == "unknown" {
-                                                    if let Some(better_name) = maybe_name {
-                                                        name = better_name.to_string();
-                                                    }
-                                                }
-                                                accumulated_args.push_str(&args_fragment);
-                                                pending_tool_calls.insert(
-                                                    index,
-                                                    (id.clone(), name, accumulated_args.clone()),
-                                                );
-                                                // 🆕 转发 args delta 给前端实时预览
-                                                if let Some(h) = self.get_hook(stream_event).await {
-                                                    h.on_tool_call_args_delta(&id, &args_fragment);
-                                                }
-                                                // 简化日志：每 200 字符输出一个 / 代表累积
-                                                if accumulated_args.len() % 200
-                                                    < args_fragment.len()
-                                                {
-                                                    print!("/");
-                                                    use std::io::Write;
-                                                    let _ = std::io::stdout().flush();
-                                                }
-                                            }
-                                        } else if let Some(name) = maybe_name {
-                                            let args = tool_call_value
-                                                .get("function")
-                                                .and_then(|f| f.get("arguments"))
-                                                .map(|a| {
-                                                    if let Some(s) = a.as_str() {
-                                                        s.to_string()
-                                                    } else if a.is_null() {
-                                                        String::new()
-                                                    } else {
-                                                        serde_json::to_string(a).unwrap_or_default()
-                                                    }
-                                                })
-                                                .unwrap_or_default();
-                                            let synthetic_id = format!("stream_call_{}", index);
-                                            pending_tool_calls.insert(
-                                                index,
-                                                (synthetic_id.clone(), name.to_string(), args),
-                                            );
+                                        }
+                                        if let Some((id, args_fragment)) = merged.args_delta {
+                                            // 🆕 转发 args delta 给前端实时预览
                                             if let Some(h) = self.get_hook(stream_event).await {
-                                                h.on_tool_call_start(&synthetic_id, name);
+                                                h.on_tool_call_args_delta(&id, &args_fragment);
                                             }
+                                        }
+                                        // 简化日志：每 200 字符输出一个 / 代表累积
+                                        if merged.progress_marker {
+                                            print!("/");
+                                            use std::io::Write;
+                                            let _ = std::io::stdout().flush();
                                         }
                                     }
                                 }
@@ -2097,24 +2220,24 @@ impl LLMManager {
                                     if !pending_tool_calls.is_empty() {
                                         debug!("工具调用序列结束");
                                     }
-                                    for (_index, (id, name, accumulated_args)) in
-                                        pending_tool_calls.iter()
-                                    {
-                                        if name.trim().is_empty() || name == "unknown" {
+                                    for (_index, tool_call) in pending_tool_calls.iter() {
+                                        if tool_call.name.trim().is_empty()
+                                            || tool_call.name == "unknown"
+                                        {
                                             warn!(
                                                 "[llm_manager] 跳过 malformed tool call finalize: id='{}', name='{}', args_len={}",
-                                                id,
-                                                name,
-                                                accumulated_args.len()
+                                                tool_call.id,
+                                                tool_call.name,
+                                                tool_call.accumulated_args.len()
                                             );
                                             continue;
                                         }
                                         let complete_tool_call = serde_json::json!({
-                                            "id": id,
+                                            "id": &tool_call.id,
                                             "type": "function",
                                             "function": {
-                                                "name": name,
-                                                "arguments": accumulated_args
+                                                "name": &tool_call.name,
+                                                "arguments": &tool_call.accumulated_args
                                             }
                                         });
 
@@ -2123,18 +2246,22 @@ impl LLMManager {
                                                 captured_tool_calls.push(tc);
                                             }
                                             Err(e) => {
-                                                warn!("[llm_manager] 工具调用解析失败: {}, args_len={}", e, accumulated_args.len());
+                                                warn!(
+                                                    "[llm_manager] 工具调用解析失败: {}, args_len={}",
+                                                    e,
+                                                    tool_call.accumulated_args.len()
+                                                );
                                                 // 构造带截断错误标记的 ToolCall，让 pipeline 层反馈给 LLM 重试
                                                 captured_tool_calls.push(crate::models::ToolCall {
-                                                    id: id.clone(),
-                                                    tool_name: name.clone(),
+                                                    id: tool_call.id.clone(),
+                                                    tool_name: tool_call.name.clone(),
                                                     args_json: json!({
                                                         "_truncation_error": true,
                                                         "_error_message": format!(
                                                             "工具调用参数 JSON 被截断（已生成 {} 字符但未完成）。原因：模型输出 token 达到上限。",
-                                                            accumulated_args.len()
+                                                            tool_call.accumulated_args.len()
                                                         ),
-                                                        "_args_len": accumulated_args.len(),
+                                                        "_args_len": tool_call.accumulated_args.len(),
                                                     }),
                                                 });
                                             }
@@ -2292,22 +2419,22 @@ impl LLMManager {
                 "[llm_manager] Finalizing {} pending tool calls after stream end (no Done event received)",
                 pending_tool_calls.len()
             );
-            for (_index, (id, name, accumulated_args)) in pending_tool_calls.iter() {
-                if name.trim().is_empty() || name == "unknown" {
+            for (_index, tool_call) in pending_tool_calls.iter() {
+                if tool_call.name.trim().is_empty() || tool_call.name == "unknown" {
                     warn!(
                         "[llm_manager] 跳过 malformed tool call fallback finalize: id='{}', name='{}', args_len={}",
-                        id,
-                        name,
-                        accumulated_args.len()
+                        tool_call.id,
+                        tool_call.name,
+                        tool_call.accumulated_args.len()
                     );
                     continue;
                 }
                 let complete_tool_call = serde_json::json!({
-                    "id": id,
+                    "id": &tool_call.id,
                     "type": "function",
                     "function": {
-                        "name": name,
-                        "arguments": accumulated_args
+                        "name": &tool_call.name,
+                        "arguments": &tool_call.accumulated_args
                     }
                 });
 
@@ -2319,18 +2446,18 @@ impl LLMManager {
                         warn!(
                             "[llm_manager] 工具调用解析失败(fallback): {}, args_len={}",
                             e,
-                            accumulated_args.len()
+                            tool_call.accumulated_args.len()
                         );
                         captured_tool_calls.push(crate::models::ToolCall {
-                            id: id.clone(),
-                            tool_name: name.clone(),
+                            id: tool_call.id.clone(),
+                            tool_name: tool_call.name.clone(),
                             args_json: json!({
                                 "_truncation_error": true,
                                 "_error_message": format!(
                                     "工具调用参数 JSON 被截断（已生成 {} 字符但未完成）。原因：模型输出 token 达到上限。",
-                                    accumulated_args.len()
+                                    tool_call.accumulated_args.len()
                                 ),
-                                "_args_len": accumulated_args.len(),
+                                "_args_len": tool_call.accumulated_args.len(),
                             }),
                         });
                     }
@@ -3105,8 +3232,7 @@ impl LLMManager {
         let mut captured_usage: Option<serde_json::Value> = None;
 
         // 工具调用聚合状态 - 用于处理流式分块的工具调用
-        let mut pending_tool_calls: std::collections::HashMap<i32, (String, String, String)> =
-            std::collections::HashMap::new(); // index -> (id, name, accumulated_args)
+        let mut pending_tool_calls: HashMap<i32, PendingStreamToolCall> = HashMap::new();
         let mut stream_ended = false;
         // 初始化SSE行缓冲器
         let mut sse_buffer = crate::utils::sse_buffer::SseLineBuffer::new();
@@ -3195,108 +3321,21 @@ impl LLMManager {
                                 }
                                 crate::providers::StreamEvent::ToolCall(tool_call_value) => {
                                     // 聚合分块的工具调用（不再发送原始分块事件）
-                                    if let Some(index) = tool_call_value
-                                        .get("index")
-                                        .and_then(|v| v.as_i64())
-                                        .map(|v| v as i32)
-                                    {
-                                        let maybe_id = tool_call_value
-                                            .get("id")
-                                            .and_then(|v| v.as_str())
-                                            .map(|v| v.trim())
-                                            .filter(|v| !v.is_empty());
-                                        let maybe_name = tool_call_value
-                                            .get("function")
-                                            .and_then(|f| f.get("name"))
-                                            .and_then(|n| n.as_str())
-                                            .map(|v| v.trim())
-                                            .filter(|v| !v.is_empty());
-                                        if let Some(id) = maybe_id {
-                                            // 这是一个新的工具调用的开始（有完整的id）
-                                            let name = maybe_name.unwrap_or("unknown");
-                                            // 🔧 修复：某些 OpenAI 兼容 API 返回 arguments 为 JSON 对象而非字符串
-                                            let args = tool_call_value
-                                                .get("function")
-                                                .and_then(|f| f.get("arguments"))
-                                                .map(|a| {
-                                                    if let Some(s) = a.as_str() {
-                                                        s.to_string()
-                                                    } else if a.is_null() {
-                                                        String::new()
-                                                    } else {
-                                                        warn!("[llm_manager] 工具调用 arguments 不是字符串而是 JSON 值 (tool={}), 自动序列化", name);
-                                                        serde_json::to_string(a).unwrap_or_default()
-                                                    }
-                                                })
-                                                .unwrap_or_default();
-
-                                            pending_tool_calls.insert(
-                                                index,
-                                                (id.to_string(), name.to_string(), args),
-                                            );
+                                    if let Some(merged) = merge_stream_tool_call_delta(
+                                        &mut pending_tool_calls,
+                                        &tool_call_value,
+                                    ) {
+                                        if let Some((_id, _name)) = merged.start {
                                             // 简化日志：工具调用开始时输出一次
                                             print!("🔧");
                                             use std::io::Write;
                                             let _ = std::io::stdout().flush();
-                                        } else if let Some((id, mut name, mut accumulated_args)) =
-                                            pending_tool_calls.get(&index).cloned()
-                                        {
-                                            // 这是工具调用的后续块（没有id，只有arguments片段）
-                                            // 🔧 修复：同样处理 arguments 为 JSON 对象的情况
-                                            let args_fragment_opt = tool_call_value
-                                                .get("function")
-                                                .and_then(|f| f.get("arguments"))
-                                                .and_then(|a| {
-                                                    if let Some(s) = a.as_str() {
-                                                        Some(s.to_string())
-                                                    } else if a.is_null() {
-                                                        None
-                                                    } else {
-                                                        Some(
-                                                            serde_json::to_string(a)
-                                                                .unwrap_or_default(),
-                                                        )
-                                                    }
-                                                });
-                                            if let Some(args_fragment) = args_fragment_opt {
-                                                if name == "unknown" {
-                                                    if let Some(better_name) = maybe_name {
-                                                        name = better_name.to_string();
-                                                    }
-                                                }
-                                                accumulated_args.push_str(&args_fragment);
-                                                pending_tool_calls.insert(
-                                                    index,
-                                                    (id, name, accumulated_args.clone()),
-                                                );
-                                                // 简化日志：每 200 字符输出一个 / 代表累积
-                                                if accumulated_args.len() % 200
-                                                    < args_fragment.len()
-                                                {
-                                                    print!("/");
-                                                    use std::io::Write;
-                                                    let _ = std::io::stdout().flush();
-                                                }
-                                            }
-                                        } else if let Some(name) = maybe_name {
-                                            let args = tool_call_value
-                                                .get("function")
-                                                .and_then(|f| f.get("arguments"))
-                                                .map(|a| {
-                                                    if let Some(s) = a.as_str() {
-                                                        s.to_string()
-                                                    } else if a.is_null() {
-                                                        String::new()
-                                                    } else {
-                                                        serde_json::to_string(a).unwrap_or_default()
-                                                    }
-                                                })
-                                                .unwrap_or_default();
-                                            let synthetic_id = format!("stream_call_{}", index);
-                                            pending_tool_calls.insert(
-                                                index,
-                                                (synthetic_id, name.to_string(), args),
-                                            );
+                                        }
+                                        // 简化日志：每 200 字符输出一个 / 代表累积
+                                        if merged.progress_marker {
+                                            print!("/");
+                                            use std::io::Write;
+                                            let _ = std::io::stdout().flush();
                                         }
                                     }
                                 }
@@ -3336,24 +3375,24 @@ impl LLMManager {
                                     if !pending_tool_calls.is_empty() {
                                         debug!("工具调用序列结束");
                                     }
-                                    for (_index, (id, name, accumulated_args)) in
-                                        pending_tool_calls.iter()
-                                    {
-                                        if name.trim().is_empty() || name == "unknown" {
+                                    for (_index, tool_call) in pending_tool_calls.iter() {
+                                        if tool_call.name.trim().is_empty()
+                                            || tool_call.name == "unknown"
+                                        {
                                             warn!(
                                                 "[llm_manager] 跳过 malformed tool call finalize: id='{}', name='{}', args_len={}",
-                                                id,
-                                                name,
-                                                accumulated_args.len()
+                                                tool_call.id,
+                                                tool_call.name,
+                                                tool_call.accumulated_args.len()
                                             );
                                             continue;
                                         }
                                         let complete_tool_call = serde_json::json!({
-                                            "id": id,
+                                            "id": &tool_call.id,
                                             "type": "function",
                                             "function": {
-                                                "name": name,
-                                                "arguments": accumulated_args
+                                                "name": &tool_call.name,
+                                                "arguments": &tool_call.accumulated_args
                                             }
                                         });
 
@@ -3362,18 +3401,22 @@ impl LLMManager {
                                                 captured_tool_calls.push(tc);
                                             }
                                             Err(e) => {
-                                                warn!("[llm_manager] 工具调用解析失败: {}, args_len={}", e, accumulated_args.len());
+                                                warn!(
+                                                    "[llm_manager] 工具调用解析失败: {}, args_len={}",
+                                                    e,
+                                                    tool_call.accumulated_args.len()
+                                                );
                                                 // 构造带截断错误标记的 ToolCall，让 pipeline 层反馈给 LLM 重试
                                                 captured_tool_calls.push(crate::models::ToolCall {
-                                                    id: id.clone(),
-                                                    tool_name: name.clone(),
+                                                    id: tool_call.id.clone(),
+                                                    tool_name: tool_call.name.clone(),
                                                     args_json: json!({
                                                         "_truncation_error": true,
                                                         "_error_message": format!(
                                                             "工具调用参数 JSON 被截断（已生成 {} 字符但未完成）。原因：模型输出 token 达到上限。",
-                                                            accumulated_args.len()
+                                                            tool_call.accumulated_args.len()
                                                         ),
-                                                        "_args_len": accumulated_args.len(),
+                                                        "_args_len": tool_call.accumulated_args.len(),
                                                     }),
                                                 });
                                             }
@@ -4485,7 +4528,7 @@ impl LLMManager {
 
     // === 无系统提示的简化模型二调用 ===
     /// 直接使用用户提供的 prompt，不附加任何系统提示，适用于严格格式输出的任务（如批量分支选择 / 精确标签映射）。
-    pub async fn call_model2_raw_prompt(
+    pub(crate) async fn call_model2_raw_prompt(
         &self,
         user_prompt: &str,
         image_payloads: Option<Vec<ImagePayload>>,
@@ -4761,7 +4804,7 @@ impl LLMManager {
     }
 
     /// 使用 OCR 模型调用，适用于多模态索引的 OCR 任务
-    pub async fn call_ocr_model_raw_prompt(
+    pub(crate) async fn call_ocr_model_raw_prompt(
         &self,
         user_prompt: &str,
         image_payloads: Option<Vec<ImagePayload>>,

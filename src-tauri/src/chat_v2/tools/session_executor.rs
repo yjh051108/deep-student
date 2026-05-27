@@ -38,7 +38,6 @@ use super::arg_utils::{get_json_array_arg, get_string_array_arg};
 use super::executor::{ExecutionContext, ToolExecutor, ToolSensitivity};
 use super::strip_tool_namespace;
 use crate::chat_v2::database::ChatV2Database;
-use crate::chat_v2::events::event_types;
 use crate::chat_v2::repo::ChatV2Repo;
 use crate::chat_v2::types::{ChatSession, PersistStatus, SessionGroup, ToolCall, ToolResultInfo};
 

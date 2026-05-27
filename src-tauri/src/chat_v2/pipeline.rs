@@ -87,18 +87,10 @@ pub mod tool_loop;
 pub mod variant_adapter;
 
 pub use compaction::*;
-pub use constants::*;
-pub use helpers::*;
-pub use history::*;
+pub(crate) use constants::*;
+pub(crate) use helpers::*;
 pub use llm_adapter::*;
-pub use multi_variant::*;
-pub use persistence::*;
-pub use prompt::*;
-pub use retrieval::*;
-pub use summary::*;
-pub use token_resources::*;
-pub use tool_loop::*;
-pub use variant_adapter::*;
+pub(crate) use variant_adapter::*;
 
 // ============================================================
 // 流水线主结构
@@ -339,6 +331,121 @@ impl ChatV2Pipeline {
         Self::skill_allows_tool(tool_name, allowed)
     }
 
+    fn enrich_group_scope_options(&self, request: &mut SendMessageRequest) -> ChatV2Result<()> {
+        let options = request.options.get_or_insert_with(Default::default);
+
+        options.group_id = options.group_id.as_ref().and_then(|id| {
+            let trimmed = id.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+        options.group_name = options.group_name.as_ref().and_then(|name| {
+            let trimmed = name.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+        if let Some(ids) = options.group_pinned_resource_ids.take() {
+            let normalized: Vec<String> = ids
+                .into_iter()
+                .filter_map(|id| {
+                    let trimmed = id.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    }
+                })
+                .collect();
+            if !normalized.is_empty() {
+                options.group_pinned_resource_ids = Some(normalized);
+            }
+        }
+
+        let mut group_id = options.group_id.clone();
+        if group_id.is_none() {
+            let conn = self.db.get_conn_safe()?;
+            if let Some(session) = ChatV2Repo::get_session_with_conn(&conn, &request.session_id)? {
+                group_id = session.group_id;
+            }
+        }
+
+        let Some(group_id) = group_id else {
+            return Ok(());
+        };
+
+        let has_topic_folder = options
+            .group_pinned_resource_ids
+            .as_ref()
+            .map(|ids| ids.iter().any(|id| id.trim().starts_with("fld_")))
+            .unwrap_or(false);
+        let needs_group_load = options.group_name.is_none() || !has_topic_folder;
+        options.group_id = Some(group_id.clone());
+        if !needs_group_load {
+            return Ok(());
+        }
+
+        let conn = self.db.get_conn_safe()?;
+        let Some(mut group) = ChatV2Repo::get_group_with_conn(&conn, &group_id)? else {
+            log::warn!(
+                "[ChatV2::pipeline] Session {} references missing group {}; continuing without group resource scope fallback",
+                request.session_id,
+                group_id
+            );
+            return Ok(());
+        };
+
+        if group.persist_status != crate::chat_v2::types::PersistStatus::Active {
+            log::warn!(
+                "[ChatV2::pipeline] Session {} references non-active group {}; continuing with stored scope only",
+                request.session_id,
+                group_id
+            );
+            options.group_name.get_or_insert(group.name);
+            options
+                .group_pinned_resource_ids
+                .get_or_insert(group.pinned_resource_ids);
+            return Ok(());
+        }
+
+        if let Some(vfs_db) = &self.vfs_db {
+            match crate::chat_v2::handlers::group_handlers::ensure_group_folder(
+                vfs_db.as_ref(),
+                &group.name,
+                group.pinned_resource_ids.clone(),
+            ) {
+                Ok(next_pinned) => {
+                    if next_pinned != group.pinned_resource_ids {
+                        group.pinned_resource_ids = next_pinned;
+                        ChatV2Repo::update_group_with_conn(&conn, &group)?;
+                        log::info!(
+                            "[ChatV2::pipeline] Ensured topic resource folder for group {} ({})",
+                            group.id,
+                            group.name
+                        );
+                    }
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[ChatV2::pipeline] Failed to ensure topic resource folder for group {}: {}",
+                        group_id,
+                        e
+                    );
+                }
+            }
+        }
+
+        options.group_id = Some(group.id);
+        options.group_name = Some(group.name);
+        options.group_pinned_resource_ids = Some(group.pinned_resource_ids);
+        Ok(())
+    }
+
     /// 执行消息发送流水线
     ///
     /// ## 流程
@@ -370,6 +477,8 @@ impl ChatV2Pipeline {
             "[ChatV2::pipeline] Feature flags: {}",
             feature_flags::get_flags_summary()
         );
+
+        self.enrich_group_scope_options(&mut request)?;
 
         // === 多变体模式检查 ===
         // 如果 parallel_model_ids 有 2+ 个模型，走多变体执行路径

@@ -53,7 +53,6 @@ use super::handler_utils::{
     list_unassigned_translations,
     mindmap_to_dstu_node,
     note_to_dstu_node,
-    parse_timestamp,
     purge_resource_by_type,
     restore_resource_by_type,
     restore_resource_by_type_with_conn,
@@ -1282,7 +1281,7 @@ pub async fn dstu_update(
     // 根据类型路由到对应 Repo
     let node = match resource_type.as_str() {
         "notes" | "note" => {
-            let mut updated_note = match VfsNoteRepo::update_note(
+            let updated_note = match VfsNoteRepo::update_note(
                 &vfs_db,
                 &id,
                 VfsUpdateNoteParams {
@@ -1588,7 +1587,7 @@ pub async fn dstu_rename(
     let node = match resource_type.as_str() {
         "notes" => {
             // 更新笔记标题
-            let mut updated_note = match VfsNoteRepo::update_note(
+            let updated_note = match VfsNoteRepo::update_note(
                 &vfs_db,
                 &id,
                 VfsUpdateNoteParams {

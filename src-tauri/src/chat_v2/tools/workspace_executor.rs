@@ -7,7 +7,6 @@ use tauri::Emitter;
 
 use super::executor::{ExecutionContext, ToolExecutor, ToolSensitivity};
 use super::strip_tool_namespace;
-use crate::chat_v2::events::event_types;
 use crate::chat_v2::types::{ToolCall, ToolResultInfo};
 use crate::chat_v2::workspace::{
     AgentRole, AgentStatus, DocumentType, MessageType, SubagentTaskData, WorkspaceCoordinator,
@@ -37,6 +36,57 @@ pub struct WorkspaceToolExecutor {
 impl WorkspaceToolExecutor {
     pub fn new(coordinator: Arc<WorkspaceCoordinator>) -> Self {
         Self { coordinator }
+    }
+
+    fn explicit_workspace_id(args: &Value) -> Option<String> {
+        args.get("workspace_id")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(str::to_string)
+    }
+
+    fn workspace_id_from_chat_db(ctx: &ExecutionContext) -> Option<String> {
+        let db = ctx.chat_v2_db.as_ref()?;
+        let conn = db.get_conn_safe().ok()?;
+
+        if let Ok(Some(workspace_id)) = conn.query_row(
+            "SELECT json_extract(metadata_json, '$.workspace_id')
+             FROM chat_v2_sessions
+             WHERE id = ?1",
+            rusqlite::params![ctx.session_id],
+            |row| row.get::<_, Option<String>>(0),
+        ) {
+            let trimmed = workspace_id.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+
+        conn.query_row(
+            "SELECT workspace_id
+             FROM workspace_index
+             WHERE creator_session_id = ?1
+               AND COALESCE(deleted_at, '') = ''
+               AND status NOT IN ('completed', 'archived', 'deleted')
+             ORDER BY updated_at DESC
+             LIMIT 1",
+            rusqlite::params![ctx.session_id],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .map(|id| id.trim().to_string())
+        .filter(|id| !id.is_empty())
+    }
+
+    fn resolve_workspace_id(&self, args: &Value, ctx: &ExecutionContext) -> Result<String, String> {
+        Self::explicit_workspace_id(args)
+            .or_else(|| ctx.workspace_id.clone())
+            .or_else(|| Self::workspace_id_from_chat_db(ctx))
+            .ok_or_else(|| {
+                "当前会话还没有关联工作区。请先调用 builtin-workspace_create 创建工作区；不要向用户索要 workspace_id。"
+                    .to_string()
+            })
     }
 
     /// 从工具名称中去除前缀
@@ -93,10 +143,7 @@ impl WorkspaceToolExecutor {
         args: &Value,
         ctx: &ExecutionContext,
     ) -> Result<Value, String> {
-        let workspace_id = args
-            .get("workspace_id")
-            .and_then(|v| v.as_str())
-            .ok_or("workspace_id is required")?;
+        let workspace_id = self.resolve_workspace_id(args, ctx)?;
         let skill_id = args
             .get("skill_id")
             .and_then(|v| v.as_str())
@@ -114,7 +161,7 @@ impl WorkspaceToolExecutor {
             _ => AgentRole::Worker,
         };
 
-        self.ensure_workspace_member(workspace_id, &ctx.session_id)?;
+        self.ensure_workspace_member(&workspace_id, &ctx.session_id)?;
 
         // 🔧 P18: 提前判断是否为 Worker（用于 system_prompt 生成）
         let is_worker = matches!(role, AgentRole::Worker);
@@ -139,7 +186,7 @@ impl WorkspaceToolExecutor {
         // 构建 Agent 的初始 System Prompt
         let workspace_info = self
             .coordinator
-            .get_workspace(workspace_id)?
+            .get_workspace(&workspace_id)?
             .ok_or_else(|| format!("Workspace not found: {}", workspace_id))?;
 
         let workspace_name = workspace_info
@@ -237,7 +284,7 @@ impl WorkspaceToolExecutor {
                 "system_prompt": system_prompt,
                 "recommended_models": recommended_models,
             })),
-            group_id: None,
+            group_id: ctx.group_id.clone(),
             tags_hash: None,
             tags: None,
         };
@@ -248,7 +295,7 @@ impl WorkspaceToolExecutor {
         // 2. 在工作区中注册 Agent 元数据
         // 注意：MCP 工具调用时 system_prompt 已存储在 session metadata 中
         let agent = self.coordinator.register_agent(
-            workspace_id,
+            &workspace_id,
             &agent_session_id,
             role,
             skill_id.clone(),
@@ -259,7 +306,7 @@ impl WorkspaceToolExecutor {
         let has_initial_task = initial_task.is_some();
         if let Some(ref task) = initial_task {
             self.coordinator.send_message(
-                workspace_id,
+                &workspace_id,
                 &ctx.session_id,         // 发送者是创建者
                 Some(&agent_session_id), // 目标是新 Agent
                 MessageType::Task,
@@ -268,9 +315,9 @@ impl WorkspaceToolExecutor {
 
             // 🆕 P1 修复：持久化 Worker 任务到数据库（支持重启恢复）
             if is_worker {
-                if let Ok(task_manager) = self.coordinator.get_task_manager(workspace_id) {
+                if let Ok(task_manager) = self.coordinator.get_task_manager(&workspace_id) {
                     let task_data = SubagentTaskData::new(
-                        workspace_id.to_string(),
+                        workspace_id.clone(),
                         agent_session_id.clone(),
                         skill_id.clone(),
                         Some(task.clone()),
@@ -315,7 +362,7 @@ impl WorkspaceToolExecutor {
         // 获取当前工作区的所有代理作为快照
         let snapshot_agents: Vec<Value> = self
             .coordinator
-            .list_agents(workspace_id)
+            .list_agents(&workspace_id)
             .map(|agents| {
                 agents
                     .iter()
@@ -358,10 +405,7 @@ impl WorkspaceToolExecutor {
     }
 
     async fn execute_send(&self, args: &Value, ctx: &ExecutionContext) -> Result<Value, String> {
-        let workspace_id = args
-            .get("workspace_id")
-            .and_then(|v| v.as_str())
-            .ok_or("workspace_id is required")?;
+        let workspace_id = self.resolve_workspace_id(args, ctx)?;
         let content = args
             .get("content")
             .and_then(|v| v.as_str())
@@ -384,7 +428,7 @@ impl WorkspaceToolExecutor {
         }
 
         let message = self.coordinator.send_message(
-            workspace_id,
+            &workspace_id,
             &ctx.session_id,
             target_id,
             message_type,
@@ -399,12 +443,9 @@ impl WorkspaceToolExecutor {
     }
 
     async fn execute_query(&self, args: &Value, ctx: &ExecutionContext) -> Result<Value, String> {
-        let workspace_id = args
-            .get("workspace_id")
-            .and_then(|v| v.as_str())
-            .ok_or("workspace_id is required")?;
+        let workspace_id = self.resolve_workspace_id(args, ctx)?;
         self.coordinator
-            .ensure_member_or_creator(workspace_id, &ctx.session_id)?;
+            .ensure_member_or_creator(&workspace_id, &ctx.session_id)?;
         let query_type = args
             .get("query_type")
             .and_then(|v| v.as_str())
@@ -412,7 +453,7 @@ impl WorkspaceToolExecutor {
         let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
 
         let serialize_agents = || -> Result<Value, String> {
-            let agents = self.coordinator.list_agents(workspace_id)?;
+            let agents = self.coordinator.list_agents(&workspace_id)?;
             Ok(json!({
                 "agents": agents.iter().map(|a| json!({
                     "session_id": a.session_id,
@@ -424,7 +465,7 @@ impl WorkspaceToolExecutor {
         };
 
         let serialize_messages = || -> Result<Value, String> {
-            let messages = self.coordinator.list_messages(workspace_id, limit)?;
+            let messages = self.coordinator.list_messages(&workspace_id, limit)?;
             Ok(json!({
                 "messages": messages.iter().map(|m| json!({
                     "id": m.id,
@@ -438,7 +479,7 @@ impl WorkspaceToolExecutor {
         };
 
         let serialize_documents = || -> Result<Value, String> {
-            let docs = self.coordinator.list_documents(workspace_id)?;
+            let docs = self.coordinator.list_documents(&workspace_id)?;
             Ok(json!({
                 "documents": docs.iter().map(|d| json!({
                     "id": d.id,
@@ -450,7 +491,7 @@ impl WorkspaceToolExecutor {
         };
 
         let serialize_context = || -> Result<Value, String> {
-            let contexts = self.coordinator.list_context(workspace_id)?;
+            let contexts = self.coordinator.list_context(&workspace_id)?;
             Ok(json!({
                 "context": contexts.iter().map(|c| json!({
                     "key": c.key,
@@ -489,10 +530,7 @@ impl WorkspaceToolExecutor {
         args: &Value,
         ctx: &ExecutionContext,
     ) -> Result<Value, String> {
-        let workspace_id = args
-            .get("workspace_id")
-            .and_then(|v| v.as_str())
-            .ok_or("workspace_id is required")?;
+        let workspace_id = self.resolve_workspace_id(args, ctx)?;
         let key = args
             .get("key")
             .and_then(|v| v.as_str())
@@ -500,7 +538,7 @@ impl WorkspaceToolExecutor {
         let value = args.get("value").cloned().unwrap_or(Value::Null);
 
         self.coordinator
-            .set_context(workspace_id, key, value.clone(), &ctx.session_id)?;
+            .set_context(&workspace_id, key, value.clone(), &ctx.session_id)?;
 
         Ok(json!({
             "key": key,
@@ -513,18 +551,15 @@ impl WorkspaceToolExecutor {
         args: &Value,
         ctx: &ExecutionContext,
     ) -> Result<Value, String> {
-        let workspace_id = args
-            .get("workspace_id")
-            .and_then(|v| v.as_str())
-            .ok_or("workspace_id is required")?;
+        let workspace_id = self.resolve_workspace_id(args, ctx)?;
         let key = args
             .get("key")
             .and_then(|v| v.as_str())
             .ok_or("key is required")?;
 
-        self.ensure_workspace_member(workspace_id, &ctx.session_id)?;
+        self.ensure_workspace_member(&workspace_id, &ctx.session_id)?;
 
-        match self.coordinator.get_context(workspace_id, key)? {
+        match self.coordinator.get_context(&workspace_id, key)? {
             Some(ctx) => Ok(json!({
                 "key": ctx.key,
                 "value": ctx.value,
@@ -544,10 +579,7 @@ impl WorkspaceToolExecutor {
         args: &Value,
         ctx: &ExecutionContext,
     ) -> Result<Value, String> {
-        let workspace_id = args
-            .get("workspace_id")
-            .and_then(|v| v.as_str())
-            .ok_or("workspace_id is required")?;
+        let workspace_id = self.resolve_workspace_id(args, ctx)?;
         let title = args
             .get("title")
             .and_then(|v| v.as_str())
@@ -568,14 +600,14 @@ impl WorkspaceToolExecutor {
         };
 
         let doc = WorkspaceDocument::new(
-            workspace_id.to_string(),
+            workspace_id.clone(),
             doc_type,
             title.to_string(),
             content.to_string(),
             ctx.session_id.clone(),
         );
 
-        self.coordinator.save_document(workspace_id, &doc)?;
+        self.coordinator.save_document(&workspace_id, &doc)?;
 
         Ok(json!({
             "document_id": doc.id,
@@ -589,18 +621,15 @@ impl WorkspaceToolExecutor {
         args: &Value,
         ctx: &ExecutionContext,
     ) -> Result<Value, String> {
-        let workspace_id = args
-            .get("workspace_id")
-            .and_then(|v| v.as_str())
-            .ok_or("workspace_id is required")?;
+        let workspace_id = self.resolve_workspace_id(args, ctx)?;
         let doc_id = args
             .get("document_id")
             .and_then(|v| v.as_str())
             .ok_or("document_id is required")?;
 
-        self.ensure_workspace_member(workspace_id, &ctx.session_id)?;
+        self.ensure_workspace_member(&workspace_id, &ctx.session_id)?;
 
-        match self.coordinator.get_document(workspace_id, doc_id)? {
+        match self.coordinator.get_document(&workspace_id, doc_id)? {
             Some(doc) => Ok(json!({
                 "id": doc.id,
                 "title": doc.title,
@@ -740,11 +769,7 @@ pub fn get_workspace_tool_schemas() -> Vec<Value> {
                 "properties": {
                     "workspace_id": {
                         "type": "string",
-                        "description": "The workspace ID"
-                    },
-                    "agent_session_id": {
-                        "type": "string",
-                        "description": "The session ID for the new agent"
+                        "description": "Optional workspace ID; omitted uses the current workspace"
                     },
                     "role": {
                         "type": "string",
@@ -756,7 +781,7 @@ pub fn get_workspace_tool_schemas() -> Vec<Value> {
                         "description": "Optional skill ID for the agent"
                     }
                 },
-                "required": ["workspace_id", "agent_session_id"]
+                "required": []
             }
         }),
         json!({
@@ -767,7 +792,7 @@ pub fn get_workspace_tool_schemas() -> Vec<Value> {
                 "properties": {
                     "workspace_id": {
                         "type": "string",
-                        "description": "The workspace ID"
+                        "description": "Optional workspace ID; omitted uses the current workspace"
                     },
                     "content": {
                         "type": "string",
@@ -783,7 +808,7 @@ pub fn get_workspace_tool_schemas() -> Vec<Value> {
                         "description": "Message type (default: task)"
                     }
                 },
-                "required": ["workspace_id", "content"]
+                "required": ["content"]
             }
         }),
         json!({
@@ -794,7 +819,7 @@ pub fn get_workspace_tool_schemas() -> Vec<Value> {
                 "properties": {
                     "workspace_id": {
                         "type": "string",
-                        "description": "The workspace ID"
+                        "description": "Optional workspace ID; omitted uses the current workspace"
                     },
                     "query_type": {
                         "type": "string",
@@ -806,7 +831,7 @@ pub fn get_workspace_tool_schemas() -> Vec<Value> {
                         "description": "Maximum number of results (default: 50)"
                     }
                 },
-                "required": ["workspace_id"]
+                "required": []
             }
         }),
         json!({
@@ -817,7 +842,7 @@ pub fn get_workspace_tool_schemas() -> Vec<Value> {
                 "properties": {
                     "workspace_id": {
                         "type": "string",
-                        "description": "The workspace ID"
+                        "description": "Optional workspace ID; omitted uses the current workspace"
                     },
                     "key": {
                         "type": "string",
@@ -827,7 +852,7 @@ pub fn get_workspace_tool_schemas() -> Vec<Value> {
                         "description": "Context value (any JSON value)"
                     }
                 },
-                "required": ["workspace_id", "key", "value"]
+                "required": ["key", "value"]
             }
         }),
         json!({
@@ -838,14 +863,14 @@ pub fn get_workspace_tool_schemas() -> Vec<Value> {
                 "properties": {
                     "workspace_id": {
                         "type": "string",
-                        "description": "The workspace ID"
+                        "description": "Optional workspace ID; omitted uses the current workspace"
                     },
                     "key": {
                         "type": "string",
                         "description": "Context key"
                     }
                 },
-                "required": ["workspace_id", "key"]
+                "required": ["key"]
             }
         }),
         json!({
@@ -856,7 +881,7 @@ pub fn get_workspace_tool_schemas() -> Vec<Value> {
                 "properties": {
                     "workspace_id": {
                         "type": "string",
-                        "description": "The workspace ID"
+                        "description": "Optional workspace ID; omitted uses the current workspace"
                     },
                     "title": {
                         "type": "string",
@@ -872,7 +897,7 @@ pub fn get_workspace_tool_schemas() -> Vec<Value> {
                         "description": "Document type (default: notes)"
                     }
                 },
-                "required": ["workspace_id", "title", "content"]
+                "required": ["title", "content"]
             }
         }),
         json!({
@@ -883,14 +908,14 @@ pub fn get_workspace_tool_schemas() -> Vec<Value> {
                 "properties": {
                     "workspace_id": {
                         "type": "string",
-                        "description": "The workspace ID"
+                        "description": "Optional workspace ID; omitted uses the current workspace"
                     },
                     "document_id": {
                         "type": "string",
                         "description": "Document ID"
                     }
                 },
-                "required": ["workspace_id", "document_id"]
+                "required": ["document_id"]
             }
         }),
     ]

@@ -33,6 +33,10 @@ export const learningResourceSkill: SkillDefinition = {
 
 > 💡 如需创建/编辑思维导图，请加载 **mindmap-tools** 技能
 
+## 课题资源范围
+
+当前会话处于某个课题时，资源工具默认只能访问当前课题绑定的资源文件夹。folder_id 为空或 "root" 时表示当前课题文件夹，不要主动枚举、搜索或引用其它课题文件夹。只有不在课题会话中时，空 folder_id 才表示全局根目录。
+
 ## 工具参数格式
 
 ### builtin-resource_list
@@ -72,7 +76,7 @@ type 可选：note/textbook/file/image/exam/essay/translation/mindmap/all
   "top_k": 10
 }
 \`\`\`
-**注意**：\`query\` 是必需参数。
+**注意**：\`query\` 是必需参数。当前处于课题会话时，默认只搜索当前课题文件夹内资源。
 
 ## 资源类型
 
@@ -93,11 +97,11 @@ type 可选：note/textbook/file/image/exam/essay/translation/mindmap/all
   "include_count": true
 }
 \`\`\`
-parent_id 为空或 "root" 时列出根目录下的文件夹
+parent_id 为空或 "root" 时，在课题会话中列出当前课题文件夹下的文件夹；非课题会话中才列出根目录下的文件夹。
 
 ## 使用建议
 
-1. 先用 folder_list 了解文件夹结构
+1. 先用 folder_list 了解当前课题文件夹结构
 2. 再用 resource_list 浏览指定文件夹的资源
 3. 找到目标后用 resource_read 读取详细内容
 4. 不确定在哪个资源时使用 resource_search 搜索
@@ -110,7 +114,7 @@ parent_id 为空或 "root" 时列出根目录下的文件夹
         type: 'object',
         properties: {
           type: { type: 'string', description: '资源类型（可选，默认 "all" 返回所有类型）', enum: ['note', 'textbook', 'file', 'image', 'exam', 'essay', 'translation', 'mindmap', 'all'], default: 'all' },
-          folder_id: { type: 'string', description: '可选：文件夹 ID，只列出该文件夹下的资源' },
+          folder_id: { type: 'string', description: '可选：文件夹 ID，只列出该文件夹下的资源。课题会话中留空/"root" 表示当前课题文件夹，不表示全局根目录。' },
           search: { type: 'string', description: '可选：搜索关键词，按标题/名称过滤' },
           limit: { type: 'integer', description: '返回数量限制（可选，默认 20，最多 100）。注意：此参数名为 limit，不是 max_results 或 top_k。', default: 20, minimum: 1, maximum: 100 },
           favorites_only: { type: 'boolean', description: '可选：是否只返回收藏的资源' },
@@ -146,7 +150,7 @@ parent_id 为空或 "root" 时列出根目录下的文件夹
             },
             description: '可选：限制搜索的资源类型',
           },
-          folder_id: { type: 'string', description: '可选：限制搜索范围到指定文件夹' },
+          folder_id: { type: 'string', description: '可选：限制搜索范围到指定文件夹。课题会话中留空/"root" 表示当前课题文件夹，不表示全局搜索。' },
           top_k: { type: 'integer', description: '返回结果数量（可选，默认 10，最多 50）。注意：此参数名为 top_k，不是 limit 或 max_results。', default: 10, minimum: 1, maximum: 50 },
         },
         required: ['query'],
@@ -160,7 +164,7 @@ parent_id 为空或 "root" 时列出根目录下的文件夹
         properties: {
           parent_id: { 
             type: 'string', 
-            description: '父文件夹 ID，为空或 "root" 时列出根目录下的文件夹' 
+            description: '父文件夹 ID；课题会话中为空或 "root" 时列出当前课题文件夹下的文件夹，非课题会话中才列出根目录下的文件夹' 
           },
           include_count: { 
             type: 'boolean', 

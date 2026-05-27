@@ -22,6 +22,7 @@ use serde_json::{json, Value};
 use std::time::Duration;
 
 use super::executor::{ExecutionContext, ToolExecutor, ToolSensitivity};
+use super::resource_scope;
 use super::strip_tool_namespace;
 use crate::chat_v2::events::event_types;
 use crate::chat_v2::types::{ToolCall, ToolResultInfo};
@@ -364,13 +365,14 @@ impl PaperSaveExecutor {
             ));
         }
 
-        let folder_id = call
-            .arguments
-            .get("folder_id")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-
         let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
+        let folder_id = resource_scope::normalize_folder_arg(call.arguments.get("folder_id"));
+        let scoped_folder_id = resource_scope::resolve_scoped_folder_id_for_write(
+            ctx,
+            vfs_db,
+            folder_id,
+            "paper_save",
+        )?;
 
         // 初始化进度状态数组
         let mut progress: Vec<PaperProgressItem> = papers
@@ -404,7 +406,14 @@ impl PaperSaveExecutor {
             }
 
             let result = self
-                .save_single_paper(paper, folder_id.as_deref(), vfs_db, ctx, &mut progress, i)
+                .save_single_paper(
+                    paper,
+                    scoped_folder_id.as_deref(),
+                    vfs_db,
+                    ctx,
+                    &mut progress,
+                    i,
+                )
                 .await;
 
             match result {
@@ -439,6 +448,8 @@ impl PaperSaveExecutor {
             "total": papers.len(),
             "success_count": success_count,
             "failed_count": papers.len() - success_count,
+            "scope": if resource_scope::is_topic_scoped(ctx) { "topic" } else { "all" },
+            "folderId": scoped_folder_id,
             "results": results,
         }))
     }
@@ -554,6 +565,10 @@ impl PaperSaveExecutor {
 
         let conn = vfs_db.get_conn_safe().map_err(|e| e.to_string())?;
 
+        let target_folder_id = folder_id
+            .filter(|id| !id.is_empty())
+            .map(|id| id.to_string());
+
         use crate::vfs::VfsFileRepo;
         if let Ok(Some(existing)) = VfsFileRepo::get_by_sha256_with_conn(&conn, &sha256) {
             if existing.status == "active" {
@@ -562,6 +577,21 @@ impl PaperSaveExecutor {
                     title,
                     existing.id
                 );
+                if let Some(ref folder_id) = target_folder_id {
+                    if let Err(err) = crate::vfs::VfsFolderRepo::move_item_with_conn(
+                        &conn,
+                        "file",
+                        &existing.id,
+                        Some(folder_id.as_str()),
+                    ) {
+                        log::warn!(
+                            "[PaperSave] Failed to assign deduplicated paper '{}' to folder {:?}: {}",
+                            existing.id,
+                            target_folder_id,
+                            err
+                        );
+                    }
+                }
                 progress[idx].stage = PaperStage::Done;
                 progress[idx].deduplicated = true;
                 progress[idx].file_id = Some(existing.id.clone());
@@ -571,6 +601,7 @@ impl PaperSaveExecutor {
                     "deduplicated": true,
                     "file_id": existing.id,
                     "title": title,
+                    "folderId": target_folder_id,
                     "message": format!("论文已存在于资料库中（文件ID: {}）", existing.id),
                 }));
             }
@@ -621,15 +652,6 @@ impl PaperSaveExecutor {
             safe_title
         } else {
             format!("{}.pdf", safe_title)
-        };
-
-        // 🔧 修复：不指定 folder_id 时存到根目录（None），
-        // 使论文直接出现在学习资源"全部文件"视图中。
-        // 之前错误地使用 AttachmentConfig::get_or_create_root_folder()
-        // 导致论文被存到"附件"隐藏文件夹中。
-        let target_folder_id = match folder_id {
-            Some(id) if !id.is_empty() => Some(id.to_string()),
-            _ => None, // 根目录
         };
 
         let file = VfsFileRepo::create_file_with_doc_data_in_folder(
@@ -722,6 +744,7 @@ impl PaperSaveExecutor {
             "size_bytes": pdf_bytes.len(),
             "page_count": page_count,
             "has_text": extracted_text.is_some(),
+            "folderId": target_folder_id,
             "message": format!("论文已保存到资料库（{}页，文件ID: {}）", page_count.unwrap_or(0), file.id),
         }))
     }

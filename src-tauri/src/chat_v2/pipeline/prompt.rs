@@ -9,14 +9,14 @@ impl ChatV2Pipeline {
     pub(crate) async fn build_system_prompt(&self, ctx: &PipelineContext) -> String {
         let canvas_note = self.build_canvas_note_info(ctx).await;
 
-        // 读取用户画像摘要（如果 VFS 可用）
-        let user_profile = self.load_user_profile(ctx).await;
+        // 读取 scoped 记忆上下文（如果 VFS 可用）
+        let memory_context = self.load_memory_prompt_context(&ctx.options).await;
 
-        prompt_builder::build_system_prompt_with_profile(
+        prompt_builder::build_system_prompt_with_memory_context(
             &ctx.options,
             &ctx.retrieved_sources,
             canvas_note,
-            user_profile,
+            memory_context,
         )
     }
 
@@ -25,11 +25,14 @@ impl ChatV2Pipeline {
     /// 受 memU dual-mode retrieval 启发：
     /// - LLM 直读模式（本方法）：将分类文件注入 system prompt，每次对话都有
     /// - 向量搜索模式（memory_search 工具）：LLM 按需主动搜索
-    async fn load_user_profile(&self, ctx: &PipelineContext) -> Option<String> {
+    async fn load_memory_prompt_context(
+        &self,
+        options: &crate::chat_v2::types::SendOptions,
+    ) -> Option<prompt_builder::MemoryPromptContext> {
         use crate::memory::{MemoryCategoryManager, MemoryConfig, MemoryService};
         use crate::vfs::lance_store::VfsLanceStore;
 
-        if ctx.options.memory_enabled == Some(false) {
+        if options.memory_enabled == Some(false) {
             return None;
         }
 
@@ -48,59 +51,87 @@ impl ChatV2Pipeline {
             _ => return None,
         };
 
-        let mut sections: Vec<String> = Vec::new();
-
-        // 1. 加载分类摘要文件（Memory Category Layer）
-        let cat_mgr = MemoryCategoryManager::new(vfs_db.clone(), self.llm_manager.clone());
-        match cat_mgr.load_all_category_summaries(&root_id) {
-            Ok(categories) => {
-                for (cat_name, content) in &categories {
-                    sections.push(format!("### {}\n{}", cat_name, content));
-                }
+        let topic_root = crate::memory::topic_memory_root(
+            options.group_id.as_deref(),
+            options.group_name.as_deref(),
+        );
+        let scope_paths = {
+            let mut paths = vec![crate::memory::GLOBAL_MEMORY_FOLDER.to_string()];
+            if let Some(path) = &topic_root {
+                paths.push(path.clone());
             }
+            paths
+        };
+
+        // 加载 scoped 分类摘要文件（Memory Category Layer）
+        let cat_mgr = MemoryCategoryManager::new(vfs_db.clone(), self.llm_manager.clone());
+        let categories = match cat_mgr.load_category_summaries_for_paths(&root_id, &scope_paths) {
+            Ok(categories) => categories,
             Err(e) => {
                 log::debug!(
-                    "[ChatV2::pipeline] Failed to load category summaries: {}",
+                    "[ChatV2::pipeline] Failed to load scoped category summaries: {}",
                     e
                 );
+                Vec::new()
             }
-        }
+        };
 
-        // 2. 回退：如果没有分类文件，尝试加载旧的 profile summary
-        if sections.is_empty() {
-            match svc.get_profile_summary() {
-                Ok(Some(profile)) => return Some(profile),
-                Ok(None) => return None,
-                Err(e) => {
-                    log::debug!("[ChatV2::pipeline] Failed to load user profile: {}", e);
-                    return None;
+        let mut global_sections = Vec::new();
+        let mut topic_sections = Vec::new();
+        for (cat_name, content) in categories {
+            let section = format!("### {}\n{}", cat_name, content);
+            if crate::memory::is_folder_path_within_scope(
+                &cat_name,
+                crate::memory::GLOBAL_MEMORY_FOLDER,
+            ) {
+                global_sections.push(section);
+            } else if let Some(topic_root) = &topic_root {
+                if crate::memory::is_folder_path_within_scope(&cat_name, topic_root) {
+                    topic_sections.push(section);
                 }
             }
         }
 
-        // 防止 profile 过大吞噬上下文窗口：按完整 section 截断（不截断到中间位置）
-        const PROFILE_MAX_CHARS: usize = 2000;
-        let mut total_chars = 0usize;
-        let mut kept_sections = Vec::new();
-        for section in &sections {
-            let section_chars = section.chars().count();
-            if total_chars + section_chars > PROFILE_MAX_CHARS && !kept_sections.is_empty() {
-                break;
+        fn join_limited(sections: &[String], max_chars: usize) -> Option<String> {
+            if sections.is_empty() {
+                return None;
             }
-            total_chars += section_chars + 2;
-            kept_sections.push(section.as_str());
+            let mut total_chars = 0usize;
+            let mut kept_sections = Vec::new();
+            for section in sections {
+                let section_chars = section.chars().count();
+                if total_chars + section_chars > max_chars && !kept_sections.is_empty() {
+                    break;
+                }
+                total_chars += section_chars + 2;
+                kept_sections.push(section.as_str());
+            }
+            let combined = kept_sections.join("\n\n");
+            if kept_sections.len() < sections.len() {
+                Some(format!(
+                    "{}\n\n（记忆摘要已截断 {}/{} 个分类，完整信息请使用 memory_search 工具检索）",
+                    combined,
+                    kept_sections.len(),
+                    sections.len()
+                ))
+            } else {
+                Some(combined)
+            }
         }
-        let combined = kept_sections.join("\n\n");
-        if kept_sections.len() < sections.len() {
-            Some(format!(
-                "{}\n\n（用户画像已截断 {}/{} 个分类，完整信息请使用 memory_search 工具检索）",
-                combined,
-                kept_sections.len(),
-                sections.len()
-            ))
-        } else {
-            Some(combined)
+
+        let global_profile = join_limited(&global_sections, 1200);
+        let topic_profile = join_limited(&topic_sections, 1600);
+        if global_profile.is_none() && topic_profile.is_none() && topic_root.is_none() {
+            return None;
         }
+
+        Some(prompt_builder::MemoryPromptContext::new(
+            options.group_name.clone().or(options.group_id.clone()),
+            topic_root,
+            crate::memory::GLOBAL_MEMORY_FOLDER.to_string(),
+            global_profile,
+            topic_profile,
+        ))
     }
 
     /// 构建 Canvas 笔记信息

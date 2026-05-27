@@ -327,6 +327,16 @@ mod tests {
             "https://proxy.example.com/v1",
             None,
         ));
+        assert!(!provider_supports_openai_responses(
+            Some("openai"),
+            "https://proxy.example.com/v1",
+            None,
+        ));
+        assert!(provider_supports_openai_responses(
+            Some("openai"),
+            "https://api.openai.com/v1",
+            None,
+        ));
     }
 
     #[test]
@@ -1571,9 +1581,8 @@ fn provider_allowed_protocols(provider_type: Option<&str>) -> Vec<String> {
         })
 }
 
-fn resolves_to_official_openai(provider_type: Option<&str>, base_url: &str) -> bool {
-    normalize_provider_protocol_registry_value(provider_type) == "openai"
-        || normalize_base_url_for_provider_protocol_registry(base_url).contains("api.openai.com")
+fn resolves_to_official_openai(base_url: &str) -> bool {
+    normalize_base_url_for_provider_protocol_registry(base_url).contains("api.openai.com")
 }
 
 pub(crate) fn provider_supports_openai_responses(
@@ -1584,8 +1593,11 @@ pub(crate) fn provider_supports_openai_responses(
     if supports_openai_responses == Some(true) {
         return true;
     }
-    if resolves_to_official_openai(provider_type, base_url) {
+    if resolves_to_official_openai(base_url) {
         return true;
+    }
+    if normalize_provider_protocol_registry_value(provider_type) == "openai" {
+        return false;
     }
     get_provider_protocol_record(provider_type)
         .map(|record| record.supports_openai_responses)
@@ -1611,6 +1623,15 @@ pub(crate) fn resolve_preferred_protocol_for_provider(
             .any(|protocol| protocol == "openai_responses")
     {
         return "openai_responses".to_string();
+    }
+
+    if normalize_provider_protocol_registry_value(provider_type) == "openai"
+        && !resolves_to_official_openai(base_url)
+        && allowed
+            .iter()
+            .any(|protocol| protocol == "openai_chat_completions")
+    {
+        return "openai_chat_completions".to_string();
     }
 
     if let Some(record) = get_provider_protocol_record(provider_type) {
@@ -1639,7 +1660,12 @@ pub(crate) fn effective_max_tokens(max_output_tokens: u32, max_tokens_limit: Opt
 #[inline]
 pub(crate) fn should_use_openai_responses_for_config(config: &ApiConfig) -> bool {
     if let Some(protocol) = config.api_protocol.as_deref() {
-        return matches!(protocol, "openai_responses");
+        return protocol == "openai_responses"
+            && provider_supports_openai_responses(
+                config.provider_type.as_deref(),
+                &config.base_url,
+                config.supports_openai_responses,
+            );
     }
     if config.model_adapter != "general" {
         return false;

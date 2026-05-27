@@ -3791,6 +3791,13 @@ export class ChatV2TauriAdapter {
       })(),
       disableTools: chatParams.disableTools,
       model2OverrideId: chatParams.model2OverrideId || undefined,
+      groupId: groupId || undefined,
+      groupName: groupId
+        ? (groupCache.get(groupId)?.name ?? undefined)
+        : undefined,
+      groupPinnedResourceIds: groupId
+        ? (groupCache.get(groupId)?.pinnedResourceIds ?? [])
+        : undefined,
       maxToolRecursion: chatParams.maxToolRecursion,
 
       // 功能开关（结合用户设置和模式配置）
@@ -3876,7 +3883,9 @@ export class ChatV2TauriAdapter {
       options.skillAllowedTools = skillAllowedTools;
     }
 
-    // Transient skill injection 需要每轮拿到所有 enabled skills 的正文、依赖和工具定义。
+    // Transient skill payload:
+    // - skillContents/dependencies/embeddedTools: registry snapshot for load_skills validation.
+    // - replaySkillContents: only already-enabled skills, used for prompt injection/replay.
     const allSkills = skillRegistry.getAll();
     if (allSkills.length > 0) {
       const skillContents: Record<string, string> = {};
@@ -3884,10 +3893,11 @@ export class ChatV2TauriAdapter {
       const skillDependencies: Record<string, string[]> = {};
       const skillEmbeddedTools: Record<string, Array<{ name: string; description?: string; inputSchema?: unknown }>> = {};
       for (const skill of allSkills) {
-        if (!enabledSkillIdSet.has(skill.id)) continue;
         if (skill.content) {
           skillContents[skill.id] = skill.content;
-          replaySkillContents[skill.id] = skill.content;
+          if (enabledSkillIdSet.has(skill.id)) {
+            replaySkillContents[skill.id] = skill.content;
+          }
         }
         if (Array.isArray(skill.dependencies) && skill.dependencies.length > 0) {
           skillDependencies[skill.id] = skill.dependencies.filter(Boolean);
@@ -3902,15 +3912,17 @@ export class ChatV2TauriAdapter {
       }
       if (Object.keys(skillContents).length > 0) {
         (options as Record<string, unknown>).skillContents = skillContents;
-        (options as Record<string, unknown>).replaySkillContents = replaySkillContents;
-        console.log(LOG_PREFIX, '[TransientSkills] Injected enabled skill contents:', Object.keys(skillContents).length);
+        if (Object.keys(replaySkillContents).length > 0) {
+          (options as Record<string, unknown>).replaySkillContents = replaySkillContents;
+        }
+        console.log(LOG_PREFIX, '[TransientSkills] Injected registry skill contents:', Object.keys(skillContents).length);
       }
       if (Object.keys(skillDependencies).length > 0) {
         (options as Record<string, unknown>).skillDependencies = skillDependencies;
       }
       if (Object.keys(skillEmbeddedTools).length > 0) {
         (options as Record<string, unknown>).skillEmbeddedTools = skillEmbeddedTools;
-        console.log(LOG_PREFIX, '[TransientSkills] Injected enabled skill embeddedTools:', Object.keys(skillEmbeddedTools).length);
+        console.log(LOG_PREFIX, '[TransientSkills] Injected registry skill embeddedTools:', Object.keys(skillEmbeddedTools).length);
       }
     }
 

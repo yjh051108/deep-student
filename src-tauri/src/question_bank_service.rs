@@ -780,7 +780,7 @@ impl QuestionBankService {
             });
         }
 
-        let mut conn = self
+        let conn = self
             .vfs_db
             .get_conn_safe()
             .map_err(|e| AppError::database(e.to_string()))?;

@@ -1357,7 +1357,6 @@ impl VfsLanceStore {
 
                 if has_metadata && row_count > 0 {
                     if let Ok(mut stream) = tbl.query().execute().await {
-                        let mut total_checked = 0usize;
                         while let Ok(Some(batch)) = stream.try_next().await {
                             let batch_schema = batch.schema();
                             if let Ok(idx) = batch_schema.index_of("metadata") {
@@ -1378,7 +1377,6 @@ impl VfsLanceStore {
                                                 sample_metadata.push(Some(val));
                                             }
                                         }
-                                        total_checked += 1;
                                     }
                                 }
                             }

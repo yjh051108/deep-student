@@ -1,5 +1,12 @@
 use super::*;
 
+pub(crate) fn memory_scope_folder_for_group(
+    group_id: Option<&str>,
+    group_name: Option<&str>,
+) -> Option<String> {
+    crate::memory::topic_memory_root(group_id, group_name)
+}
+
 fn build_replay_skill_payload_snapshot(
     options: &SendOptions,
 ) -> Option<crate::chat_v2::types::ReplaySkillPayloadSnapshot> {
@@ -1019,6 +1026,10 @@ impl ChatV2Pipeline {
         let llm_manager = self.llm_manager.clone();
         let user_content = ctx.user_content.clone();
         let final_content = ctx.final_content.clone();
+        let memory_scope_folder = memory_scope_folder_for_group(
+            ctx.options.group_id.as_deref(),
+            ctx.options.group_name.as_deref(),
+        );
 
         // fire-and-forget: 不走 spawn_tracked 因为 Pipeline 不持有 ChatV2State。
         tokio::spawn(async move {
@@ -1039,7 +1050,12 @@ impl ChatV2Pipeline {
             let extractor = MemoryAutoExtractor::new(llm_manager.clone());
 
             match extractor
-                .extract_and_store(&memory_service, &user_content, &final_content)
+                .extract_and_store_in_folder(
+                    &memory_service,
+                    &user_content,
+                    &final_content,
+                    memory_scope_folder.as_deref(),
+                )
                 .await
             {
                 Ok(count) => {
@@ -1051,30 +1067,18 @@ impl ChatV2Pipeline {
                         );
                     }
 
-                    // 分类刷新：频率档位决定刷新条件
                     if count > 0 {
-                        let should_refresh = match memory_service.list(None, 500, 0) {
-                            Ok(all) => {
-                                let total =
-                                    all.iter().filter(|m| !m.title.starts_with("__")).count();
-                                frequency.should_refresh_categories(total)
+                        let scope_paths = match &memory_scope_folder {
+                            Some(path) => {
+                                vec![
+                                    crate::memory::GLOBAL_MEMORY_FOLDER.to_string(),
+                                    path.clone(),
+                                ]
                             }
-                            Err(_) => false,
+                            None => Vec::new(),
                         };
-                        if should_refresh {
-                            use crate::memory::MemoryCategoryManager;
-                            let cat_mgr =
-                                MemoryCategoryManager::new(vfs_db.clone(), llm_manager.clone());
-                            if let Err(e) = cat_mgr.refresh_all_categories(&memory_service).await {
-                                log::warn!("[AutoMemory] Category refresh failed: {}", e);
-                            }
-                        }
+                        memory_service.spawn_post_write_maintenance_for_paths(scope_paths);
                     }
-
-                    // 自进化：使用共享全局节流，间隔由频率档位决定
-                    use crate::memory::MemoryEvolution;
-                    let evolution = MemoryEvolution::new(vfs_db);
-                    evolution.run_throttled(&memory_service, frequency.evolution_interval_ms());
                 }
                 Err(e) => {
                     log::warn!("[AutoMemory] Auto-extraction failed (non-fatal): {}", e);

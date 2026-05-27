@@ -40,6 +40,19 @@ impl CoordinatorSleepExecutor {
         }
     }
 
+    fn resolve_workspace_id(args: &Value, ctx: &ExecutionContext) -> Result<String, String> {
+        args.get("workspace_id")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(str::to_string)
+            .or_else(|| ctx.workspace_id.clone())
+            .ok_or_else(|| {
+                "当前会话还没有关联工作区。请先调用 builtin-workspace_create 创建工作区；不要向用户索要 workspace_id。"
+                    .to_string()
+            })
+    }
+
     /// 🔧 P16 辅助函数：追加 block_id 到消息的 block_ids 列表
     ///
     /// 如果消息不存在，创建消息；否则追加 block_id 到现有列表
@@ -114,10 +127,7 @@ impl CoordinatorSleepExecutor {
         let start = Instant::now();
 
         // 解析参数
-        let workspace_id = args
-            .get("workspace_id")
-            .and_then(|v| v.as_str())
-            .ok_or("workspace_id is required")?;
+        let workspace_id = Self::resolve_workspace_id(args, ctx)?;
 
         // 🔧 P14 修复：如果 awaiting_agents 为空，从 workspace 查询实际的子代理
         let mut awaiting_agents: Vec<String> =
@@ -125,7 +135,7 @@ impl CoordinatorSleepExecutor {
 
         // 如果 LLM 没有指定 awaiting_agents，从 workspace 查询所有 worker 代理
         if awaiting_agents.is_empty() {
-            if let Ok(agents) = self.coordinator.list_agents(workspace_id) {
+            if let Ok(agents) = self.coordinator.list_agents(&workspace_id) {
                 use crate::chat_v2::workspace::AgentRole;
                 awaiting_agents = agents
                     .into_iter()
@@ -181,7 +191,7 @@ impl CoordinatorSleepExecutor {
         };
 
         // 获取 SleepManager 并开始睡眠
-        let sleep_manager = self.coordinator.get_sleep_manager(workspace_id)?;
+        let sleep_manager = self.coordinator.get_sleep_manager(&workspace_id)?;
 
         // ============================================================
         // 🔧 P16 修复：在 sleep 阻塞前手动保存睡眠块
@@ -357,6 +367,8 @@ impl ToolExecutor for CoordinatorSleepExecutor {
             .arguments
             .get("workspace_id")
             .and_then(|v| v.as_str())
+            .filter(|id| !id.trim().is_empty())
+            .or(ctx.workspace_id.as_deref())
             .unwrap_or("");
 
         let mut enriched_args = call.arguments.clone();
@@ -431,7 +443,7 @@ pub fn get_coordinator_sleep_tool_schema() -> Value {
             "properties": {
                 "workspace_id": {
                     "type": "string",
-                    "description": "工作区 ID（必需）"
+                    "description": "可选：工作区 ID。省略时使用当前工作区；没有当前工作区时先调用 builtin-workspace_create。"
                 },
                 "awaiting_agents": {
                     "type": "array",
@@ -448,7 +460,7 @@ pub fn get_coordinator_sleep_tool_schema() -> Value {
                     "description": "超时时间（毫秒），超时后自动唤醒。可选，默认无超时"
                 }
             },
-            "required": ["workspace_id"]
+            "required": []
         }
     })
 }

@@ -2084,18 +2084,29 @@ impl VfsFullIndexingService {
                     }
                     Some(_) => {}
                     None => {
-                        // ★ C-3 修复：使用统一的删除方法，确保所有 modality 的向量都被删除
-                        self.delete_resource_index(resource_id).await?;
-                        VfsIndexStateRepo::mark_disabled_with_reason(
-                            &self.db,
-                            resource_id,
-                            "note missing",
-                        )?;
-                        info!(
-                            "[VfsFullIndexingService] Skip missing note {} (resource {})",
+                        let has_inline_content = resource
+                            .data
+                            .as_deref()
+                            .map(|data| !data.trim().is_empty())
+                            .unwrap_or(false);
+                        if !has_inline_content {
+                            // ★ C-3 修复：使用统一的删除方法，确保所有 modality 的向量都被删除
+                            self.delete_resource_index(resource_id).await?;
+                            VfsIndexStateRepo::mark_disabled_with_reason(
+                                &self.db,
+                                resource_id,
+                                "note missing",
+                            )?;
+                            info!(
+                                "[VfsFullIndexingService] Skip missing note {} (resource {})",
+                                note_id, resource_id
+                            );
+                            return Ok((0, 0));
+                        }
+                        warn!(
+                            "[VfsFullIndexingService] Note {} missing for resource {}, indexing inline resource.data fallback",
                             note_id, resource_id
                         );
-                        return Ok((0, 0));
                     }
                 }
 
