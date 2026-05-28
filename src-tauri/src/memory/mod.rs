@@ -25,8 +25,9 @@ pub use query_rewriter::{MemoryQueryRewriter, QueryRewriteResult};
 pub use reranker::MemoryReranker;
 pub use scope::{
     classify_folder_scope, is_folder_path_visible, is_folder_path_within_scope,
-    join_memory_folder_paths, sanitize_scope_segment, scoped_folder_path, topic_memory_root,
-    visible_scope_roots, MemoryScope, GLOBAL_MEMORY_FOLDER, TOPIC_MEMORY_PREFIX,
+    join_memory_folder_paths, legacy_topic_memory_root, sanitize_scope_segment, scoped_folder_path,
+    topic_memory_root, topic_memory_roots, visible_scope_roots, MemoryScope, GLOBAL_MEMORY_FOLDER,
+    TOPIC_MEMORY_PREFIX,
 };
 pub use service::{
     MemoryListItem, MemoryPurpose, MemorySearchResult, MemoryService, MemoryType, SmartWriteOutput,

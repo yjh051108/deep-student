@@ -23,6 +23,7 @@ import { getMemoryTree, type FolderTreeNode } from '@/api/memoryApi';
 
 interface MemoryTreePreviewProps {
   onNavigateToFolder?: (folderId: string) => void;
+  rootPath?: string;
   className?: string;
 }
 
@@ -132,6 +133,7 @@ TreeNode.displayName = 'TreeNode';
 
 export const MemoryTreePreview: React.FC<MemoryTreePreviewProps> = React.memo(({
   onNavigateToFolder,
+  rootPath,
   className,
 }) => {
   const { t } = useTranslation('learningHub');
@@ -143,14 +145,14 @@ export const MemoryTreePreview: React.FC<MemoryTreePreviewProps> = React.memo(({
     setIsLoading(true);
     setError(null);
     try {
-      const data = await getMemoryTree();
+      const data = await getMemoryTree(rootPath);
       setTreeData(data);
     } catch (e) {
       setError(t('memory.tree_load_error', '加载记忆树失败'));
     } finally {
       setIsLoading(false);
     }
-  }, [t]);
+  }, [rootPath, t]);
 
   useEffect(() => { loadTree(); }, [loadTree]);
 

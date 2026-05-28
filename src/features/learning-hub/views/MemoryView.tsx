@@ -14,7 +14,7 @@ import { consumePendingMemoryLocate } from '@/utils/pendingMemoryLocate';
  * 5. 内联展开预览，点击跳转到笔记编辑器
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { CustomScrollArea } from '@/components/custom-scroll-area';
@@ -64,10 +64,12 @@ import {
   setMemoryRootFolder,
   createMemoryRootFolder,
   searchMemory,
+  searchMemoryInFolderPaths,
   readMemory,
   writeMemorySmart,
   writeMemoryBatch,
   listMemory,
+  listMemoryInFolderPaths,
   deleteMemory,
   updateMemoryById,
   exportAllMemories,
@@ -84,6 +86,7 @@ import {
   type MemoryAuditLogItem,
   type FolderTreeNode,
   type MemoryTypeValue,
+  type MemoryScopeValue,
   type MemoryPurposeType,
   batchDeleteMemories,
 } from '@/api/memoryApi';
@@ -96,23 +99,54 @@ import type { ResourceListItem } from '../types';
 // ============================================================================
 
 const AUDIT_LOG_PAGE_SIZE = 30;
-type MemoryManagementScope = 'global' | 'all';
+type MemoryManagementScope = 'topicAndGlobal' | 'global' | 'all';
 
 const folderPathForManagementScope = (scope: MemoryManagementScope): string | undefined => {
   return scope === 'global' ? '全局' : undefined;
+};
+
+const sanitizeMemoryScopeSegment = (value: string): string => (
+  value
+    .split('')
+    .map((ch) => (ch === '/' || ch === '\\' || ch.charCodeAt(0) < 32 ? '_' : ch))
+    .join('')
+    .replace(/^_+|_+$/g, '')
+    .trim()
+);
+
+const topicMemoryRoots = (groupId?: string | null, groupName?: string | null): string[] => {
+  const roots: string[] = [];
+  const pushRoot = (label?: string | null) => {
+    const segment = sanitizeMemoryScopeSegment(label?.trim() ?? '');
+    if (!segment) return;
+    const root = `课题/${segment}`;
+    if (!roots.includes(root)) roots.push(root);
+  };
+  pushRoot(groupId);
+  pushRoot(groupName);
+  return roots;
 };
 
 interface MemoryViewProps {
   className?: string;
   /** 打开应用回调 - 用于在右侧面板打开笔记编辑器 */
   onOpenApp?: (item: ResourceListItem) => void;
+  /** 当前课题 ID；用于默认显示当前课题 + 全局记忆 */
+  topicGroupId?: string | null;
+  /** 当前课题名称；用于生成用户可见的课题记忆分区 */
+  topicGroupName?: string | null;
 }
 
 // ============================================================================
 // 主组件
 // ============================================================================
 
-export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) => {
+export const MemoryView: React.FC<MemoryViewProps> = ({
+  className,
+  onOpenApp,
+  topicGroupId,
+  topicGroupName,
+}) => {
   const { t } = useTranslation(['learningHub', 'common']);
 
   // ========== 状态 ==========
@@ -148,12 +182,14 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
   const [newMemoryContent, setNewMemoryContent] = useState('');
   const [newMemoryType, setNewMemoryType] = useState<MemoryTypeValue>('study');
   const [newMemoryPurpose, setNewMemoryPurpose] = useState<string>('memorized');
+  const [newMemoryScope, setNewMemoryScope] = useState<MemoryScopeValue>('topic');
   const [isBatchImporting, setIsBatchImporting] = useState(false);
   const [batchImportText, setBatchImportText] = useState('');
   const [batchImportType, setBatchImportType] = useState<MemoryTypeValue>('study');
   const [batchImportPurpose, setBatchImportPurpose] = useState<string>('memorized');
+  const [batchImportScope, setBatchImportScope] = useState<MemoryScopeValue>('topic');
   const [newRootFolderTitle, setNewRootFolderTitle] = useState('');
-  const [memoryScopeFilter, setMemoryScopeFilter] = useState<MemoryManagementScope>('global');
+  const [memoryScopeFilter, setMemoryScopeFilter] = useState<MemoryManagementScope>('topicAndGlobal');
 
   // ★ 批量选择状态
   const [batchMode, setBatchMode] = useState(false);
@@ -178,6 +214,28 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
   const [auditLogOffset, setAuditLogOffset] = useState(0);
   const [auditLoadError, setAuditLoadError] = useState<string | null>(null);
 
+  const visibleMemoryFolderPaths = useMemo(() => {
+    if (memoryScopeFilter === 'all') return [];
+    if (memoryScopeFilter === 'global') return ['全局'];
+    return ['全局', ...topicMemoryRoots(topicGroupId, topicGroupName)];
+  }, [memoryScopeFilter, topicGroupId, topicGroupName]);
+  const memoryScopeContext = useMemo(() => ({
+    groupId: topicGroupId,
+    groupName: topicGroupName,
+    adminAll: memoryScopeFilter === 'all',
+  }), [memoryScopeFilter, topicGroupId, topicGroupName]);
+
+  const hasTopicMemoryScope = topicMemoryRoots(topicGroupId, topicGroupName).length > 0;
+  const effectiveNewMemoryScope: MemoryScopeValue = hasTopicMemoryScope ? newMemoryScope : 'global';
+  const effectiveBatchImportScope: MemoryScopeValue = hasTopicMemoryScope ? batchImportScope : 'global';
+
+  useEffect(() => {
+    if (!hasTopicMemoryScope) {
+      setNewMemoryScope('global');
+      setBatchImportScope('global');
+    }
+  }, [hasTopicMemoryScope]);
+
   // ========== 加载配置和记忆列表 ==========
   const loadConfig = useCallback(async () => {
     try {
@@ -196,7 +254,9 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
 
     setIsLoading(true);
     try {
-      const items = await listMemory(folderPathForManagementScope(memoryScopeFilter), 100);
+      const items = memoryScopeFilter === 'topicAndGlobal'
+        ? await listMemoryInFolderPaths(visibleMemoryFolderPaths, 100, undefined, memoryScopeContext)
+        : await listMemory(folderPathForManagementScope(memoryScopeFilter), 100, undefined, memoryScopeContext);
       setMemories(items);
       setLoadError(null);
     } catch (error: unknown) {
@@ -206,20 +266,42 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
     } finally {
       setIsLoading(false);
     }
-  }, [config?.memoryRootFolderId, memoryScopeFilter, t]);
+  }, [config?.memoryRootFolderId, memoryScopeContext, memoryScopeFilter, t, visibleMemoryFolderPaths]);
 
   const loadTree = useCallback(async () => {
     if (!config?.memoryRootFolderId) return;
     setIsLoadingTree(true);
     try {
-      const tree = await getMemoryTree();
+      const tree = memoryScopeFilter === 'topicAndGlobal'
+        ? await (async () => {
+          const children = (await Promise.all(
+            visibleMemoryFolderPaths.map((path) => getMemoryTree(path, memoryScopeContext))
+          )).filter((node): node is FolderTreeNode => Boolean(node));
+          const now = new Date().toISOString();
+          return {
+            folder: {
+              id: '__memory_visible_scope__',
+              parentId: null,
+              title: hasTopicMemoryScope
+                ? t('memory.scope_topic_global', '当前课题 + 全局')
+                : t('memory.scope_global', '全局'),
+              sortOrder: 0,
+              isExpanded: true,
+              createdAt: now,
+              updatedAt: now,
+            },
+            children,
+            items: [],
+          } satisfies FolderTreeNode;
+        })()
+        : await getMemoryTree(folderPathForManagementScope(memoryScopeFilter), memoryScopeContext);
       setTreeData(tree);
     } catch (error: unknown) {
       console.error('[MemoryView] Failed to load tree:', error);
     } finally {
       setIsLoadingTree(false);
     }
-  }, [config?.memoryRootFolderId]);
+  }, [config?.memoryRootFolderId, memoryScopeContext, memoryScopeFilter, visibleMemoryFolderPaths, hasTopicMemoryScope, t]);
 
   useEffect(() => {
     loadConfig();
@@ -265,7 +347,9 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
     setIsSearchMode(true);
     setViewMode('list');
     try {
-      const results = await searchMemory(searchQuery, 20, folderPathForManagementScope(memoryScopeFilter));
+      const results = memoryScopeFilter === 'topicAndGlobal'
+        ? await searchMemoryInFolderPaths(searchQuery, visibleMemoryFolderPaths, 20, memoryScopeContext)
+        : await searchMemory(searchQuery, 20, folderPathForManagementScope(memoryScopeFilter), memoryScopeContext);
       setSearchResults(results);
     } catch (error: unknown) {
       console.error('[MemoryView] Search failed:', error);
@@ -274,7 +358,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
     } finally {
       setIsLoading(false);
     }
-  }, [searchQuery, isSearchMode, memoryScopeFilter, viewMode, t]);
+  }, [searchQuery, isSearchMode, memoryScopeContext, memoryScopeFilter, viewMode, t, visibleMemoryFolderPaths]);
 
   const handleClearSearch = useCallback(() => {
     setSearchQuery('');
@@ -293,7 +377,17 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
     setIsLoading(true);
     try {
       const purposeArg = newMemoryPurpose !== 'memorized' ? newMemoryPurpose as MemoryPurposeType : undefined;
-      const result = await writeMemorySmart(newMemoryTitle, newMemoryContent, undefined, newMemoryType, purposeArg, 'global');
+      const result = await writeMemorySmart(
+        newMemoryTitle,
+        newMemoryContent,
+        undefined,
+        newMemoryType,
+        purposeArg,
+        effectiveNewMemoryScope,
+        undefined,
+        topicGroupId,
+        topicGroupName,
+      );
       let msg: string;
       let level: 'success' | 'warning' = 'success';
       const writeSucceeded = result.event === 'ADD' || result.event === 'UPDATE' || result.event === 'APPEND' || result.event === 'DELETE';
@@ -316,6 +410,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
         setNewMemoryContent('');
         setNewMemoryType('study');
         setNewMemoryPurpose('memorized');
+        setNewMemoryScope(hasTopicMemoryScope ? 'topic' : 'global');
         loadMemories();
       }
     } catch (error: unknown) {
@@ -324,7 +419,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
     } finally {
       setIsLoading(false);
     }
-  }, [newMemoryTitle, newMemoryContent, newMemoryType, newMemoryPurpose, t, loadMemories]);
+  }, [newMemoryTitle, newMemoryContent, newMemoryType, newMemoryPurpose, effectiveNewMemoryScope, hasTopicMemoryScope, topicGroupId, topicGroupName, t, loadMemories]);
 
   const handleCancelCreate = useCallback(() => {
     setIsCreatingInline(false);
@@ -332,14 +427,16 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
     setNewMemoryContent('');
     setNewMemoryType('study');
     setNewMemoryPurpose('memorized');
-  }, []);
+    setNewMemoryScope(hasTopicMemoryScope ? 'topic' : 'global');
+  }, [hasTopicMemoryScope]);
 
   const handleCancelBatchImport = useCallback(() => {
     setIsBatchImporting(false);
     setBatchImportText('');
     setBatchImportType('study');
     setBatchImportPurpose('memorized');
-  }, []);
+    setBatchImportScope(hasTopicMemoryScope ? 'topic' : 'global');
+  }, [hasTopicMemoryScope]);
 
   const parseBatchImportItems = useCallback((raw: string) => {
     return raw
@@ -381,7 +478,9 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
         undefined,
         batchImportType,
         purposeArg,
-        'global',
+        effectiveBatchImportScope,
+        topicGroupId,
+        topicGroupName,
       );
 
       const summary = t(
@@ -406,7 +505,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
     } finally {
       setIsLoading(false);
     }
-  }, [batchImportPurpose, batchImportText, batchImportType, handleCancelBatchImport, loadMemories, parseBatchImportItems, t]);
+  }, [batchImportPurpose, batchImportText, batchImportType, effectiveBatchImportScope, topicGroupId, topicGroupName, handleCancelBatchImport, loadMemories, parseBatchImportItems, t]);
 
   // ========== 内联展开预览 ==========
   const handleToggleExpand = useCallback(async (noteId: string) => {
@@ -420,7 +519,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
     setExpandedMemoryId(noteId);
     setIsLoadingContent(true);
     try {
-      const memory = await readMemory(noteId);
+      const memory = await readMemory(noteId, memoryScopeContext);
       if (memory) {
         setExpandedContent(memory);
       } else {
@@ -437,7 +536,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
     } finally {
       setIsLoadingContent(false);
     }
-  }, [expandedMemoryId, t]);
+  }, [expandedMemoryId, memoryScopeContext, t]);
 
   // ========== 跳转到笔记编辑器 ==========
   const handleOpenInEditor = useCallback((noteId: string, title: string) => {
@@ -482,7 +581,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
 
     setIsLoading(true);
     try {
-      await deleteMemory(noteId);
+      await deleteMemory(noteId, memoryScopeContext);
       showGlobalNotification('success', t('memory.delete_success', '记忆已删除'));
       // 如果正在展开的记忆被删除，收起展开
       if (expandedMemoryId === noteId) {
@@ -496,7 +595,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
     } finally {
       setIsLoading(false);
     }
-  }, [t, loadMemories, expandedMemoryId]);
+  }, [t, loadMemories, expandedMemoryId, memoryScopeContext]);
 
   // ========== 批量删除 ==========
   const handleBatchDelete = useCallback(async () => {
@@ -505,7 +604,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
 
     setIsLoading(true);
     try {
-      const result = await batchDeleteMemories(Array.from(selectedIds));
+      const result = await batchDeleteMemories(Array.from(selectedIds), memoryScopeContext);
       if (result.failed > 0) {
         showGlobalNotification('warning', t('memory.batch_delete_partial', `已删除 ${result.succeeded} 条记忆，${result.failed} 条失败`));
       } else {
@@ -524,7 +623,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
     } finally {
       setIsLoading(false);
     }
-  }, [selectedIds, t, loadMemories, expandedMemoryId]);
+  }, [selectedIds, t, loadMemories, expandedMemoryId, memoryScopeContext]);
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds(prev => {
@@ -538,7 +637,8 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
   const handleExportMemories = useCallback(async () => {
     setIsLoading(true);
     try {
-      const exportData = await exportAllMemories();
+      const exportPaths = memoryScopeFilter === 'all' ? [] : visibleMemoryFolderPaths;
+      const exportData = await exportAllMemories(exportPaths, memoryScopeContext);
       if (exportData.length === 0) {
         showGlobalNotification('warning', t('memory.export_empty', '没有可导出的记忆'));
         return;
@@ -557,7 +657,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
     } finally {
       setIsLoading(false);
     }
-  }, [t]);
+  }, [memoryScopeContext, memoryScopeFilter, t, visibleMemoryFolderPaths]);
 
   // ========== 内联编辑 ==========
   const handleStartEdit = useCallback((noteId: string, content: string) => {
@@ -569,12 +669,12 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
     if (!editingMemoryId) return;
     setIsLoading(true);
     try {
-      await updateMemoryById(editingMemoryId, undefined, editContent);
+      await updateMemoryById(editingMemoryId, undefined, editContent, memoryScopeContext);
       showGlobalNotification('success', t('memory.edit_success', '记忆已更新'));
       setEditingMemoryId(null);
       setEditContent('');
       if (expandedMemoryId === editingMemoryId) {
-        const updated = await readMemory(editingMemoryId);
+        const updated = await readMemory(editingMemoryId, memoryScopeContext);
         if (updated) setExpandedContent(updated);
       }
       loadMemories();
@@ -584,7 +684,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
     } finally {
       setIsLoading(false);
     }
-  }, [editingMemoryId, editContent, t, expandedMemoryId, loadMemories]);
+  }, [editingMemoryId, editContent, t, expandedMemoryId, loadMemories, memoryScopeContext]);
 
   const handleCancelEdit = useCallback(() => {
     setEditingMemoryId(null);
@@ -600,7 +700,10 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
     setIsLoadingProfile(true);
     setShowProfile(true);
     try {
-      const sections = await getMemoryProfile();
+      const sections = await getMemoryProfile(
+        memoryScopeFilter === 'all' ? [] : visibleMemoryFolderPaths,
+        memoryScopeContext,
+      );
       setProfileSections(sections);
     } catch (error: unknown) {
       console.error('[MemoryView] Load profile failed:', error);
@@ -608,7 +711,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
     } finally {
       setIsLoadingProfile(false);
     }
-  }, [showProfile]);
+  }, [memoryScopeContext, memoryScopeFilter, showProfile, visibleMemoryFolderPaths]);
 
   // ========== 审计日志 ==========
   const loadAuditLogs = useCallback(async (resetOffset = true) => {
@@ -986,15 +1089,35 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
           <span>{t('memory.scope_filter', '管理范围')}:</span>
           <div className="flex items-center gap-0.5 ml-1">
             {([
-              { value: 'global' as const, label: t('memory.scope_global', '全局') },
+              {
+                value: 'topicAndGlobal' as const,
+                label: hasTopicMemoryScope
+                  ? t('memory.scope_topic_global', '当前课题 + 全局')
+                  : t('memory.scope_global', '全局'),
+              },
+              ...(hasTopicMemoryScope
+                ? [{ value: 'global' as const, label: t('memory.scope_global', '全局') }]
+                : []),
               { value: 'all' as const, label: t('memory.scope_all', '全部管理') },
             ]).map((opt) => (
               <button
                 key={opt.value}
                 onClick={() => {
+                  if (
+                    opt.value === 'all'
+                    && memoryScopeFilter !== 'all'
+                    && !unifiedConfirm(t(
+                      'memory.scope_all_confirm',
+                      '全部管理会显示所有课题的记忆，仅用于人工整理；Agent 默认仍只能看到当前课题 + 全局。确定切换吗？'
+                    ))
+                  ) {
+                    return;
+                  }
                   setMemoryScopeFilter(opt.value);
                   setIsSearchMode(false);
                   setSearchResults([]);
+                  setSelectedIds(new Set());
+                  setBatchMode(false);
                 }}
                 className={cn(
                   'px-2 py-0.5 rounded text-[11px] transition-colors',
@@ -1008,6 +1131,17 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
             ))}
           </div>
         </div>
+        {memoryScopeFilter === 'all' && (
+          <div className="flex items-start gap-2 rounded-md border border-amber-200/70 bg-amber-50/70 px-2.5 py-2 text-[11px] text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-200">
+            <WarningCircle size={14} className="mt-0.5 shrink-0" />
+            <span>
+              {t(
+                'memory.scope_all_warning',
+                '当前是人工全量管理视图，会显示所有课题记忆；这不会改变 Agent 的默认可见范围。'
+              )}
+            </span>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <Lightning size={14} />
           <span>{t('memory.auto_extract', '自动提取')}:</span>
@@ -1189,7 +1323,33 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
               />
 
               <div className="text-xs text-muted-foreground leading-relaxed">
-                {t('memory.global_write_hint', '管理页新建内容会写入全局记忆；课题记忆由对应课题会话自动写入。')}
+                {effectiveBatchImportScope === 'topic'
+                  ? t('memory.topic_write_hint', '将写入当前课题记忆；不会进入其它课题。')
+                  : t('memory.global_write_hint', '将写入全局记忆，适合长期偏好、身份背景和稳定习惯。')}
+              </div>
+
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className="text-xs text-muted-foreground mr-1.5">{t('memory.scope', '范围')}:</span>
+                {([
+                  ['topic', t('memory.scope_topic', '当前课题')],
+                  ['global', t('memory.scope_global', '全局')],
+                ] as const).map(([scope, label]) => (
+                  <NotionButton
+                    key={scope}
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setBatchImportScope(scope)}
+                    disabled={scope === 'topic' && !hasTopicMemoryScope}
+                    className={cn(
+                      '!h-auto !min-h-0 !px-2 !py-0.5 rounded text-[11px] transition-colors',
+                      effectiveBatchImportScope === scope
+                        ? 'bg-primary/15 text-primary font-medium'
+                        : 'text-muted-foreground hover:bg-[var(--interactive-hover)] hover:text-foreground'
+                    )}
+                  >
+                    {label}
+                  </NotionButton>
+                ))}
               </div>
 
               <div className="flex items-center gap-1 flex-wrap">
@@ -1289,7 +1449,33 @@ export const MemoryView: React.FC<MemoryViewProps> = ({ className, onOpenApp }) 
               />
 
               <div className="text-xs text-muted-foreground leading-relaxed">
-                {t('memory.global_write_hint', '管理页新建内容会写入全局记忆；课题记忆由对应课题会话自动写入。')}
+                {effectiveNewMemoryScope === 'topic'
+                  ? t('memory.topic_write_hint', '将写入当前课题记忆；不会进入其它课题。')
+                  : t('memory.global_write_hint', '将写入全局记忆，适合长期偏好、身份背景和稳定习惯。')}
+              </div>
+
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className="text-xs text-muted-foreground mr-1.5">{t('memory.scope', '范围')}:</span>
+                {([
+                  ['topic', t('memory.scope_topic', '当前课题')],
+                  ['global', t('memory.scope_global', '全局')],
+                ] as const).map(([scope, label]) => (
+                  <NotionButton
+                    key={scope}
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setNewMemoryScope(scope)}
+                    disabled={scope === 'topic' && !hasTopicMemoryScope}
+                    className={cn(
+                      '!h-auto !min-h-0 !px-2 !py-0.5 rounded text-[11px] transition-colors',
+                      effectiveNewMemoryScope === scope
+                        ? 'bg-primary/15 text-primary font-medium'
+                        : 'text-muted-foreground hover:bg-[var(--interactive-hover)] hover:text-foreground'
+                    )}
+                  >
+                    {label}
+                  </NotionButton>
+                ))}
               </div>
 
               <div className="flex items-center gap-1 flex-wrap">

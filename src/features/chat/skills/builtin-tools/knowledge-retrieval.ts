@@ -29,10 +29,10 @@ export const knowledgeRetrievalSkill: SkillDefinition = {
 ## 搜索工具使用指南
 
 ### 本地搜索（优先使用）
-使用 \`builtin-unified_search\` 搜索所有本地知识，包括：
-- **知识库文档**（笔记、教材、翻译等文本内容）
+使用 \`builtin-unified_search\` 搜索当前允许范围内的本地知识，包括：
+- **当前课题资源**（笔记、教材、翻译等文本内容；不主动跨课题）
 - **图片和PDF页面**（扫描件、截图、PDF图片）
-- **用户记忆**（个人偏好、知识笔记、学习经历）
+- **用户记忆**（当前课题记忆 + 全局长期记忆）
 
 一次调用即可获取所有相关内容，无需分别搜索。
 
@@ -108,7 +108,7 @@ export const knowledgeRetrievalSkill: SkillDefinition = {
   embeddedTools: [
     {
       name: 'builtin-unified_search',
-      description: '统一搜索：同时搜索知识库文档、图片/PDF、用户记忆，合并返回最相关结果。这是默认的搜索工具，一次调用即可获取所有本地知识。\n\n**返回的 ID 字段说明**：每条结果包含 readResourceId（DSTU 格式，如 note_xxx/tb_xxx）、sourceId、resourceId（VFS UUID）。调用 resource_read 时传 readResourceId（优先）或 sourceId，不要传 resourceId（VFS UUID 格式）。调用 memory_read 时传记忆结果的 noteId 字段。\n\n引用方式：[知识库-N] 引用文本，[图片-N] 引用图片，[记忆-N] 引用记忆。pageIndex 不为空时可用 [知识库-N:图片]/[图片-N:图片] 渲染页面图片。',
+      description: '统一搜索：同时搜索当前允许范围内的课题资源、图片/PDF、当前课题记忆与全局长期记忆，合并返回最相关结果。这是默认的本地搜索工具，不会主动跨课题枚举其它课题。\n\n**返回的 ID 字段说明**：每条结果包含 readResourceId（DSTU 格式，如 note_xxx/tb_xxx）、sourceId、resourceId（VFS UUID）。调用 resource_read 时传 readResourceId（优先）或 sourceId，不要传 resourceId（VFS UUID 格式）。调用 memory_read 时传记忆结果的 noteId 字段。\n\n引用方式：[知识库-N] 引用文本，[图片-N] 引用图片，[记忆-N] 引用记忆。pageIndex 不为空时可用 [知识库-N:图片]/[图片-N:图片] 渲染页面图片。',
       inputSchema: {
         type: 'object',
         properties: {
@@ -119,7 +119,7 @@ export const knowledgeRetrievalSkill: SkillDefinition = {
           folder_ids: {
             type: 'array',
             items: { type: 'string' },
-            description: '限制搜索的文件夹 ID 列表（可选，不填则搜索所有文件夹）',
+            description: '限制搜索的文件夹 ID 列表（可选；不填则搜索当前课题资源范围，不会退回所有课题文件夹）',
           },
           resource_ids: {
             type: 'array',

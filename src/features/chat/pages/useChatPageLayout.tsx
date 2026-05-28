@@ -26,6 +26,7 @@ export interface UseChatPageLayoutDeps {
   setSessionSheetOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setShowChatControl: React.Dispatch<React.SetStateAction<boolean>>;
   setViewMode: React.Dispatch<React.SetStateAction<'sidebar' | 'browser'>>;
+  onMobileResourcePanelBack?: () => void;
 }
 
 export function useChatPageLayout(deps: UseChatPageLayoutDeps) {
@@ -34,6 +35,7 @@ export function useChatPageLayout(deps: UseChatPageLayoutDeps) {
     viewMode, sessionSheetOpen, t, sessionCount, createSession, isLoading,
     mobileResourcePanelOpen, finderBreadcrumbs, finderJumpToBreadcrumb,
     setMobileResourcePanelOpen, setSessionSheetOpen, setShowChatControl, setViewMode,
+    onMobileResourcePanelBack,
   } = deps;
 
   useEffect(() => {
@@ -122,7 +124,7 @@ export function useChatPageLayout(deps: UseChatPageLayoutDeps) {
       />
     ),
     showBackArrow: true,
-    onMenuClick: () => setMobileResourcePanelOpen(false),
+    onMenuClick: onMobileResourcePanelBack ?? (() => setMobileResourcePanelOpen(false)),
   } : {
     hidden: sessionSheetOpen,
     title: headerTitle,
@@ -135,7 +137,7 @@ export function useChatPageLayout(deps: UseChatPageLayoutDeps) {
         }
       : () => setSessionSheetOpen(prev => !prev),
     rightActions: headerRightActions,
-  }, [headerTitle, viewMode, headerRightActions, mobileResourcePanelOpen, sessionSheetOpen, finderBreadcrumbs, handleFinderBreadcrumbNavigate, t]);
+  }, [headerTitle, viewMode, headerRightActions, mobileResourcePanelOpen, sessionSheetOpen, finderBreadcrumbs, handleFinderBreadcrumbNavigate, onMobileResourcePanelBack, setMobileResourcePanelOpen, t]);
 
   return {
     isEmptyNewChat,

@@ -1233,6 +1233,8 @@ pub fn run() {
             // 会话分组命令
             ,crate::chat_v2::handlers::group_handlers::chat_v2_create_group
             ,crate::chat_v2::handlers::group_handlers::chat_v2_update_group
+            ,crate::chat_v2::handlers::group_handlers::chat_v2_archive_group
+            ,crate::chat_v2::handlers::group_handlers::chat_v2_restore_group
             ,crate::chat_v2::handlers::group_handlers::chat_v2_delete_group
             ,crate::chat_v2::handlers::group_handlers::chat_v2_get_group
             ,crate::chat_v2::handlers::group_handlers::chat_v2_list_groups

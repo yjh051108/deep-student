@@ -241,7 +241,12 @@ export const BUILTIN_TOOLS: BuiltinToolSchema[] = [
         },
         folder: {
           type: 'string',
-          description: '记忆分类文件夹路径，如 "偏好"、"知识"、"经历"、"知识/数学"。留空表示存储在记忆根目录。',
+          description: '记忆分类文件夹路径，如 "偏好"、"知识"、"经历"、"知识/数学"。留空表示存储在所选作用域根目录。',
+        },
+        scope: {
+          type: 'string',
+          enum: ['topic', 'global'],
+          description: '记忆作用域。topic=当前课题记忆（默认）；global=跨课题长期记忆，仅用于用户偏好/身份/稳定习惯/长期目标。',
         },
         title: {
           type: 'string',
@@ -307,7 +312,12 @@ export const BUILTIN_TOOLS: BuiltinToolSchema[] = [
       properties: {
         folder: {
           type: 'string',
-          description: '记忆分类文件夹路径，如 "偏好"、"经历"、"知识/数学"。留空表示存储在记忆根目录。',
+          description: '记忆分类文件夹路径，如 "偏好"、"经历"、"知识/数学"。留空表示存储在所选作用域根目录。',
+        },
+        scope: {
+          type: 'string',
+          enum: ['topic', 'global'],
+          description: '记忆作用域。topic=当前课题记忆（默认）；global=跨课题长期记忆，仅用于用户偏好/身份/稳定习惯/长期目标。',
         },
         title: {
           type: 'string',
@@ -342,6 +352,11 @@ export const BUILTIN_TOOLS: BuiltinToolSchema[] = [
           type: 'string',
           description: '默认文件夹路径。',
         },
+        scope: {
+          type: 'string',
+          enum: ['topic', 'global'],
+          description: '默认作用域。topic=当前课题记忆（默认）；global=跨课题长期记忆。',
+        },
         memory_type: {
           type: 'string',
           enum: ['fact', 'study', 'note'],
@@ -361,6 +376,7 @@ export const BUILTIN_TOOLS: BuiltinToolSchema[] = [
               title: { type: 'string' },
               content: { type: 'string' },
               folder: { type: 'string' },
+              scope: { type: 'string', enum: ['topic', 'global'] },
               memory_type: { type: 'string', enum: ['fact', 'study', 'note'] },
               memory_purpose: { type: 'string', enum: ['internalized', 'memorized', 'supplementary', 'systemic'] },
             },

@@ -141,10 +141,11 @@ fn effective_group_scope(ctx: &ExecutionContext) -> Option<GroupScope> {
         return repair_group_scope(ctx, &group_id);
     }
 
+    if ctx.chat_v2_db.is_some() {
+        return None;
+    }
+
     if let Some(group_id) = ctx.group_id.as_ref().filter(|id| !id.trim().is_empty()) {
-        if let Some(scope) = repair_group_scope(ctx, group_id.trim()) {
-            return Some(scope);
-        }
         return Some(GroupScope {
             id: group_id.trim().to_string(),
             pinned_resource_ids: ctx.group_pinned_resource_ids.clone(),

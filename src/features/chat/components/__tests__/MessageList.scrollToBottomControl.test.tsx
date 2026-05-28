@@ -106,7 +106,11 @@ vi.mock('@/features/chat/components/ui/ThreadEmptyStateShell', () => ({
 import { MessageList } from '@/features/chat/components/MessageList';
 
 function renderMessageList() {
-  const store = {} as StoreApi<ChatStore>;
+  const store = {
+    getState: () => ({
+      getMessage: () => ({ role: 'assistant' }),
+    }),
+  } as unknown as StoreApi<ChatStore>;
   return render(<MessageList store={store} />);
 }
 
@@ -200,6 +204,9 @@ describe('MessageList scroll-to-bottom control', () => {
 
     const viewport = requireViewport();
     const { scrollTo, getScrollTop } = configureViewportMetrics(viewport, { scrollTop: 240 });
+    const host = viewport.parentElement;
+    const cancelListener = vi.fn();
+    host?.addEventListener('smooth-wheel:cancel', cancelListener);
 
     fireEvent.scroll(viewport);
 
@@ -208,8 +215,9 @@ describe('MessageList scroll-to-bottom control', () => {
 
     fireEvent.click(button);
 
-    expect(scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: 'smooth' });
-    expect(getScrollTop()).toBe(1000);
+    expect(cancelListener).toHaveBeenCalledTimes(1);
+    expect(scrollTo).toHaveBeenCalledWith({ top: 600, behavior: 'auto' });
+    expect(getScrollTop()).toBe(600);
     expect(animatedContainer).toHaveAttribute('data-open', 'false');
     expect(animatedContainer).toHaveAttribute('aria-hidden', 'true');
 

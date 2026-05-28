@@ -254,26 +254,39 @@ export function useSessionLifecycle(deps: UseSessionLifecycleDeps) {
       const allSessions = [...groupedResult, ...ungroupedResult]
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       setSessions(allSessions);
-      emitSessionListUpdated();
       setTotalSessionCount(totalCount);
       setUngroupedSessionCount(ungroupedCount);
       // "加载更多"只针对未分组会话
       setHasMoreSessions(ungroupedResult.length >= PAGE_SIZE);
 
-      // 启动行为：进入一个隐藏 draft。它不进入左侧列表，只有首条消息后才转正。
-      let sessionToSelect: string | null = null;
-
-      try {
-        const draftSession = await getOrCreateHiddenDraftSession();
-        sessionToSelect = draftSession.id;
-      } catch (e) {
-        console.warn('[ChatV2Page] Failed to create startup draft session:', e);
-        if (allSessions.length > 0) {
-          sessionToSelect = allSessions[0].id;
+      setCurrentSessionId((prevId) => {
+        if (!prevId) {
+          return prevId;
         }
-      }
 
-      setCurrentSessionId(sessionToSelect);
+        const stillExists = allSessions.some((session) => session.id === prevId)
+          || getHiddenDraftSessionScope(sessionManager.get(prevId)?.getState().sessionMetadata) !== null;
+        return stillExists ? prevId : null;
+      });
+
+      const activeSessionId = sessionManager.getCurrentSessionId();
+      if (!activeSessionId) {
+        // 启动行为：仅在没有当前会话时进入隐藏 draft。
+        // 列表刷新不能覆盖用户刚选中的历史会话。
+        let sessionToSelect: string | null = null;
+
+        try {
+          const draftSession = await getOrCreateHiddenDraftSession();
+          sessionToSelect = draftSession.id;
+        } catch (e) {
+          console.warn('[ChatV2Page] Failed to create startup draft session:', e);
+          if (allSessions.length > 0) {
+            sessionToSelect = allSessions[0].id;
+          }
+        }
+
+        setCurrentSessionId(sessionToSelect);
+      }
     } catch (error) {
       console.error('[ChatV2Page] Failed to load sessions:', getErrorMessage(error));
       showGlobalNotification('error', t('page.loadSessionsFailed', '加载会话失败，请刷新后重试'));

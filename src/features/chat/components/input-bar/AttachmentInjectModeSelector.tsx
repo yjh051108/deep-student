@@ -182,8 +182,11 @@ const ImageModeSelector: React.FC<ImageModeSelectorProps> = memo(({
   
   const isModeReady = (mode: ImageInjectMode) => {
     if (!processingStatus) return true;
-    if (mode === 'image') return true;
     return readyModes.has(mode);
+  };
+
+  const isSelectedModeProcessing = (mode: ImageInjectMode) => {
+    return selectedModes.includes(mode) && isProcessing && !isModeReady(mode);
   };
 
   return (
@@ -195,7 +198,7 @@ const ImageModeSelector: React.FC<ImageModeSelectorProps> = memo(({
         icon={Image}
         label={t('chatV2:injectMode.image.image')}
         title={t('chatV2:injectMode.image.imageDesc')}
-        isProcessing={isProcessing && !isModeReady('image')}
+        isProcessing={isSelectedModeProcessing('image')}
         isReady={isModeReady('image')}
       />
       <ToggleTag
@@ -205,7 +208,7 @@ const ImageModeSelector: React.FC<ImageModeSelectorProps> = memo(({
         icon={Scan}
         label={t('chatV2:injectMode.image.ocr')}
         title={t('chatV2:injectMode.image.ocrDesc')}
-        isProcessing={isProcessing && !isModeReady('ocr')}
+        isProcessing={isSelectedModeProcessing('ocr')}
         isReady={isModeReady('ocr')}
       />
     </div>
@@ -276,6 +279,10 @@ const PdfModeSelector: React.FC<PdfModeSelectorProps> = memo(({
     return readyModes.has(mode);
   };
 
+  const isSelectedModeProcessing = (mode: PdfInjectMode) => {
+    return selectedModes.includes(mode) && isProcessing && !isModeReady(mode);
+  };
+
   return (
     <div className={cn('inline-flex items-center gap-1', className)}>
       <ToggleTag
@@ -285,7 +292,7 @@ const PdfModeSelector: React.FC<PdfModeSelectorProps> = memo(({
         icon={FileText}
         label={t('chatV2:injectMode.pdf.text')}
         title={t('chatV2:injectMode.pdf.textDesc')}
-        isProcessing={isProcessing}
+        isProcessing={isSelectedModeProcessing('text')}
         isReady={isModeReady('text')}
       />
       <ToggleTag
@@ -295,7 +302,7 @@ const PdfModeSelector: React.FC<PdfModeSelectorProps> = memo(({
         icon={Scan}
         label={t('chatV2:injectMode.pdf.ocr')}
         title={t('chatV2:injectMode.pdf.ocrDesc')}
-        isProcessing={isProcessing}
+        isProcessing={isSelectedModeProcessing('ocr')}
         isReady={isModeReady('ocr')}
       />
       <ToggleTag
@@ -305,7 +312,7 @@ const PdfModeSelector: React.FC<PdfModeSelectorProps> = memo(({
         icon={Images}
         label={t('chatV2:injectMode.pdf.image')}
         title={t('chatV2:injectMode.pdf.imageDesc')}
-        isProcessing={isProcessing}
+        isProcessing={isSelectedModeProcessing('image')}
         isReady={isModeReady('image')}
       />
     </div>
@@ -372,7 +379,7 @@ export const AttachmentInjectModeSelector: React.FC<AttachmentInjectModeSelector
     ? {
         stage: 'pending',
         percent: 0,
-        readyModes: isImage ? ['image'] : [],
+        readyModes: [],
         mediaType: isPdf ? 'pdf' : 'image',
       }
     : undefined;

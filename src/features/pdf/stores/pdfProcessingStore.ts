@@ -42,6 +42,8 @@ export interface PdfProcessingStatus {
   readyModes: Array<'text' | 'ocr' | 'image'>;
   /** 错误信息（error 状态时填充） */
   error?: string;
+  /** 已完成但存在问题的处理阶段 */
+  failedStages?: Array<{ stage: string; message: string; retriable?: boolean }>;
   /** 媒体类型（v2.0 新增） */
   mediaType?: MediaType;
 }
@@ -67,7 +69,12 @@ interface PdfProcessingStoreActions {
    * @param fileId 文件 ID
    * @param readyModes 就绪的注入模式
    */
-  setCompleted: (fileId: string, readyModes: Array<'text' | 'ocr' | 'image'>, stage?: 'completed' | 'completed_with_issues') => void;
+  setCompleted: (
+    fileId: string,
+    readyModes: Array<'text' | 'ocr' | 'image'>,
+    stage?: 'completed' | 'completed_with_issues',
+    failedStages?: Array<{ stage: string; message: string; retriable?: boolean }>
+  ) => void;
   
   /**
    * 设置文件处理错误
@@ -75,7 +82,12 @@ interface PdfProcessingStoreActions {
    * @param error 错误信息
    * @param stage 出错的阶段
    */
-  setError: (fileId: string, error: string, stage?: string) => void;
+  setError: (
+    fileId: string,
+    error: string,
+    stage?: string,
+    failedStages?: Array<{ stage: string; message: string; retriable?: boolean }>
+  ) => void;
   
   /**
    * 移除文件的处理状态
@@ -174,6 +186,7 @@ export const usePdfProcessingStore = create<PdfProcessingStore>((set, get) => ({
         currentPage: status.currentPage ?? existing?.currentPage,
         totalPages: status.totalPages ?? existing?.totalPages,
         error: status.error ?? existing?.error,
+        failedStages: status.failedStages ?? existing?.failedStages,
         mediaType: status.mediaType ?? existing?.mediaType,
       };
       if (!shouldAcceptUpdate(existing, updated)) {
@@ -185,10 +198,13 @@ export const usePdfProcessingStore = create<PdfProcessingStore>((set, get) => ({
     });
   },
   
-  setCompleted: (fileId, readyModes, stage = 'completed') => {
+  setCompleted: (fileId, readyModes, stage = 'completed', failedStages) => {
     set(state => {
       const newMap = new Map(state.statusMap);
       const existing = newMap.get(fileId);
+      const nextFailedStages = stage === 'completed_with_issues'
+        ? failedStages ?? existing?.failedStages
+        : undefined;
       newMap.set(fileId, {
         stage,
         percent: 100,
@@ -197,6 +213,7 @@ export const usePdfProcessingStore = create<PdfProcessingStore>((set, get) => ({
         currentPage: existing?.currentPage,
         totalPages: existing?.totalPages,
         error: undefined, // 清除错误
+        failedStages: nextFailedStages,
         mediaType: existing?.mediaType,
       });
       enforceMaxEntries(newMap);
@@ -212,7 +229,7 @@ export const usePdfProcessingStore = create<PdfProcessingStore>((set, get) => ({
     }, AUTO_CLEANUP_DELAY);
   },
   
-  setError: (fileId, error, stage) => {
+  setError: (fileId, error, stage, failedStages) => {
     set(state => {
       const newMap = new Map(state.statusMap);
       const existing = newMap.get(fileId);
@@ -221,6 +238,7 @@ export const usePdfProcessingStore = create<PdfProcessingStore>((set, get) => ({
         percent: existing?.percent ?? 0,
         readyModes: existing?.readyModes ?? [],
         error,
+        failedStages: failedStages ?? existing?.failedStages,
         mediaType: existing?.mediaType,
       });
       enforceMaxEntries(newMap);

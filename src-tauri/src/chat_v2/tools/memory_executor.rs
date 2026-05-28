@@ -7,6 +7,8 @@ use sha2::{Digest, Sha256};
 
 use super::executor::{ExecutionContext, ToolExecutor, ToolSensitivity};
 use super::strip_tool_namespace;
+use crate::chat_v2::repo::ChatV2Repo;
+use crate::chat_v2::types::PersistStatus;
 use crate::chat_v2::types::{ToolCall, ToolResultInfo};
 use crate::memory::{
     MemoryOpSource, MemoryOpType, MemoryScope, MemoryService, MemoryType, OpTimer, WriteMode,
@@ -24,17 +26,99 @@ pub const MEMORY_WRITE_BATCH: &str = "builtin-memory_write_batch";
 
 pub struct MemoryToolExecutor;
 
+#[derive(Debug, Clone)]
+struct EffectiveMemoryScope {
+    group_id: String,
+    group_name: String,
+}
+
 impl MemoryToolExecutor {
     pub fn new() -> Self {
         Self
     }
 
+    fn load_active_group_scope(
+        ctx: &ExecutionContext,
+        group_id: &str,
+    ) -> Option<EffectiveMemoryScope> {
+        let chat_db = ctx.chat_v2_db.as_ref()?;
+        let conn = chat_db.get_conn_safe().ok()?;
+        let group = ChatV2Repo::get_group_with_conn(&conn, group_id)
+            .ok()
+            .flatten()?;
+        if group.persist_status != PersistStatus::Active {
+            return None;
+        }
+        Some(EffectiveMemoryScope {
+            group_id: group.id,
+            group_name: group.name,
+        })
+    }
+
+    fn load_active_session_scope(ctx: &ExecutionContext) -> Option<EffectiveMemoryScope> {
+        let chat_db = ctx.chat_v2_db.as_ref()?;
+        let conn = chat_db.get_conn_safe().ok()?;
+        let group = conn
+            .query_row(
+                "SELECT g.id, g.name
+                 FROM chat_v2_sessions s
+                 JOIN chat_v2_session_groups g ON g.id = s.group_id
+                 WHERE s.id = ?1 AND g.persist_status = 'active'",
+                rusqlite::params![ctx.session_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .ok()?;
+        Some(EffectiveMemoryScope {
+            group_id: group.0,
+            group_name: group.1,
+        })
+    }
+
+    fn effective_topic_scope(ctx: &ExecutionContext) -> Option<EffectiveMemoryScope> {
+        if let Some(scope) = Self::load_active_session_scope(ctx) {
+            return Some(scope);
+        }
+
+        if ctx.chat_v2_db.is_some() {
+            return None;
+        }
+
+        if let Some(group_id) = ctx
+            .group_id
+            .as_ref()
+            .map(|id| id.trim())
+            .filter(|id| !id.is_empty())
+        {
+            return crate::memory::topic_memory_root(
+                Some(group_id),
+                ctx.group_name.as_deref(),
+            )
+            .map(|_| EffectiveMemoryScope {
+                group_id: group_id.to_string(),
+                group_name: ctx.group_name.clone().unwrap_or_default(),
+            });
+        }
+
+        None
+    }
+
     fn topic_memory_root(ctx: &ExecutionContext) -> Option<String> {
-        crate::memory::topic_memory_root(ctx.group_id.as_deref(), ctx.group_name.as_deref())
+        let scope = Self::effective_topic_scope(ctx)?;
+        crate::memory::topic_memory_root(
+            Some(scope.group_id.as_str()),
+            Some(scope.group_name.as_str()),
+        )
     }
 
     fn visible_scope_roots(ctx: &ExecutionContext) -> Vec<String> {
-        crate::memory::visible_scope_roots(ctx.group_id.as_deref(), ctx.group_name.as_deref())
+        if let Some(scope) = Self::effective_topic_scope(ctx) {
+            crate::memory::visible_scope_roots(
+                Some(scope.group_id.as_str()),
+                Some(scope.group_name.as_str()),
+            )
+        } else {
+            crate::memory::visible_scope_roots(None, None)
+        }
     }
 
     fn scoped_folder_path(
@@ -42,9 +126,14 @@ impl MemoryToolExecutor {
         scope: MemoryScope,
         folder: Option<&str>,
     ) -> Option<String> {
+        let effective_scope = Self::effective_topic_scope(ctx);
         crate::memory::scoped_folder_path(
-            ctx.group_id.as_deref(),
-            ctx.group_name.as_deref(),
+            effective_scope
+                .as_ref()
+                .map(|scope| scope.group_id.as_str()),
+            effective_scope
+                .as_ref()
+                .map(|scope| scope.group_name.as_str()),
             scope,
             folder,
         )
@@ -66,10 +155,15 @@ impl MemoryToolExecutor {
         let Some(folder) = folder else {
             return Vec::new();
         };
+        let effective_scope = Self::effective_topic_scope(ctx);
         if crate::memory::classify_folder_scope(
             folder,
-            ctx.group_id.as_deref(),
-            ctx.group_name.as_deref(),
+            effective_scope
+                .as_ref()
+                .map(|scope| scope.group_id.as_str()),
+            effective_scope
+                .as_ref()
+                .map(|scope| scope.group_name.as_str()),
         )
         .is_some()
         {
@@ -88,10 +182,15 @@ impl MemoryToolExecutor {
         let folder_path = service
             .get_note_folder_path(note_id)
             .map_err(|e| e.to_string())?;
+        let effective_scope = Self::effective_topic_scope(ctx);
         if crate::memory::is_folder_path_visible(
             &folder_path,
-            ctx.group_id.as_deref(),
-            ctx.group_name.as_deref(),
+            effective_scope
+                .as_ref()
+                .map(|scope| scope.group_id.as_str()),
+            effective_scope
+                .as_ref()
+                .map(|scope| scope.group_name.as_str()),
         ) {
             Ok(())
         } else {

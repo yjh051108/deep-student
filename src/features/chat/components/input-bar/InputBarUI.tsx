@@ -308,6 +308,8 @@ function getStageLabel(
       return t('chatV2:inputBar.stage.vectorIndexing');
     case 'completed':
       return t('chatV2:inputBar.stage.completed');
+    case 'completed_with_issues':
+      return t('chatV2:inputBar.stage.completedWithIssues');
     case 'error':
       return t('chatV2:inputBar.stage.error');
     default:
@@ -380,6 +382,39 @@ function hasAnyReadyMode(
   return selectedModes.some((mode) => readySet.has(mode));
 }
 
+function areSelectedModesReady(
+  selectedModes: MediaInjectMode[],
+  readyModes?: MediaInjectMode[]
+): boolean {
+  return getMissingModes(selectedModes, readyModes).length === 0;
+}
+
+function isTerminalMediaStage(status: PdfProcessingStatus | undefined): boolean {
+  return status?.stage === 'completed'
+    || status?.stage === 'completed_with_issues'
+    || status?.stage === 'error';
+}
+
+function findBlockingIssue(
+  status: PdfProcessingStatus | undefined,
+  missingModes: MediaInjectMode[]
+): { stage: string; message: string; retriable?: boolean } | undefined {
+  if (!status?.failedStages?.length) return undefined;
+  if (missingModes.includes('ocr')) {
+    return status.failedStages.find(issue => issue.stage === 'ocr_processing') ?? status.failedStages[0];
+  }
+  if (missingModes.includes('image')) {
+    return status.failedStages.find(issue =>
+      issue.stage === 'image_compression'
+      || issue.stage === 'page_rendering'
+      || issue.stage === 'page_compression'
+    ) ?? status.failedStages[0];
+  }
+  if (missingModes.includes('text')) {
+    return status.failedStages.find(issue => issue.stage === 'text_extraction') ?? status.failedStages[0];
+  }
+  return status.failedStages[0];
+}
 
 // ============================================================================
 // 辅助 Hooks
@@ -464,6 +499,7 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
   onClearAttachments,
   onFilesUpload,
   targetFolderId,
+  groupId,
   onSetPanelState,
   // UI 配置
   placeholder,
@@ -736,6 +772,8 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
             base64Content: base64Result,
             type: isImage ? 'image' : 'file',
             folderId: targetFolderId,
+            sessionId,
+            groupId,
           });
 
           logAttachment('ui', 'vfs_upload_done', {
@@ -818,7 +856,7 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
             const percent = uploadResult.processingPercent ?? 25;
             const VALID_MODES = new Set(['text', 'ocr', 'image']);
             const rawModes = (uploadResult.readyModes || []).filter(m => VALID_MODES.has(m));
-            const readyModes = (rawModes.length > 0 ? rawModes : ['text']) as ('text' | 'image' | 'ocr')[];
+            const readyModes = rawModes as ('text' | 'image' | 'ocr')[];
             const isCompleted = stage === 'completed' || stage === 'completed_with_issues';
 
             onUpdateAttachment(attachmentId, {
@@ -1164,7 +1202,7 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
       if (att.status !== 'ready' && att.status !== 'processing') return false;
       const status = att.sourceId ? (pdfStatusMap.get(att.sourceId) || att.processingStatus) : att.processingStatus;
       const readyModes = getEffectiveReadyModes(status, mediaType, att);
-      return hasAnyReadyMode(selectedModes, readyModes);
+      return areSelectedModesReady(selectedModes, readyModes);
     });
   }, [attachments, pdfStatusMap]);
   const canSendWithAttachments = hasText || hasSendableAttachments;
@@ -1188,7 +1226,8 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
       const mediaType = isPdf ? 'pdf' : 'image';
       const status = att.sourceId ? (pdfStatusMap.get(att.sourceId) || att.processingStatus) : att.processingStatus;
       const readyModes = getEffectiveReadyModes(status, mediaType, att);
-      return !hasAnyReadyMode(selectedModes, readyModes);
+      if (isTerminalMediaStage(status)) return false;
+      return !areSelectedModesReady(selectedModes, readyModes);
     });
   }, [attachments, pdfStatusMap]);
 
@@ -1203,12 +1242,15 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
       const mediaType = isPdf ? 'pdf' : 'image';
       const status = att.sourceId ? (pdfStatusMap.get(att.sourceId) || att.processingStatus) : att.processingStatus;
       const readyModes = getEffectiveReadyModes(status, mediaType, att);
-      if (!hasAnyReadyMode(selectedModes, readyModes)) {
-        const missingModes = getMissingModes(selectedModes, readyModes);
+      const missingModes = getMissingModes(selectedModes, readyModes);
+      if (missingModes.length > 0) {
         return {
           name: att.name,
           missingModes,
           stage: status?.stage,
+          terminal: isTerminalMediaStage(status),
+          issue: findBlockingIssue(status, missingModes),
+          error: status?.error,
         };
       }
     }
@@ -1222,6 +1264,10 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
       return t('chatV2:inputBar.attachmentsUploading');
     }
     if (firstBlockingAttachment) {
+      const issueMessage = firstBlockingAttachment.error || firstBlockingAttachment.issue?.message;
+      if (issueMessage) {
+        return `${firstBlockingAttachment.name}: ${issueMessage}`;
+      }
       const missingLabel = formatModeList(firstBlockingAttachment.missingModes);
       return missingLabel
         ? t('chatV2:inputBar.attachmentNotReady', {
@@ -1236,7 +1282,7 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
   }, [queueFull, disabledReason, hasUploadingAttachments, firstBlockingAttachment, formatModeList, t]);
 
   const processingIndicatorLabel = useMemo(() => {
-    if (!firstBlockingAttachment) return undefined;
+    if (!firstBlockingAttachment || firstBlockingAttachment.terminal) return undefined;
     const missingLabel = formatModeList(firstBlockingAttachment.missingModes);
     return missingLabel
       ? t('chatV2:inputBar.processingIndicatorPartial')
@@ -1259,7 +1305,7 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
   // 🆕 队列模式：队列已满时禁用发送
   const disabledSend = showStop
     ? false
-    : !!disabledReason || !canSendWithAttachments || !effectiveCanSubmit || hasUploadingAttachments || hasProcessingMedia || queueFull;
+    : !!disabledReason || !canSendWithAttachments || !effectiveCanSubmit || hasUploadingAttachments || !!firstBlockingAttachment || queueFull;
 
   // ========== 回调函数 ==========
 
@@ -1781,9 +1827,17 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
   const pollingCountRef = useRef<Map<string, number>>(new Map());
   // 最大轮询次数：150 次 × 2 秒 ≈ 5 分钟
   const MAX_POLL_COUNT = 150;
+  const processingAttachmentSignature = useMemo(() => {
+    return attachments
+      .filter(att => att.status === 'processing' && !!att.sourceId)
+      .filter(att => att.mimeType === 'application/pdf' || att.mimeType?.startsWith('image/'))
+      .map(att => `${att.id}:${att.sourceId}:${att.processingStatus?.stage ?? 'unknown'}`)
+      .sort()
+      .join('|');
+  }, [attachments]);
 
   // 🆕 兜底轮询：避免事件丢失导致状态卡住
-  // ★ 修复：依赖 attachments.length，新增 processing 附件时重新启动轮询
+  // ★ 修复：依赖 processing 附件签名，重试同一附件时也会重新启动轮询
   useEffect(() => {
     let timerId: number | null = null;
     let stopped = false;
@@ -1830,20 +1884,63 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
       for (const att of timedOutAttachments) {
         const sourceId = att.sourceId as string;
         pollingCountRef.current.delete(sourceId);
+        const isPdf = att.mimeType === 'application/pdf' || att.name.toLowerCase().endsWith('.pdf');
+        const isImage = att.mimeType?.startsWith('image/') || false;
+        const mediaType = isPdf ? 'pdf' : 'image';
+        const latestStatus = usePdfProcessingStore.getState().get(sourceId) || att.processingStatus;
+        const readyModes = getEffectiveReadyModes(latestStatus, mediaType, att);
+        const selectedModes = getSelectedModes(att, isPdf, isImage);
+        const timeoutIssue = {
+          stage: latestStatus?.stage ?? 'timeout',
+          message: t('chatV2:inputBar.processingTimeout'),
+          retriable: true,
+        };
         logAttachment('poll', 'polling_timeout', {
           attachmentId: att.id,
           sourceId,
           maxPollCount: MAX_POLL_COUNT,
+          readyModes,
+          selectedModes,
         }, 'warning');
+        if (hasAnyReadyMode(selectedModes, readyModes)) {
+          onUpdateAttachment(att.id, {
+            status: 'ready',
+            processingStatus: {
+              stage: 'completed_with_issues',
+              percent: latestStatus?.percent ?? 100,
+              readyModes,
+              error: latestStatus?.error,
+              failedStages: [
+                ...(latestStatus?.failedStages ?? []),
+                timeoutIssue,
+              ],
+              mediaType,
+            },
+          });
+          usePdfProcessingStore.getState().setCompleted(
+            sourceId,
+            (readyModes || []) as Array<'text' | 'ocr' | 'image'>,
+            'completed_with_issues',
+            [
+              ...(latestStatus?.failedStages ?? []),
+              timeoutIssue,
+            ]
+          );
+          continue;
+        }
         onUpdateAttachment(att.id, {
           status: 'error',
           error: t('chatV2:inputBar.processingTimeout'),
           processingStatus: {
             stage: 'error',
             percent: 0,
-            readyModes: [],
+            readyModes: readyModes || [],
             error: 'Processing timed out after 5 minutes',
-            mediaType: att.mimeType === 'application/pdf' ? 'pdf' : 'image',
+            failedStages: [
+              ...(latestStatus?.failedStages ?? []),
+              timeoutIssue,
+            ],
+            mediaType,
           },
         });
       }
@@ -1864,6 +1961,11 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
             totalPages: status.totalPages,
             percent: status.percent ?? 0,
             readyModes: (status.readyModes || []) as Array<'text' | 'ocr' | 'image'>,
+            failedStages: status.failedStages,
+            error: status.error,
+            mediaType: status.mediaType === 'pdf' || status.mediaType === 'image'
+              ? status.mediaType
+              : undefined,
           });
           // 处理完成或出错时清理轮询计数
           if (status.stage === 'completed' || status.stage === 'completed_with_issues' || status.stage === 'error') {
@@ -1894,7 +1996,7 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
       document.removeEventListener('visibilitychange', handleVisibility);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attachments.length]);
+  }, [processingAttachmentSignature]);
 
   // 🆕 监听媒体处理完成事件，更新附件状态为 ready
   // ★ P1 修复：同时处理 PDF 和图片附件
@@ -1954,20 +2056,24 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
       if (status.stage === 'completed' || status.stage === 'completed_with_issues') {
         // 完成时清理同步状态
         syncedStatus.delete(att.id);
+        const mediaType = isPdf ? 'pdf' : 'image';
+        const readyModes = (status.readyModes || []) as MediaInjectMode[];
         // ★ 调试日志：状态同步 - 完成
         logAttachment('store', 'status_sync_completed', {
           attachmentId: att.id,
           sourceId: att.sourceId,
-          mediaType: isPdf ? 'pdf' : 'image',
-          readyModes: status.readyModes,
+          mediaType,
+          readyModes,
         });
         onUpdateAttachment(att.id, {
           status: 'ready',
           processingStatus: {
             stage: status.stage,
             percent: 100,
-            readyModes: status.readyModes,
-            mediaType: isPdf ? 'pdf' : 'image',
+            readyModes,
+            mediaType,
+            failedStages: status.failedStages,
+            error: status.error,
           },
         });
       } else if (status.stage === 'error') {
@@ -1988,6 +2094,7 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
             percent: status.percent || 0,
             readyModes: status.readyModes || [],
             error: status.error,
+            failedStages: status.failedStages,
             mediaType: isPdf ? 'pdf' : 'image',
           },
         });
@@ -2010,6 +2117,8 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
             mediaType: isPdf ? 'pdf' : 'image',
             currentPage: status.currentPage,
             totalPages: status.totalPages,
+            failedStages: status.failedStages,
+            error: status.error,
           },
         });
       }
@@ -2877,12 +2986,27 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
                     const statusForModes = attachment.status === 'ready'
                       ? attachment.processingStatus
                       : mediaProgress;
+                    const displayStatus = mediaProgress || statusForModes;
                     const readyModes = getEffectiveReadyModes(statusForModes, mediaType, attachment);
                     const missingModes = getMissingModes(selectedModes, readyModes);
+                    const selectedModesReady = missingModes.length === 0;
                     const missingModesLabel = missingModes.length > 0 ? formatModeList(missingModes) : '';
+                    const processingIssue = findBlockingIssue(displayStatus, missingModes);
+                    const hasProcessingIssue = displayStatus?.stage === 'completed_with_issues'
+                      || !!displayStatus?.failedStages?.length;
+                    const canRetryMediaProcessing = Boolean(attachment.sourceId)
+                      && (
+                        attachment.status === 'error'
+                        || (
+                          attachment.status === 'ready'
+                          && hasProcessingIssue
+                          && missingModes.length > 0
+                          && processingIssue?.retriable !== false
+                        )
+                      );
                     const displayPercent = getDisplayPercent(mediaProgress, isPdf);
-                    let stageLabel = getStageLabel(t, mediaProgress, isPdf, isImage);
-                    if ((mediaProgress?.stage === 'completed' || mediaProgress?.stage === 'completed_with_issues') && missingModesLabel) {
+                    let stageLabel = getStageLabel(t, displayStatus, isPdf, isImage);
+                    if ((displayStatus?.stage === 'completed' || displayStatus?.stage === 'completed_with_issues') && missingModesLabel) {
                       stageLabel = t('chatV2:inputBar.completedMissingModes', {
                         modes: missingModesLabel,
                       });
@@ -2893,7 +3017,10 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
 
                     const isUploading = attachment.status === 'uploading' || attachment.status === 'pending';
                     const statusIcon =
-                      attachment.status === 'ready' && missingModes.length > 0
+                      isMediaProcessing && selectedModesReady
+                        ? <CheckCircle size={12} weight="fill" className="text-green-600" />
+                        :
+                      attachment.status === 'ready' && (missingModes.length > 0 || hasProcessingIssue)
                         ? <Warning size={12} weight="bold" className="text-amber-600" />
                         : attachment.status === 'ready' ? <CheckCircle size={12} weight="fill" className="text-green-600" />
                           : attachment.status === 'error' ? <XCircle size={12} weight="fill" className="text-red-600" />
@@ -2902,10 +3029,11 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
                     const toneClass = isVfsRef
                       ? 'border-blue-200/60 bg-blue-50/70 dark:border-blue-800/50 dark:bg-blue-900/20'
                       : attachment.status === 'error' ? 'border-red-200/70 bg-red-50/70 dark:border-red-800/50 dark:bg-red-900/20'
-                        : attachment.status === 'ready' && missingModes.length > 0
+                        : attachment.status === 'ready' && (missingModes.length > 0 || hasProcessingIssue)
                           ? 'border-amber-200/60 bg-amber-50/70 dark:border-amber-800/50 dark:bg-amber-900/20'
                           : attachment.status === 'ready' ? 'border-emerald-200/60 bg-emerald-50/70 dark:border-emerald-800/50 dark:bg-emerald-900/20'
-                            : (isMediaProcessing || isUploading) ? 'border-blue-200/60 bg-blue-50/70 dark:border-blue-800/50 dark:bg-blue-900/20'
+                            : isMediaProcessing && selectedModesReady ? 'border-emerald-200/60 bg-emerald-50/70 dark:border-emerald-800/50 dark:bg-emerald-900/20'
+                              : (isMediaProcessing || isUploading) ? 'border-blue-200/60 bg-blue-50/70 dark:border-blue-800/50 dark:bg-blue-900/20'
                               : 'border-slate-200/70 bg-card/90 dark:border-slate-700/50';
 
                     // 判断是否为图片或 PDF（需要显示注入模式选择器）
@@ -2955,11 +3083,15 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
                                 {t('chatV2:inputBar.modesNotReady', { modes: missingModesLabel })}
                               </div>
                             )}
+                            {!missingModesLabel && hasProcessingIssue && processingIssue?.message && !isUploading && (
+                              <div className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-400 truncate">
+                                {processingIssue.message}
+                              </div>
+                            )}
                           </div>
                           <span className={cn("text-[12px]", isVfsRef ? "text-blue-600 dark:text-blue-400 font-medium" : "text-muted-foreground")}>{sizeLabel}</span>
                           <span className="flex items-center gap-1">{statusIcon}</span>
-                          {/* ★ P0 修复：错误状态时显示重试按钮（使用正确的 sourceId） */}
-                          {attachment.status === 'error' && attachment.sourceId && (
+                          {canRetryMediaProcessing && (
                             <NotionButton
                               variant="outline"
                               size="sm"
@@ -2971,7 +3103,7 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
                                     attachmentId: attachment.id,
                                     sourceId: fileId,
                                     mediaType: isPdf ? 'pdf' : 'image',
-                                    previousError: attachment.error,
+                                    previousError: attachment.error || processingIssue?.message,
                                   });
                                   onUpdateAttachment(attachment.id, {
                                     status: 'processing',

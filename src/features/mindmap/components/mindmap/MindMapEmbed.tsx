@@ -52,6 +52,10 @@ export interface MindMapEmbedProps {
   showOpenButton?: boolean;
   /** 外部传入的显示标题（加载期间 fallback 显示） */
   displayTitle?: string;
+  /** 大导图是否扩展外层高度；聊天气泡内应关闭，避免流式结束后跳高留白 */
+  expandLargeMaps?: boolean;
+  /** 是否允许滚轮缩放；聊天气泡内应关闭，避免吞掉消息列表滚动 */
+  zoomOnScroll?: boolean;
 }
 
 interface LoadState {
@@ -87,17 +91,19 @@ function countNodes(node: MindMapDocument['root']): number {
 interface MindMapEmbedInnerProps {
   document: MindMapDocument;
   metadata: VfsMindMap | null;
+  zoomOnScroll: boolean;
 }
 
-const MindMapEmbedInner: React.FC<MindMapEmbedInnerProps> = ({ document }) => {
+const MindMapEmbedInner: React.FC<MindMapEmbedInnerProps> = ({ document, zoomOnScroll }) => {
   ensureInitialized();
   const { t } = useTranslation('mindmap');
   const { fitView, zoomIn, zoomOut } = useReactFlow();
   const hasFitView = useRef(false);
+  const fitViewRafRef = useRef<number | null>(null);
 
   // ★ 2026-02 修复：Embed 使用独立的默认配置，不订阅全局 store
   // 避免主编辑器切换布局/样式时导致所有 Embed 实例重新渲染
-  const measuredNodeHeights: Record<string, number> = {};
+  const measuredNodeHeights = useMemo<Record<string, number>>(() => ({}), []);
   const [isBothLayout, setIsBothLayout] = useState(true);
   const layoutId = isBothLayout ? 'balanced' : 'tree';
   const layoutDirection = isBothLayout ? 'both' : 'right';
@@ -213,11 +219,19 @@ const MindMapEmbedInner: React.FC<MindMapEmbedInnerProps> = ({ document }) => {
     if (nodes.length === 0) return;
     if (!hasFitView.current) {
       hasFitView.current = true;
-      // 延迟执行 fitView，确保 ReactFlow 已完成初始化
-      const timer = setTimeout(() => {
-        fitView({ padding: 0.15, duration: 0 });
-      }, 100);
-      return () => clearTimeout(timer);
+      const raf1 = requestAnimationFrame(() => {
+        const raf2 = requestAnimationFrame(() => {
+          fitView({ padding: 0.15, duration: 0 });
+        });
+        fitViewRafRef.current = raf2;
+      });
+      fitViewRafRef.current = raf1;
+      return () => {
+        if (fitViewRafRef.current !== null) {
+          cancelAnimationFrame(fitViewRafRef.current);
+          fitViewRafRef.current = null;
+        }
+      };
     }
   }, [nodes.length, fitView, isBothLayout]);
 
@@ -229,7 +243,6 @@ const MindMapEmbedInner: React.FC<MindMapEmbedInnerProps> = ({ document }) => {
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         defaultEdgeOptions={{ type: defaultEdgeType }}
-        fitView
         fitViewOptions={{ padding: REACTFLOW_CONFIG.fitViewPadding }}
         minZoom={0.1}
         maxZoom={1.5}
@@ -238,7 +251,7 @@ const MindMapEmbedInner: React.FC<MindMapEmbedInnerProps> = ({ document }) => {
         nodesConnectable={false}
         elementsSelectable={false}
         panOnScroll={false}
-        zoomOnScroll={true}
+        zoomOnScroll={zoomOnScroll}
         zoomOnDoubleClick={false}
         panOnDrag={true}
         // 隐藏交互元素
@@ -322,6 +335,8 @@ export const MindMapEmbed: React.FC<MindMapEmbedProps> = ({
   onOpen,
   showOpenButton = true,
   displayTitle,
+  expandLargeMaps = true,
+  zoomOnScroll = true,
 }) => {
   const { t } = useTranslation('mindmap');
   const [state, setState] = useState<LoadState>({
@@ -333,6 +348,7 @@ export const MindMapEmbed: React.FC<MindMapEmbedProps> = ({
   });
 
   const targetId = mindmapId || versionId;
+  const placeholderHeight = expandLargeMaps ? Math.min(height, 144) : height;
 
   // 计算节点数量
   const nodeCount = useMemo(() => {
@@ -343,10 +359,11 @@ export const MindMapEmbed: React.FC<MindMapEmbedProps> = ({
   // 根据节点数量计算实际高度
   const actualHeight = useMemo(() => {
     if (!state.document?.root) return height;
+    if (!expandLargeMaps) return height;
     const nodeCount = countNodes(state.document.root);
     // 节点数超过阈值时使用 2 倍高度
     return nodeCount > LARGE_MAP_NODE_THRESHOLD ? height * 2 : height;
-  }, [state.document, height]);
+  }, [expandLargeMaps, state.document, height]);
 
   // 加载思维导图数据
   useEffect(() => {
@@ -487,7 +504,7 @@ export const MindMapEmbed: React.FC<MindMapEmbedProps> = ({
           'bg-muted/30 border border-border/50',
           className
         )}
-        style={{ height }}
+        style={{ height: placeholderHeight }}
       >
         {displayTitle && (
           <span className="text-sm font-medium text-foreground/70 mb-2 truncate max-w-[80%]">
@@ -511,7 +528,7 @@ export const MindMapEmbed: React.FC<MindMapEmbedProps> = ({
           'bg-destructive/5 border border-destructive/20',
           className
         )}
-        style={{ height }}
+        style={{ height: placeholderHeight }}
       >
         <div className="flex items-center gap-2 text-destructive">
           <WarningCircle size={20} />
@@ -537,6 +554,7 @@ export const MindMapEmbed: React.FC<MindMapEmbedProps> = ({
         <MindMapEmbedInner
           document={state.document!}
           metadata={state.metadata}
+          zoomOnScroll={zoomOnScroll}
         />
       </ReactFlowProvider>
 

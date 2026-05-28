@@ -692,6 +692,7 @@ impl PaperSaveExecutor {
                 ocr_text: None,
                 ocr_pages_json: None,
                 blob_hash: Some(blob_hash.clone()),
+                image_mime_type: None,
                 page_count: file.page_count,
                 extracted_text: file.extracted_text.clone(),
                 preview_json: file.preview_json.clone(),

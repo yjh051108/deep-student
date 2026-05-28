@@ -689,7 +689,7 @@ export const FolderTreeView: React.FC<FolderTreeViewProps> = ({
               )}
               <div
                 className="grid gap-2 p-3 pb-20 select-none"
-                style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(60px, 1fr))' }}
+                style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))' }}
                 onClick={() => onSelect?.(null!, 'folder')} // 点击空白处取消选择
               >
               {/* 渲染文件夹 */}
@@ -698,7 +698,7 @@ export const FolderTreeView: React.FC<FolderTreeViewProps> = ({
                 return (
                   <div
                     key={node.folder.id}
-                    className="flex justify-center h-[68px] overflow-hidden"
+                    className="flex justify-center h-[82px] min-w-0 overflow-hidden"
                   >
                     <NotionButton
                       variant="ghost" size="sm"
@@ -711,7 +711,7 @@ export const FolderTreeView: React.FC<FolderTreeViewProps> = ({
                         handleDoubleClickFolder(node.folder.id);
                       }}
                       onContextMenu={(e) => handleFolderContextMenu(e, node)}
-                      className="group relative !h-full !p-0 flex-col items-center w-full max-w-[60px]"
+                      className="group relative !h-full !p-0 flex-col items-center w-full max-w-[84px] min-w-0"
                     >
                       {/* 图标 */}
                       <div className="relative w-8 h-8 shrink-0 flex items-center justify-center transition-transform duration-200 group-hover:scale-105">
@@ -721,13 +721,13 @@ export const FolderTreeView: React.FC<FolderTreeViewProps> = ({
                       </div>
                       {/* 标题 - 固定高度，最多2行 */}
                       <div className={cn(
-                        "mt-0.5 px-0.5 py-0.5 rounded-[2px] w-full overflow-hidden",
+                        "mt-1 px-1 py-0.5 rounded-[2px] w-full min-w-0 overflow-hidden",
                         isSelected
                           ? "bg-primary"
                           : "group-hover:bg-[var(--interactive-hover)]"
                       )}>
                         <span className={cn(
-                          "text-[9px] leading-[1.2] text-center block line-clamp-2 break-all",
+                          "text-[10px] leading-[1.25] text-center block line-clamp-2 break-words [overflow-wrap:anywhere]",
                           isSelected ? "text-white font-medium" : "text-foreground"
                         )}>
                           {node.folder.title}
@@ -762,7 +762,7 @@ export const FolderTreeView: React.FC<FolderTreeViewProps> = ({
                 return (
                   <div
                     key={item.id}
-                    className="flex justify-center h-[68px] overflow-hidden"
+                    className="flex justify-center h-[82px] min-w-0 overflow-hidden"
                   >
                     <NotionButton
                       variant="ghost" size="sm"
@@ -775,7 +775,7 @@ export const FolderTreeView: React.FC<FolderTreeViewProps> = ({
                         handleDoubleClickItem(item);
                       }}
                       onContextMenu={(e) => handleItemContextMenu(e, item)}
-                      className="group relative !h-full !p-0 flex-col items-center w-full max-w-[60px]"
+                      className="group relative !h-full !p-0 flex-col items-center w-full max-w-[84px] min-w-0"
                     >
                       {/* 图标 */}
                       <div className="relative w-8 h-8 shrink-0 flex items-center justify-center transition-transform duration-200 group-hover:scale-105">
@@ -785,13 +785,13 @@ export const FolderTreeView: React.FC<FolderTreeViewProps> = ({
                       </div>
                       {/* 标题 - 固定高度，最多2行 */}
                       <div className={cn(
-                        "mt-0.5 px-0.5 py-0.5 rounded-[2px] w-full overflow-hidden",
+                        "mt-1 px-1 py-0.5 rounded-[2px] w-full min-w-0 overflow-hidden",
                         isSelected
                           ? "bg-primary"
                           : "group-hover:bg-[var(--interactive-hover)]"
                       )}>
                         <span className={cn(
-                          "text-[9px] leading-[1.2] text-center block line-clamp-2 break-all",
+                          "text-[10px] leading-[1.25] text-center block line-clamp-2 break-words [overflow-wrap:anywhere]",
                           isSelected ? "text-white font-medium" : "text-foreground"
                         )}>
                           {displayTitle}

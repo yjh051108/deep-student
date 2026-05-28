@@ -20,7 +20,7 @@
 //! 3. 前端发送 `canvas:ai-edit-result` 事件回后端
 //! 4. 后端返回工具执行结果给 AI
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -32,6 +32,7 @@ use tokio::sync::oneshot;
 
 use super::canvas_tool_names;
 use super::executor::{ExecutionContext, ToolExecutor, ToolSensitivity};
+use super::resource_scope;
 use super::{is_canvas_tool, strip_canvas_builtin_prefix};
 use crate::chat_v2::types::{ToolCall, ToolResultInfo};
 
@@ -199,6 +200,9 @@ impl CanvasToolExecutor {
             .as_ref()
             .ok_or_else(|| "Canvas 工具不可用：NotesManager 未初始化".to_string())?
             .clone();
+        if let Some(vfs_db) = ctx.vfs_db.as_ref() {
+            resource_scope::ensure_item_in_scope(ctx, vfs_db, note_id, note_id)?;
+        }
 
         let note_id_owned = note_id.to_string();
         let section = args
@@ -247,27 +251,29 @@ impl CanvasToolExecutor {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        // ★ L-027: 读取 folder_id 参数（schema 已定义但此前未使用）
-        let folder_id = args
-            .get("folderId")
-            .or(args.get("folder_id"))
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .map(String::from);
         let vfs_db = ctx.vfs_db.clone();
+        let folder_id = if let Some(ref db) = vfs_db {
+            let explicit_folder_id = resource_scope::normalize_folder_arg(
+                args.get("folderId").or(args.get("folder_id")),
+            );
+            resource_scope::resolve_scoped_folder_id(
+                ctx,
+                db,
+                explicit_folder_id,
+                "canvas_note_list",
+            )?
+        } else {
+            None
+        };
 
         tokio::task::spawn_blocking(move || {
             // ★ L-027: 当指定 folder_id 且 vfs_db 可用时，使用 VfsNoteRepo 按文件夹查询
             let filtered: Vec<serde_json::Value> =
                 if let (Some(ref fid), Some(ref db)) = (&folder_id, &vfs_db) {
                     use crate::vfs::VfsNoteRepo;
-                    let folder_arg = if fid == "root" {
-                        None
-                    } else {
-                        Some(fid.as_str())
-                    };
-                    let notes = VfsNoteRepo::list_notes_by_folder(db, folder_arg, limit as u32, 0)
-                        .map_err(|e| format!("列出笔记失败: {}", e))?;
+                    let notes =
+                        VfsNoteRepo::list_notes_by_folder(db, Some(fid.as_str()), limit as u32, 0)
+                            .map_err(|e| format!("列出笔记失败: {}", e))?;
                     notes
                         .into_iter()
                         .filter(|n| {
@@ -359,12 +365,30 @@ impl CanvasToolExecutor {
             .and_then(|v| v.as_u64())
             .map(|v| v.min(50) as usize)
             .unwrap_or(10);
+        let allowed_note_ids: Option<HashSet<String>> = if let Some(vfs_db) = ctx
+            .vfs_db
+            .as_ref()
+            .filter(|_| resource_scope::is_topic_scoped(ctx))
+        {
+            Some(
+                resource_scope::item_ids_in_topic_scope(ctx, vfs_db)?
+                    .into_iter()
+                    .filter(|id| id.starts_with("note_"))
+                    .collect(),
+            )
+        } else {
+            None
+        };
 
         tokio::task::spawn_blocking(move || {
             #[cfg(feature = "lance")]
-            let results = notes_manager
+            let mut results = notes_manager
                 .search_notes_lance(&query, limit)
                 .map_err(|e| format!("搜索笔记失败: {}", e))?;
+            #[cfg(feature = "lance")]
+            if let Some(allowed) = allowed_note_ids {
+                results.retain(|(id, _, _)| allowed.contains(id));
+            }
 
             #[cfg(not(feature = "lance"))]
             return Ok(json!({
@@ -429,29 +453,42 @@ impl CanvasToolExecutor {
             .get("tags")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default();
+        let explicit_folder_id =
+            resource_scope::normalize_folder_arg(args.get("folderId").or(args.get("folder_id")));
+        let scoped_folder_id = resource_scope::resolve_scoped_folder_id_for_write(
+            ctx,
+            &vfs_db,
+            explicit_folder_id,
+            "canvas_note_create",
+        )?;
+        let is_topic_scope = resource_scope::is_topic_scoped(ctx);
 
         // 调用 VFS 创建笔记
         tokio::task::spawn_blocking(move || {
             use crate::vfs::{VfsCreateNoteParams, VfsNoteRepo};
 
-            match VfsNoteRepo::create_note(
+            match VfsNoteRepo::create_note_in_folder(
                 &vfs_db,
                 VfsCreateNoteParams {
                     title: title.clone(),
                     content: content.clone(),
                     tags,
                 },
+                scoped_folder_id.as_deref(),
             ) {
                 Ok(note) => {
                     log::info!(
-                        "[CanvasToolExecutor] Created note: id={}, title={}",
+                        "[CanvasToolExecutor] Created note: id={}, title={}, folder_id={:?}",
                         note.id,
-                        note.title
+                        note.title,
+                        scoped_folder_id
                     );
                     Ok(json!({
                         "noteId": note.id,
                         "title": note.title,
                         "wordCount": content.chars().count(),
+                        "scope": if is_topic_scope { "topic" } else { "all" },
+                        "folderId": scoped_folder_id,
                         "success": true,
                     }))
                 }
@@ -479,6 +516,9 @@ impl CanvasToolExecutor {
             .as_ref()
             .ok_or_else(|| "Canvas 工具不可用：NotesManager 未初始化".to_string())?
             .clone();
+        if let Some(vfs_db) = ctx.vfs_db.as_ref() {
+            resource_scope::ensure_item_in_scope(ctx, vfs_db, note_id, note_id)?;
+        }
 
         let note_id_owned = note_id.to_string();
         // 提前提取工具名称，避免生命周期问题
@@ -611,6 +651,10 @@ impl CanvasToolExecutor {
         note_id: &str,
         args: &serde_json::Map<String, serde_json::Value>,
     ) -> Result<serde_json::Value, String> {
+        if let Some(vfs_db) = ctx.vfs_db.as_ref() {
+            resource_scope::ensure_item_in_scope(ctx, vfs_db, note_id, note_id)?;
+        }
+
         // 1. 生成请求 ID
         let request_id = format!("canvas-edit-{}-{}", call.id, uuid::Uuid::new_v4());
 

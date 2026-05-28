@@ -651,13 +651,14 @@ impl VfsAttachmentRepo {
         // 4. 根据大小选择存储模式
         //    注意：即使后续插入附件记录失败（因为 hash 冲突），
         //    这些 resource/blob 也会保留，不会造成问题（它们本身也是去重的）
-        let (resource_id, blob_hash) = if data.len() < INLINE_SIZE_THRESHOLD {
-            // 小文件：inline 模式
-            Self::store_inline(conn, &data, &params, &content_hash, &attachment_type)?
-        } else {
-            // 大文件：external 模式
-            Self::store_external(conn, blobs_dir, &data, &params)?
-        };
+        let (resource_id, blob_hash) =
+            if attachment_type != "image" && data.len() < INLINE_SIZE_THRESHOLD {
+                // 小文件：inline 模式
+                Self::store_inline(conn, &data, &params, &content_hash, &attachment_type)?
+            } else {
+                // 大文件和图片：external 模式。图片必须有 blob_hash，供原生多模态索引和 OCR 复用。
+                Self::store_external(conn, blobs_dir, &data, &params)?
+            };
 
         // 4.5 PDF 预渲染（迁移 015）
         //     如果是 PDF 文件，触发预渲染逻辑

@@ -28,6 +28,7 @@ interface MediaProcessingProgressPayload {
     percent: number;
     readyModes: string[];
     mediaType?: MediaType;
+    failedStages?: Array<{ stage: string; message: string; retriable?: boolean }>;
   };
   mediaType: MediaType;
 }
@@ -38,10 +39,12 @@ interface MediaProcessingProgressPayload {
  */
 interface MediaProcessingCompletedPayload {
   fileId: string;
-  readyModes: Array<'text' | 'image' | 'ocr'>;
-  stage?: 'completed' | 'completed_with_issues';
-  mediaType: MediaType;
-}
+    readyModes: Array<'text' | 'image' | 'ocr'>;
+    stage?: 'completed' | 'completed_with_issues';
+    mediaType: MediaType;
+    failedStages?: Array<{ stage: string; message: string; retriable?: boolean }>;
+    failed_stages?: Array<{ stage: string; message: string; retriable?: boolean }>;
+  }
 
 /**
  * 媒体处理错误事件 payload
@@ -52,6 +55,7 @@ interface MediaProcessingErrorPayload {
   error: string;
   stage: string;
   mediaType: MediaType;
+  failedStages?: Array<{ stage: string; message: string; retriable?: boolean }>;
 }
 
 // 兼容旧类型别名
@@ -124,6 +128,7 @@ export function usePdfProcessingProgress(): void {
         percent: status.percent,
         readyModes: nextModes,
         mediaType: mediaType || status.mediaType,
+        failedStages: status.failedStages,
       });
 
       if (hasNewModes) {
@@ -143,6 +148,7 @@ export function usePdfProcessingProgress(): void {
     // 处理完成事件的通用处理器
     const handleCompleted = (payload: MediaProcessingCompletedPayload, source: 'unified' | 'legacy') => {
       const { fileId, readyModes, mediaType, stage } = payload;
+      const failedStages = payload.failedStages ?? payload.failed_stages;
       
       console.log(`[MediaProcessing] ✅ Completed (${source}):`, {
         fileId,
@@ -151,7 +157,7 @@ export function usePdfProcessingProgress(): void {
         readyModes,
       });
       
-      usePdfProcessingStore.getState().setCompleted(fileId, readyModes, stage);
+      usePdfProcessingStore.getState().setCompleted(fileId, readyModes, stage, failedStages);
 
       // ★ N1 修复：处理完成时失效 resolveCache，防止后续发送使用旧的无 OCR/text 缓存
       const invalidated = invalidateResourceCache(fileId);
@@ -165,7 +171,7 @@ export function usePdfProcessingProgress(): void {
     
     // 处理错误事件的通用处理器
     const handleError = (payload: MediaProcessingErrorPayload, source: 'unified' | 'legacy') => {
-      const { fileId, error, stage, mediaType } = payload;
+      const { fileId, error, stage, mediaType, failedStages } = payload;
       
       console.error(`[MediaProcessing] ❌ Error (${source}):`, {
         fileId,
@@ -174,7 +180,7 @@ export function usePdfProcessingProgress(): void {
         error,
       });
       
-      usePdfProcessingStore.getState().setError(fileId, error, stage);
+      usePdfProcessingStore.getState().setError(fileId, error, stage, failedStages);
     };
     
     // 监听新的统一事件

@@ -704,13 +704,21 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({
               const mindmapVersionId = props['data-mindmap-version-id'] as string | undefined;
               // ★ 2026-02 修复：读取 LLM 提供的标题信息，在加载期间显示
               const rawTitle = props['data-mindmap-title'] as string | undefined;
-              const displayTitle = rawTitle ? decodeURIComponent(rawTitle) : undefined;
+              const displayTitle = (() => {
+                if (!rawTitle) return undefined;
+                try {
+                  return decodeURIComponent(rawTitle);
+                } catch {
+                  return rawTitle;
+                }
+              })();
+              const citationId = mindmapId || mindmapVersionId;
+              if (!citationId) return null;
               return (
                 <MindmapCitationCard
                   mindmapId={mindmapId}
                   versionId={mindmapVersionId}
                   displayTitle={displayTitle}
-                  embedHeight={280}
                 />
               );
             }

@@ -195,6 +195,9 @@ export interface InputBarUIProps {
   /** 当前课题组绑定的默认资源文件夹；附件上传时自动进入该文件夹 */
   targetFolderId?: string;
 
+  /** 当前课题组 ID；附件上传缺少 folderId 时后端用它解析课题根 */
+  groupId?: string | null;
+
   /** 设置面板状态 */
   onSetPanelState: (panel: keyof PanelStates, open: boolean) => void;
 

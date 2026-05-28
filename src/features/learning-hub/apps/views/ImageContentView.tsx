@@ -102,7 +102,17 @@ const ImageContentView: React.FC<ContentViewProps> = ({
     }
   }, [node.id, t]);
 
-  // 初始化：先检查文件大小
+  const maybeLoadImageAfterSizeCheck = useCallback(async (size: number) => {
+    setFileSize(size);
+    if (size >= LARGE_FILE_THRESHOLD) {
+      setLoadingStage('large_file_warning');
+      return;
+    }
+    await loadImageContent();
+  }, [loadImageContent]);
+
+  // 初始化：先检查文件大小。部分图片资源（如 img_ / tb_）没有 attachment 元数据，
+  // 但 vfs_get_attachment_content 可以读取内容；元数据失败时不能阻断预览。
   useEffect(() => {
     const checkAndLoad = async () => {
       setLoadingStage('checking');
@@ -115,29 +125,19 @@ const ImageContentView: React.FC<ContentViewProps> = ({
         });
         
         if (!attachment) {
-          setError(t('learningHub:error.imageNotFound', '图片未找到'));
-          setLoadingStage('idle');
+          await maybeLoadImageAfterSizeCheck(typeof node.size === 'number' ? node.size : 0);
           return;
         }
         
-        setFileSize(attachment.size);
-        
-        // 检查文件大小
-        if (attachment.size >= LARGE_FILE_THRESHOLD) {
-          // 大文件：显示警告，让用户决定是否加载
-          setLoadingStage('large_file_warning');
-        } else {
-          // 小文件：直接加载
-          await loadImageContent();
-        }
+        await maybeLoadImageAfterSizeCheck(attachment.size);
       } catch (err: unknown) {
-        setError(getErrorMessage(err));
-        setLoadingStage('idle');
+        console.warn('[ImageContentView] Failed to read attachment metadata, falling back to content load:', err);
+        await maybeLoadImageAfterSizeCheck(typeof node.size === 'number' ? node.size : 0);
       }
     };
 
     void checkAndLoad();
-  }, [node.id, t, loadImageContent]);
+  }, [node.id, node.size, maybeLoadImageAfterSizeCheck]);
 
   // 缩放控制
   const handleZoomIn = useCallback(() => {

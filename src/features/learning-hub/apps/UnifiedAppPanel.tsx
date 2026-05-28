@@ -132,7 +132,7 @@ export const UnifiedAppPanel: React.FC<UnifiedAppPanelProps> = ({
     };
 
     void loadResource();
-  }, [dstuPath, resourceId, t, type]);
+  }, [resourceId, t, type]);
 
   // 加载状态
   if (isLoading) {

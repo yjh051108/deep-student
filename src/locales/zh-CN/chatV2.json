@@ -216,6 +216,7 @@
       "ocrProcessingProgress": "OCR {{current}}/{{total}}",
       "vectorIndexing": "索引",
       "completed": "完成",
+      "completedWithIssues": "完成但有问题",
       "error": "失败",
       "pdfProcessing": "PDF 处理中",
       "imageProcessing": "图片处理中"
@@ -1061,7 +1062,9 @@
     "createdAt": "创建时间",
     "groupByTime": "按时间分组",
     "groupByGroup": "按分组浏览",
-    "ungrouped": "未分组"
+    "ungrouped": "未分组",
+    "staleTopic": "课题已归档或缺失",
+    "staleTopicDescription": "这些会话仍保留旧课题 ID，但课题当前不在活跃列表中。"
   },
   "search": {
     "titleMode": "标题",

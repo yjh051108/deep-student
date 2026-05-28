@@ -240,6 +240,8 @@ const MessageListInner: React.FC<MessageListProps> = ({
   const rafIdRef = useRef<number | null>(null);
   const programmaticScrollLockRef = useRef(false);
   const programmaticScrollUnlockTimerRef = useRef<number | null>(null);
+  const programmaticScrollUnlockRafRef = useRef<number | null>(null);
+  const streamingStartupLockUntilRef = useRef(0);
 
   // 🔧 用户滚动意图检测：根据实际滚动位置决定是否保持吸底跟随
   const userHasScrolledRef = useRef(false);
@@ -262,42 +264,104 @@ const MessageListInner: React.FC<MessageListProps> = ({
     }, delayMs);
   }, []);
 
+  const releaseProgrammaticScrollLock = useCallback(() => {
+    programmaticScrollLockRef.current = false;
+    if (programmaticScrollUnlockTimerRef.current !== null) {
+      window.clearTimeout(programmaticScrollUnlockTimerRef.current);
+      programmaticScrollUnlockTimerRef.current = null;
+    }
+    if (programmaticScrollUnlockRafRef.current !== null) {
+      cancelAnimationFrame(programmaticScrollUnlockRafRef.current);
+      programmaticScrollUnlockRafRef.current = null;
+    }
+  }, []);
+
+  const holdProgrammaticScrollLockUntilBottom = useCallback((maxMs = 700) => {
+    if (!viewportElement) {
+      releaseProgrammaticScrollLock();
+      return;
+    }
+
+    if (programmaticScrollUnlockTimerRef.current !== null) {
+      window.clearTimeout(programmaticScrollUnlockTimerRef.current);
+      programmaticScrollUnlockTimerRef.current = null;
+    }
+    if (programmaticScrollUnlockRafRef.current !== null) {
+      cancelAnimationFrame(programmaticScrollUnlockRafRef.current);
+    }
+
+    const startedAt = performance.now();
+    const tick = () => {
+      if (!viewportElement) {
+        releaseProgrammaticScrollLock();
+        return;
+      }
+
+      if (!useDirectRender && messageOrder.length > 0) {
+        virtualizer.measure();
+        virtualizer.scrollToIndex(messageOrder.length - 1, { align: 'end', behavior: 'auto' });
+      } else {
+        viewportElement.scrollTop = viewportElement.scrollHeight - viewportElement.clientHeight;
+      }
+      if (isNearBottom() || performance.now() - startedAt >= maxMs) {
+        releaseProgrammaticScrollLock();
+        return;
+      }
+
+      programmaticScrollUnlockRafRef.current = requestAnimationFrame(tick);
+    };
+
+    programmaticScrollUnlockRafRef.current = requestAnimationFrame(tick);
+  }, [isNearBottom, releaseProgrammaticScrollLock, viewportElement, useDirectRender, messageOrder.length, virtualizer]);
+
   // 滚动到底部
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     if (!viewportElement) return;
 
-    const top = viewportElement.scrollHeight;
+    containerRef.current?.dispatchEvent(new CustomEvent('smooth-wheel:cancel'));
     const shouldLock = behavior === 'smooth';
 
     if (shouldLock) {
       programmaticScrollLockRef.current = true;
     }
 
-    if (typeof viewportElement.scrollTo === 'function') {
-      viewportElement.scrollTo({ top, behavior });
+    if (!useDirectRender && messageOrder.length > 0) {
+      virtualizer.measure();
+      virtualizer.scrollToIndex(messageOrder.length - 1, { align: 'end', behavior });
     } else {
-      viewportElement.scrollTop = top;
+      const top = Math.max(0, viewportElement.scrollHeight - viewportElement.clientHeight);
+      if (typeof viewportElement.scrollTo === 'function') {
+        viewportElement.scrollTo({ top, behavior });
+      } else {
+        viewportElement.scrollTop = top;
+      }
     }
 
     if (shouldLock) {
       scheduleProgrammaticScrollUnlock(250);
     }
-  }, [scheduleProgrammaticScrollUnlock, viewportElement]);
+  }, [messageOrder.length, scheduleProgrammaticScrollUnlock, useDirectRender, viewportElement, virtualizer]);
 
   /** 点击"回到底部"按钮 */
   const handleScrollToBottomClick = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
     event.currentTarget.blur();
     userHasScrolledRef.current = false;
     setShowScrollToBottom(false);
-    scrollToBottom('smooth');
-  }, [scrollToBottom]);
+    programmaticScrollLockRef.current = true;
+    scrollToBottom('auto');
+    holdProgrammaticScrollLockUntilBottom();
+  }, [holdProgrammaticScrollLockUntilBottom, scrollToBottom]);
 
   // 基于真实滚动位置同步吸底状态与按钮可见性
   useEffect(() => {
     if (!viewportElement) return;
 
     const syncScrollState = () => {
-      if (programmaticScrollLockRef.current) return;
+      if (programmaticScrollLockRef.current) {
+        if (!isStreaming || performance.now() < streamingStartupLockUntilRef.current) return;
+        if (isNearBottom()) return;
+        releaseProgrammaticScrollLock();
+      }
 
       const nearBottom = isNearBottom();
       userHasScrolledRef.current = !nearBottom;
@@ -310,12 +374,54 @@ const MessageListInner: React.FC<MessageListProps> = ({
     return () => {
       viewportElement.removeEventListener('scroll', syncScrollState);
     };
-  }, [viewportElement, isNearBottom]);
+  }, [viewportElement, isNearBottom, isStreaming, releaseProgrammaticScrollLock]);
+
+  useEffect(() => {
+    if (!viewportElement) return;
+
+    const markUserScrollIntent = () => {
+      releaseProgrammaticScrollLock();
+      userHasScrolledRef.current = true;
+      setShowScrollToBottom(true);
+    };
+
+    const handleWheelIntent = (event: WheelEvent) => {
+      if (event.deltaY < 0) markUserScrollIntent();
+    };
+    const handleTouchMoveIntent = () => markUserScrollIntent();
+    const handlePointerDownIntent = () => {
+      if (isStreaming) markUserScrollIntent();
+    };
+    const handleKeyIntent = (event: KeyboardEvent) => {
+      if (
+        event.key === 'ArrowUp'
+        || event.key === 'PageUp'
+        || event.key === 'Home'
+        || (event.key === ' ' && event.shiftKey)
+      ) {
+        markUserScrollIntent();
+      }
+    };
+
+    viewportElement.addEventListener('wheel', handleWheelIntent, { passive: true, capture: true });
+    viewportElement.addEventListener('touchmove', handleTouchMoveIntent, { passive: true, capture: true });
+    viewportElement.addEventListener('pointerdown', handlePointerDownIntent, { passive: true, capture: true });
+    viewportElement.addEventListener('keydown', handleKeyIntent, { passive: true, capture: true });
+    return () => {
+      viewportElement.removeEventListener('wheel', handleWheelIntent, { capture: true });
+      viewportElement.removeEventListener('touchmove', handleTouchMoveIntent, { capture: true });
+      viewportElement.removeEventListener('pointerdown', handlePointerDownIntent, { capture: true });
+      viewportElement.removeEventListener('keydown', handleKeyIntent, { capture: true });
+    };
+  }, [isStreaming, releaseProgrammaticScrollLock, viewportElement]);
 
   useEffect(() => {
     return () => {
       if (programmaticScrollUnlockTimerRef.current !== null) {
         window.clearTimeout(programmaticScrollUnlockTimerRef.current);
+      }
+      if (programmaticScrollUnlockRafRef.current !== null) {
+        cancelAnimationFrame(programmaticScrollUnlockRafRef.current);
       }
     };
   }, []);
@@ -323,11 +429,11 @@ const MessageListInner: React.FC<MessageListProps> = ({
   // 🖱️ 平滑滚轮惯性 + 第一时间检测向上滚动意图（ChatGPT/Claude 同级手感）
   useSmoothWheel(containerRef.current, {
     onUserScrollUp: () => {
-      if (isAutoScrollingRef.current) {
-        userHasScrolledRef.current = true;
-        setShowScrollToBottom(true);
-      }
+      releaseProgrammaticScrollLock();
+      userHasScrolledRef.current = true;
+      setShowScrollToBottom(true);
     },
+    getScrollElement: () => viewportElement,
   });
 
   // 🚀 P1优化：流式生成时使用 rAF 自动滚动（替代 setInterval）
@@ -406,6 +512,7 @@ const MessageListInner: React.FC<MessageListProps> = ({
         // 程序化滚动锁：防止 scrollIntoView 触发的原生 scroll 事件
         // 被 syncScrollState 误判为"用户滚动"，从而错误地阻断 rAF 自动跟随
         programmaticScrollLockRef.current = true;
+        streamingStartupLockUntilRef.current = performance.now() + 350;
         scheduleProgrammaticScrollUnlock(300);
         if (useDirectRender) {
           // viewportElement.lastElementChild 是 div[role="log"] 包装元素
@@ -638,7 +745,7 @@ const MessageListInner: React.FC<MessageListProps> = ({
     {/* 回到底部浮动按钮 */}
     <div
       className="pointer-events-none absolute inset-x-0 bottom-2 px-4 md:bottom-3 md:px-8"
-      style={{ zIndex: Z_INDEX.inputBar - 10 }}
+      style={{ zIndex: Z_INDEX.inputBar + 1 }}
     >
       <ThreadContentShell className="pointer-events-none overflow-visible">
         <div

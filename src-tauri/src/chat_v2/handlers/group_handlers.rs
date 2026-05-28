@@ -9,8 +9,11 @@ use tauri::State;
 use crate::chat_v2::database::ChatV2Database;
 use crate::chat_v2::error::ChatV2Error;
 use crate::chat_v2::repo::ChatV2Repo;
+use crate::chat_v2::state::ChatV2State;
 use crate::chat_v2::types::{CreateGroupRequest, PersistStatus, SessionGroup, UpdateGroupRequest};
 use crate::vfs::{VfsDatabase, VfsFolder, VfsFolderRepo, MAX_FOLDER_TITLE_LENGTH};
+
+use super::manage_session::decrement_vfs_refs_for_session;
 
 fn topic_folder_title(name: &str) -> String {
     let mut title: String = name
@@ -62,19 +65,27 @@ pub(crate) fn ensure_group_folder(
         if let Some(mut folder) =
             VfsFolderRepo::get_folder_with_conn(&conn, &folder_id).map_err(|e| e.to_string())?
         {
-            let unique_title = VfsFolderRepo::generate_unique_folder_title_with_conn(
-                &conn,
-                &folder_title,
-                folder.parent_id.as_deref(),
-                Some(&folder_id),
-            )
-            .map_err(|e| e.to_string())?;
-            if folder.title != unique_title {
-                folder.title = unique_title;
-                VfsFolderRepo::update_folder_with_conn(&conn, &folder)
-                    .map_err(|e| e.to_string())?;
+            if folder.parent_id.is_some()
+                || !VfsFolderRepo::folder_exists_with_conn(&conn, &folder_id)
+                    .map_err(|e| e.to_string())?
+            {
+                // A pinned child/deleted folder is not a valid topic root. Create a fresh
+                // root below instead of reusing another topic's same-named folder.
+            } else {
+                let unique_title = VfsFolderRepo::generate_unique_folder_title_with_conn(
+                    &conn,
+                    &folder_title,
+                    folder.parent_id.as_deref(),
+                    Some(&folder_id),
+                )
+                .map_err(|e| e.to_string())?;
+                if folder.title != unique_title {
+                    folder.title = unique_title;
+                    VfsFolderRepo::update_folder_with_conn(&conn, &folder)
+                        .map_err(|e| e.to_string())?;
+                }
+                return Ok(prepend_unique_pinned_folder(pinned_resource_ids, folder_id));
             }
-            return Ok(prepend_unique_pinned_folder(pinned_resource_ids, folder_id));
         }
     }
 
@@ -135,7 +146,7 @@ pub async fn chat_v2_update_group(
     db: State<'_, Arc<ChatV2Database>>,
     vfs_db: State<'_, Arc<VfsDatabase>>,
 ) -> Result<SessionGroup, String> {
-    let conn = db.get_conn_safe().map_err(|e| e.to_string())?;
+    let mut conn = db.get_conn_safe().map_err(|e| e.to_string())?;
     let existing = ChatV2Repo::get_group_with_conn(&conn, &group_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| ChatV2Error::GroupNotFound(group_id.clone()).to_string())?;
@@ -163,6 +174,7 @@ pub async fn chat_v2_update_group(
             .unwrap_or(existing.pinned_resource_ids),
     )?;
 
+    let requested_status = request.persist_status;
     let updated = SessionGroup {
         id: existing.id,
         name,
@@ -176,12 +188,21 @@ pub async fn chat_v2_update_group(
         pinned_resource_ids,
         workspace_id: merge_optional_string(request.workspace_id, existing.workspace_id),
         sort_order: request.sort_order.unwrap_or(existing.sort_order),
-        persist_status: request.persist_status.unwrap_or(existing.persist_status),
+        persist_status: requested_status.clone().unwrap_or(existing.persist_status),
         created_at: existing.created_at,
         updated_at: now,
     };
 
     ChatV2Repo::update_group_with_conn(&conn, &updated).map_err(|e| e.to_string())?;
+    match requested_status {
+        Some(PersistStatus::Archived) => {
+            ChatV2Repo::archive_group_with_conn(&mut conn, &group_id).map_err(|e| e.to_string())?;
+        }
+        Some(PersistStatus::Active) => {
+            ChatV2Repo::restore_group_with_conn(&mut conn, &group_id).map_err(|e| e.to_string())?;
+        }
+        _ => {}
+    }
     Ok(updated)
 }
 
@@ -190,10 +211,76 @@ pub async fn chat_v2_update_group(
 pub async fn chat_v2_delete_group(
     group_id: String,
     db: State<'_, Arc<ChatV2Database>>,
+    vfs_db: State<'_, Arc<VfsDatabase>>,
+    chat_v2_state: State<'_, Arc<ChatV2State>>,
 ) -> Result<(), String> {
     let mut conn = db.get_conn_safe().map_err(|e| e.to_string())?;
-    ChatV2Repo::soft_delete_group_with_conn(&mut conn, &group_id).map_err(|e| e.to_string())?;
+    let group = ChatV2Repo::get_group_with_conn(&conn, &group_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| ChatV2Error::GroupNotFound(group_id.clone()).to_string())?;
+    if group.persist_status == PersistStatus::Active {
+        return Err(
+            ChatV2Error::Validation("请先归档课题，再从归档页永久删除。".to_string()).to_string(),
+        );
+    }
+
+    let session_ids = ChatV2Repo::list_session_ids_owned_by_group_with_conn(&conn, &group_id)
+        .map_err(|e| e.to_string())?;
+    for session_id in &session_ids {
+        if chat_v2_state.has_active_stream(session_id) {
+            return Err(ChatV2Error::Other(
+                "Cannot delete topic while a session is streaming. Please wait for completion or cancel first."
+                    .to_string(),
+            )
+            .to_string());
+        }
+        super::manage_session::session_has_running_anki_blocks(db.inner().as_ref(), session_id)?;
+    }
+    for session_id in &session_ids {
+        decrement_vfs_refs_for_session(db.inner().as_ref(), vfs_db.inner().as_ref(), session_id);
+    }
+
+    ChatV2Repo::permanently_delete_group_with_conn(&mut conn, &group_id)
+        .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// 归档分组，并把分组内活跃会话一起归档，保留 group_id 供恢复使用
+#[tauri::command]
+pub async fn chat_v2_archive_group(
+    group_id: String,
+    db: State<'_, Arc<ChatV2Database>>,
+) -> Result<(), String> {
+    let mut conn = db.get_conn_safe().map_err(|e| e.to_string())?;
+    ChatV2Repo::archive_group_with_conn(&mut conn, &group_id).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 恢复分组，并恢复其下已归档会话
+#[tauri::command]
+pub async fn chat_v2_restore_group(
+    group_id: String,
+    db: State<'_, Arc<ChatV2Database>>,
+    vfs_db: State<'_, Arc<VfsDatabase>>,
+) -> Result<SessionGroup, String> {
+    let mut conn = db.get_conn_safe().map_err(|e| e.to_string())?;
+    ChatV2Repo::restore_group_with_conn(&mut conn, &group_id).map_err(|e| e.to_string())?;
+
+    let mut group = ChatV2Repo::get_group_with_conn(&conn, &group_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| ChatV2Error::GroupNotFound(group_id.clone()).to_string())?;
+
+    let pinned_resource_ids = ensure_group_folder(
+        vfs_db.inner().as_ref(),
+        &group.name,
+        group.pinned_resource_ids.clone(),
+    )?;
+    if pinned_resource_ids != group.pinned_resource_ids {
+        group.pinned_resource_ids = pinned_resource_ids;
+        ChatV2Repo::update_group_with_conn(&conn, &group).map_err(|e| e.to_string())?;
+    }
+
+    Ok(group)
 }
 
 /// 获取分组详情
@@ -201,10 +288,29 @@ pub async fn chat_v2_delete_group(
 pub async fn chat_v2_get_group(
     group_id: String,
     db: State<'_, Arc<ChatV2Database>>,
+    vfs_db: State<'_, Arc<VfsDatabase>>,
 ) -> Result<Option<SessionGroup>, String> {
     let conn = db.get_conn_safe().map_err(|e| e.to_string())?;
-    let group = ChatV2Repo::get_group_with_conn(&conn, &group_id).map_err(|e| e.to_string())?;
-    Ok(group)
+    let Some(mut group) =
+        ChatV2Repo::get_group_with_conn(&conn, &group_id).map_err(|e| e.to_string())?
+    else {
+        return Ok(None);
+    };
+
+    if group.persist_status == PersistStatus::Active {
+        let pinned_resource_ids = ensure_group_folder(
+            vfs_db.inner().as_ref(),
+            &group.name,
+            group.pinned_resource_ids.clone(),
+        )?;
+        if pinned_resource_ids != group.pinned_resource_ids {
+            group.pinned_resource_ids = pinned_resource_ids;
+            group.updated_at = chrono::Utc::now();
+            ChatV2Repo::update_group_with_conn(&conn, &group).map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(Some(group))
 }
 
 /// 列出分组

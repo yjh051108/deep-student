@@ -331,9 +331,11 @@ impl ChatV2Pipeline {
         Self::skill_allows_tool(tool_name, allowed)
     }
 
-    fn enrich_group_scope_options(&self, request: &mut SendMessageRequest) -> ChatV2Result<()> {
-        let options = request.options.get_or_insert_with(Default::default);
-
+    fn enrich_group_scope_for_options(
+        &self,
+        session_id: &str,
+        options: &mut SendOptions,
+    ) -> ChatV2Result<()> {
         options.group_id = options.group_id.as_ref().and_then(|id| {
             let trimmed = id.trim();
             if trimmed.is_empty() {
@@ -367,49 +369,50 @@ impl ChatV2Pipeline {
             }
         }
 
-        let mut group_id = options.group_id.clone();
-        if group_id.is_none() {
-            let conn = self.db.get_conn_safe()?;
-            if let Some(session) = ChatV2Repo::get_session_with_conn(&conn, &request.session_id)? {
-                group_id = session.group_id;
-            }
-        }
+        let frontend_group_id = options.group_id.clone();
+        let conn = self.db.get_conn_safe()?;
+        let session_group_id = ChatV2Repo::get_session_with_conn(&conn, session_id)?
+            .and_then(|session| session.group_id);
 
-        let Some(group_id) = group_id else {
+        let Some(group_id) = session_group_id else {
+            options.group_id = None;
+            options.group_name = None;
+            options.group_pinned_resource_ids = None;
             return Ok(());
         };
 
-        let has_topic_folder = options
-            .group_pinned_resource_ids
-            .as_ref()
-            .map(|ids| ids.iter().any(|id| id.trim().starts_with("fld_")))
-            .unwrap_or(false);
-        let needs_group_load = options.group_name.is_none() || !has_topic_folder;
-        options.group_id = Some(group_id.clone());
-        if !needs_group_load {
-            return Ok(());
-        }
-
-        let conn = self.db.get_conn_safe()?;
-        let Some(mut group) = ChatV2Repo::get_group_with_conn(&conn, &group_id)? else {
+        if frontend_group_id.as_deref() != Some(group_id.as_str()) {
             log::warn!(
-                "[ChatV2::pipeline] Session {} references missing group {}; continuing without group resource scope fallback",
-                request.session_id,
+                "[ChatV2::pipeline] Ignoring frontend group scope {:?} for session {}; authoritative session group is {}",
+                frontend_group_id,
+                session_id,
                 group_id
             );
+        }
+
+        options.group_id = Some(group_id.clone());
+
+        let Some(mut group) = ChatV2Repo::get_group_with_conn(&conn, &group_id)? else {
+            log::warn!(
+                "[ChatV2::pipeline] Session {} references missing group {}; clearing stale topic scope",
+                session_id,
+                group_id
+            );
+            options.group_id = None;
+            options.group_name = None;
+            options.group_pinned_resource_ids = None;
             return Ok(());
         };
 
         if group.persist_status != crate::chat_v2::types::PersistStatus::Active {
             log::warn!(
-                "[ChatV2::pipeline] Session {} references non-active group {}; continuing with stored scope only",
-                request.session_id,
+                "[ChatV2::pipeline] Session {} references non-active group {}; clearing stale topic scope",
+                session_id,
                 group_id
             );
-            options.group_name.get_or_insert(group.name);
-            options
-                .group_pinned_resource_ids
-                .get_or_insert(group.pinned_resource_ids);
+            options.group_id = None;
+            options.group_name = None;
+            options.group_pinned_resource_ids = None;
             return Ok(());
         }
 
@@ -444,6 +447,12 @@ impl ChatV2Pipeline {
         options.group_name = Some(group.name);
         options.group_pinned_resource_ids = Some(group.pinned_resource_ids);
         Ok(())
+    }
+
+    fn enrich_group_scope_options(&self, request: &mut SendMessageRequest) -> ChatV2Result<()> {
+        let session_id = request.session_id.clone();
+        let options = request.options.get_or_insert_with(Default::default);
+        self.enrich_group_scope_for_options(&session_id, options)
     }
 
     /// 执行消息发送流水线

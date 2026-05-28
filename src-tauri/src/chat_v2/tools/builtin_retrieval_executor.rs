@@ -169,16 +169,109 @@ impl BuiltinRetrievalExecutor {
         resolved
     }
 
+    fn source_id_for_resource_id(
+        vfs_db: &std::sync::Arc<crate::vfs::database::VfsDatabase>,
+        resource_id: &str,
+    ) -> Option<String> {
+        let Ok(conn) = vfs_db.get_conn_safe() else {
+            return None;
+        };
+        conn.query_row(
+            "SELECT source_id FROM resources WHERE id = ?1 AND deleted_at IS NULL",
+            rusqlite::params![resource_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten()
+    }
+
+    fn resolve_scoped_explicit_resource_ids(
+        ctx: &ExecutionContext,
+        vfs_db: &std::sync::Arc<crate::vfs::database::VfsDatabase>,
+        ids: &[String],
+    ) -> Result<Vec<String>, String> {
+        let allowed_item_ids = resource_scope::item_ids_in_topic_scope(ctx, vfs_db)?;
+        let pinned_ids = resource_scope::current_topic_pinned_resource_ids(ctx);
+        let mut resolved = Vec::new();
+
+        for raw_id in ids {
+            let trimmed = raw_id.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let resolved_resource_id = Self::resolve_resource_ids(vfs_db, &[trimmed.to_string()])
+                .into_iter()
+                .next();
+            let read_id = resolved_resource_id
+                .as_deref()
+                .and_then(|resource_id| Self::source_id_for_resource_id(vfs_db, resource_id))
+                .unwrap_or_else(|| trimmed.to_string());
+
+            let in_scope = allowed_item_ids.contains(trimmed)
+                || allowed_item_ids.contains(&read_id)
+                || pinned_ids.iter().any(|pinned_id| {
+                    resource_scope::pinned_resource_matches(vfs_db, pinned_id, trimmed, &read_id)
+                });
+
+            if !in_scope {
+                return Err(format!(
+                    "当前课题只能检索自己的资源。请求的 resource_id '{}' 不属于当前课题范围。",
+                    trimmed
+                ));
+            }
+
+            if let Some(resource_id) = resolved_resource_id {
+                resolved.push(resource_id);
+            }
+        }
+
+        resolved.sort();
+        resolved.dedup();
+        Ok(resolved)
+    }
+
     fn scoped_filters(
         &self,
         ctx: &ExecutionContext,
         vfs_db: &std::sync::Arc<crate::vfs::database::VfsDatabase>,
         explicit_folder_ids: Option<Vec<String>>,
         explicit_resource_ids: Option<Vec<String>>,
-    ) -> (Option<Vec<String>>, Option<Vec<String>>) {
+    ) -> Result<(Option<Vec<String>>, Option<Vec<String>>), String> {
         let folder_ids = Self::normalize_filter_list(explicit_folder_ids);
         let resource_ids = Self::normalize_filter_list(explicit_resource_ids);
         if folder_ids.is_some() || resource_ids.is_some() {
+            if resource_scope::is_topic_scoped(ctx) {
+                if let Some(ids) = folder_ids.as_deref() {
+                    let roots = resource_scope::current_topic_folder_roots(ctx);
+                    for folder_id in ids {
+                        if !resource_scope::folder_is_within_roots(vfs_db, folder_id, &roots)? {
+                            return Err(format!(
+                                "当前课题只能检索自己的资源文件夹。请求的 folder_id '{}' 不属于当前课题范围。",
+                                folder_id
+                            ));
+                        }
+                    }
+                }
+
+                let resolved_resource_ids = match resource_ids.as_deref() {
+                    Some(ids) => {
+                        let resolved =
+                            Self::resolve_scoped_explicit_resource_ids(ctx, vfs_db, ids)?;
+                        if resolved.is_empty() {
+                            Some(vec!["__no_matching_explicit_resources__".to_string()])
+                        } else {
+                            Some(resolved)
+                        }
+                    }
+                    None => None,
+                };
+                return Ok((
+                    folder_ids,
+                    Self::normalize_filter_list(resolved_resource_ids),
+                ));
+            }
+
             let resolved_resource_ids = resource_ids.as_deref().map(|ids| {
                 let resolved = Self::resolve_resource_ids(vfs_db, ids);
                 if resolved.is_empty() {
@@ -187,14 +280,14 @@ impl BuiltinRetrievalExecutor {
                     resolved
                 }
             });
-            return (
+            return Ok((
                 folder_ids,
                 Self::normalize_filter_list(resolved_resource_ids),
-            );
+            ));
         }
 
         if !resource_scope::is_topic_scoped(ctx) {
-            return (None, None);
+            return Ok((None, None));
         }
 
         let mut pinned_folder_ids = Vec::new();
@@ -217,12 +310,12 @@ impl BuiltinRetrievalExecutor {
 
         if folder_ids.is_none() && resource_ids.is_none() {
             // 当前课题没有绑定资源时，不回落到全局知识库，避免跨课题泄漏。
-            (
+            Ok((
                 None,
                 Some(vec!["__no_resources_for_current_group__".to_string()]),
-            )
+            ))
         } else {
-            (folder_ids, resource_ids)
+            Ok((folder_ids, resource_ids))
         }
     }
 
@@ -290,7 +383,7 @@ impl BuiltinRetrievalExecutor {
         // 获取 VFS 数据库，并应用课题默认作用域
         let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
         let (folder_ids, resource_ids) =
-            self.scoped_filters(ctx, vfs_db, explicit_folder_ids, explicit_resource_ids);
+            self.scoped_filters(ctx, vfs_db, explicit_folder_ids, explicit_resource_ids)?;
 
         // 发射 start 事件
         ctx.emitter.emit_start(
@@ -604,7 +697,7 @@ impl BuiltinRetrievalExecutor {
             .ok_or("LLM manager not available")?;
         let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
         let (folder_ids, resource_ids) =
-            self.scoped_filters(ctx, vfs_db, explicit_folder_ids, explicit_resource_ids);
+            self.scoped_filters(ctx, vfs_db, explicit_folder_ids, explicit_resource_ids)?;
 
         // 发射 start 事件
         ctx.emitter.emit_start(
@@ -883,7 +976,7 @@ impl BuiltinRetrievalExecutor {
             .as_ref()
             .ok_or("LLM manager not available")?;
         let (folder_ids, resource_ids) =
-            self.scoped_filters(ctx, vfs_db, explicit_folder_ids, explicit_resource_ids);
+            self.scoped_filters(ctx, vfs_db, explicit_folder_ids, explicit_resource_ids)?;
 
         // 发射 start 事件
         ctx.emitter.emit_start(

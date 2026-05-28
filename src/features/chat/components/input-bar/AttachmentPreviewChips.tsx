@@ -145,7 +145,7 @@ export const AttachmentPreviewChips: React.FC<AttachmentPreviewChipsProps> = mem
                 size="sm"
                 onClick={() => handleChipClick(attachment)}
                 className={cn(
-                  'attachment-preview-chip h-8 w-max justify-start gap-2 rounded-full border border-[color:var(--input-shell-border)] bg-[color:var(--surface-panel-strong)] py-0 pl-1.5 pr-3 text-[13px] font-semibold text-foreground shadow-sm transition-[background-color,border-color,box-shadow] duration-150 hover:border-[color:var(--button-plain-border)] hover:bg-[color:var(--button-plain-hover-bg)] cursor-pointer',
+                  'attachment-preview-chip h-8 w-max justify-start gap-2 rounded-full border border-[color:var(--input-shell-border)] bg-[color:var(--surface-panel-strong)] py-0 pl-1.5 pr-7 text-[13px] font-semibold text-foreground shadow-sm transition-[background-color,border-color,box-shadow] duration-150 hover:border-[color:var(--button-plain-border)] hover:bg-[color:var(--button-plain-hover-bg)] cursor-pointer',
                   disabled && 'pointer-events-none opacity-60'
                 )}
                 title={attachment.name}
@@ -178,7 +178,7 @@ export const AttachmentPreviewChips: React.FC<AttachmentPreviewChipsProps> = mem
                       }}
                       aria-label={`移除附件 ${attachment.name}`}
                       title={`移除附件 ${attachment.name}`}
-                      className="absolute inset-0 flex items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity duration-150 group-hover/attachment-chip:opacity-100 focus-visible:opacity-100"
+                      className="absolute inset-0 right-1.5 flex items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity duration-150 group-hover/attachment-chip:opacity-100 focus-visible:opacity-100"
                     >
                       <X size={10} weight="bold" aria-hidden="true" />
                     </button>

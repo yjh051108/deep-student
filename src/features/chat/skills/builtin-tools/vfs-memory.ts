@@ -145,7 +145,7 @@ export const vfsMemorySkill: SkillDefinition = {
         properties: {
           note_id: { type: 'string', description: '可选：指定 note_id 则按 ID 更新/追加该记忆' },
           scope: { type: 'string', enum: ['topic', 'global'], description: '记忆作用域。topic=当前课题记忆（默认）；global=跨课题长期记忆。' },
-          folder: { type: 'string', description: '记忆分类文件夹路径，如 "偏好"、"偏好/个人背景"、"经历"、"经历/时间节点"、"经历/学科状态"。留空表示存储在记忆根目录。' },
+          folder: { type: 'string', description: '记忆分类文件夹路径，如 "偏好"、"偏好/个人背景"、"经历"、"经历/时间节点"、"经历/学科状态"。留空表示存储在所选作用域根目录。' },
           title: { type: 'string', description: '【必填】记忆标题（事实的关键词概括，如"数学弱项"、"高考日期"、"格式偏好-表格"）' },
           content: { type: 'string', description: '【必填】一个关于用户的简短陈述句，≤50字。示例："高三理科生" / "数学是弱项科目" / "偏好表格形式的总结"。禁止写入学科知识、解题过程、知识点总结。' },
           mode: { type: 'string', description: '写入模式：create=新建, update=替换同名记忆, append=追加', enum: ['create', 'update', 'append'] },
@@ -183,7 +183,7 @@ export const vfsMemorySkill: SkillDefinition = {
       inputSchema: {
         type: 'object',
         properties: {
-          folder: { type: 'string', description: '记忆分类文件夹路径。fact: "偏好/..."、"经历/..."；study: "知识/..."；note: "经验/..."。留空表示存储在记忆根目录。' },
+          folder: { type: 'string', description: '记忆分类文件夹路径。fact: "偏好/..."、"经历/..."；study: "知识/..."；note: "经验/..."。留空表示存储在所选作用域根目录。' },
           scope: { type: 'string', enum: ['topic', 'global'], description: '记忆作用域。topic=当前课题记忆（默认）；global=跨课题长期记忆，仅用于用户偏好/身份/稳定习惯/长期目标。' },
           title: { type: 'string', description: '【必填】记忆标题（fact: 事实关键词；study: 知识点/词汇名；note: 方法论概括）' },
           content: { type: 'string', description: '【必填】记忆内容。fact：关于用户的简短陈述句。study：用户要求保存的学习内容。note：用户要求保存的经验、方法论、技巧。' },

@@ -19,7 +19,7 @@ use crate::document_parser::DocumentParser;
 use crate::vfs::canonical_folder_item_type;
 use crate::vfs::database::VfsDatabase;
 use crate::vfs::error::VfsResult;
-use crate::vfs::indexing::VfsContentExtractor;
+use crate::vfs::indexing::{VfsChunker, VfsContentExtractor};
 use crate::vfs::ocr_utils::{join_ocr_pages_text, parse_ocr_pages_json};
 use crate::vfs::repos::{VfsFileRepo, VfsFolderRepo};
 use crate::vfs::types::{
@@ -30,6 +30,24 @@ use crate::vfs::types::{
 
 /// 最大批量处理资源数（契约 F）
 const MAX_BATCH_RESOURCES: usize = 50;
+
+fn is_usable_ocr_text(text: &str) -> bool {
+    !text.trim().is_empty() && VfsChunker::is_text_quality_acceptable(text)
+}
+
+fn filter_usable_ocr_pages(pages: Vec<Option<String>>) -> Vec<Option<String>> {
+    pages
+        .into_iter()
+        .map(|page| page.filter(|text| is_usable_ocr_text(text)))
+        .collect()
+}
+
+fn has_enough_usable_ocr_pages(pages: &[Option<String>]) -> bool {
+    if pages.is_empty() {
+        return false;
+    }
+    pages.iter().filter(|page| page.is_some()).count() * 2 >= pages.len()
+}
 
 // ============================================================================
 // Tauri 命令
@@ -1319,7 +1337,7 @@ pub fn get_image_ocr_text_with_conn(conn: &Connection, source_id: &str) -> Optio
     match conn.query_row(sql, params![source_id], |row| {
         row.get::<_, Option<String>>(0)
     }) {
-        Ok(Some(text)) if !text.trim().is_empty() => {
+        Ok(Some(text)) if is_usable_ocr_text(&text) => {
             info!(
                 "[OCR_DIAG] OCR text FOUND for source_id={}, len={}, preview=\"{}\"",
                 source_id,
@@ -1330,7 +1348,7 @@ pub fn get_image_ocr_text_with_conn(conn: &Connection, source_id: &str) -> Optio
         }
         Ok(Some(_)) => {
             warn!(
-                "[OCR_DIAG] OCR text exists but is EMPTY/WHITESPACE for source_id={}",
+                "[OCR_DIAG] OCR text exists but is empty or below the quality gate for source_id={}",
                 source_id
             );
             None
@@ -1393,8 +1411,11 @@ pub fn get_ocr_pages_text_with_conn(conn: &Connection, source_id: &str) -> Optio
         return None;
     }
 
-    let pages = parse_ocr_pages_json(&ocr_json);
+    let pages = filter_usable_ocr_pages(parse_ocr_pages_json(&ocr_json));
     if pages.is_empty() {
+        return None;
+    }
+    if !has_enough_usable_ocr_pages(&pages) {
         return None;
     }
 
@@ -1727,7 +1748,7 @@ fn get_file_multimodal_blocks_with_conn(
 
             // 添加该页的 OCR 文本块（如果有）
             if let Some(Some(ocr_text)) = ocr_pages.get(page_index) {
-                if !ocr_text.trim().is_empty() {
+                if is_usable_ocr_text(ocr_text) {
                     blocks.push(MultimodalContentBlock::text(format!(
                         "<page number=\"{}\">{}</page>",
                         page_index + 1,

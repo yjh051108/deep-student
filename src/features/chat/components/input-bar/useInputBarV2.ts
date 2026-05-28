@@ -22,7 +22,6 @@ import {
   areAttachmentInjectModesReady,
   downgradeInjectModesForNonMultimodal,
   getMissingInjectModesForAttachment,
-  hasAnySelectedInjectModeReady,
 } from './injectModeUtils';
 import { resolveChatReadiness, triggerOpenSettingsModels } from '@/features/chat/readiness/readinessGate';
 // ============================================================================
@@ -324,7 +323,7 @@ export function useInputBarV2(
         return false;
       }
       const status = getAttachmentStatus(attachment);
-      return !hasAnySelectedInjectModeReady(attachment, status);
+      return !areAttachmentInjectModesReady(attachment, status);
     });
 
     if (blockingModeAttachment) {
@@ -357,7 +356,7 @@ export function useInputBarV2(
       }
 
       const status = getAttachmentStatus(attachment);
-      return hasAnySelectedInjectModeReady(attachment, status);
+      return areAttachmentInjectModesReady(attachment, status);
     });
 
     // ========== PDF 页码引用注入 ==========

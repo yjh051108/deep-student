@@ -15,7 +15,7 @@ describe('MessageList scroll-to-bottom source contract', () => {
     expect(source).toContain('aria-label={scrollToBottomLabel}');
     expect(source).toContain("title={scrollToBottomLabel}");
     expect(source).toContain('className="pointer-events-none absolute inset-x-0 bottom-2 px-4 md:bottom-3 md:px-8"');
-    expect(source).toContain('style={{ zIndex: Z_INDEX.inputBar - 10 }}');
+    expect(source).toContain('style={{ zIndex: Z_INDEX.inputBar + 1 }}');
     expect(source).toContain('<ThreadContentShell className="pointer-events-none overflow-visible">');
     expect(source).toContain('className="t-panel-slide ml-auto w-fit"');
     expect(source).toContain("data-open={showScrollToBottom ? 'true' : 'false'}");
@@ -41,8 +41,17 @@ describe('MessageList scroll-to-bottom source contract', () => {
   it('shows the control based on scroll position rather than streaming state alone', () => {
     expect(source).toContain("viewportElement.addEventListener('scroll', syncScrollState");
     expect(source).toContain('setShowScrollToBottom(!nearBottom);');
+    expect(source).toContain('if (!isStreaming || performance.now() < streamingStartupLockUntilRef.current) return;');
+    expect(source).toContain('releaseProgrammaticScrollLock();');
     expect(source).toContain("data-open={showScrollToBottom ? 'true' : 'false'}");
     expect(source).not.toContain('{showScrollToBottom && isStreaming && (');
+  });
+
+  it('uses the virtualizer to jump to the last row in long history conversations', () => {
+    expect(source).toContain("containerRef.current?.dispatchEvent(new CustomEvent('smooth-wheel:cancel'))");
+    expect(source).toContain("virtualizer.scrollToIndex(messageOrder.length - 1, { align: 'end', behavior })");
+    expect(source).toContain("virtualizer.scrollToIndex(messageOrder.length - 1, { align: 'end', behavior: 'auto' })");
+    expect(source).toContain('virtualizer.measure();');
   });
 
   it('uses transitions-dev panel reveal semantics for fade-out', () => {

@@ -200,15 +200,38 @@ export function useChatPageEvents(deps: UseChatPageEventsDeps) {
   // ★ 当 Learning Hub 侧边栏打开后，处理待打开的资源
   // 直接设置 openApp 状态，复用 UnifiedAppPanel 显示资源
 
-  const handleAttachmentPreview = useCallback((event: Event) => {
+  const handleAttachmentPreview = useCallback(async (event: Event) => {
     const customEvent = event as CustomEvent<{
       id: string;
       type: string;
       title: string;
     }>;
 
-    const { id, type, title } = customEvent.detail;
+    let { id, type, title } = customEvent.detail;
     console.log('[ChatV2Page] CHAT_OPEN_ATTACHMENT_PREVIEW received:', customEvent.detail);
+
+    if (id?.startsWith('res_')) {
+      try {
+        const resource = await invoke<{
+          id: string;
+          sourceId?: string;
+          resourceType?: string;
+          metadata?: { title?: string; name?: string };
+        } | null>('vfs_get_resource', { resourceId: id });
+
+        if (!resource?.sourceId) {
+          console.warn('[ChatV2Page] Attachment preview resource has no sourceId:', id);
+          return;
+        }
+
+        id = resource.sourceId;
+        type = resource.resourceType || type;
+        title = resource.metadata?.title || resource.metadata?.name || title;
+      } catch (error) {
+        console.warn('[ChatV2Page] Failed to resolve attachment preview resource:', getErrorMessage(error));
+        return;
+      }
+    }
 
     setOpenApp({
       type: type as ResourceType,

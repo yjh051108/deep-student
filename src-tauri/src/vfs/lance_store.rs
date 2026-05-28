@@ -269,10 +269,25 @@ impl VfsLanceStore {
                     Vec::new();
                 let iter = RecordBatchIterator::new(empty.into_iter(), Arc::new(schema));
 
-                conn.create_table(&table_name, iter)
-                    .execute()
-                    .await
-                    .map_err(|e| VfsError::Other(format!("创建 Lance 表失败: {}", e)))?
+                match conn.create_table(&table_name, iter).execute().await {
+                    Ok(tbl) => tbl,
+                    Err(e) => {
+                        let msg = e.to_string();
+                        if msg.contains("already exists") {
+                            conn.open_table(&table_name)
+                                .execute()
+                                .await
+                                .map_err(|open_err| {
+                                    VfsError::Other(format!(
+                                        "Lance 表已存在但打开失败 {}: {}",
+                                        table_name, open_err
+                                    ))
+                                })?
+                        } else {
+                            return Err(VfsError::Other(format!("创建 Lance 表失败: {}", msg)));
+                        }
+                    }
+                }
             }
         };
 

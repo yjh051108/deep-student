@@ -87,12 +87,8 @@ export function useGroupManagement(workspaceId?: string) {
 
   const archiveGroup = useCallback(async (groupId: string) => {
     try {
-      await invoke<SessionGroup>('chat_v2_update_group', {
+      await invoke('chat_v2_archive_group', {
         groupId,
-        request: {
-          persistStatus: 'archived',
-          workspaceId,
-        },
       });
       setGroups((prev) => {
         const next = sortGroups(prev.filter((g) => g.id !== groupId));
@@ -104,7 +100,7 @@ export function useGroupManagement(workspaceId?: string) {
       console.error('[useGroupManagement] Failed to archive group:', getErrorMessage(error));
       throw error;
     }
-  }, [workspaceId]);
+  }, []);
 
   const reorderGroups = useCallback(async (groupIds: string[]) => {
     setGroups((prev) => {

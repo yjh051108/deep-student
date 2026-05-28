@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 use std::time::Instant;
 
 use super::executor::{ExecutionContext, ToolExecutor, ToolSensitivity};
+use super::resource_scope;
 use super::types::strip_tool_namespace;
 use crate::chat_v2::events::event_types;
 use crate::chat_v2::types::{ToolCall, ToolResultInfo};
@@ -316,7 +317,12 @@ impl ImageGenerationExecutor {
             .vfs_db
             .as_ref()
             .ok_or_else(|| "VFS 数据库不可用，无法保存生成图片".to_string())?;
-        let folder_id = ensure_image_generation_folder(vfs_db)?;
+        let folder_id = if resource_scope::is_topic_scoped(ctx) {
+            resource_scope::resolve_scoped_folder_id_for_write(ctx, vfs_db, None, "image_generate")?
+                .ok_or_else(|| "当前课题没有可用资源文件夹，无法保存生成图片".to_string())?
+        } else {
+            ensure_image_generation_folder(vfs_db)?
+        };
         let file_name = build_image_file_name(&generated.mime_type);
 
         let upload_result = VfsAttachmentRepo::upload_with_folder(

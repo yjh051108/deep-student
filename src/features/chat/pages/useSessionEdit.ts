@@ -257,13 +257,24 @@ export function useSessionEdit(deps: UseSessionEditDeps) {
 
   const confirmArchiveGroup = useCallback(async () => {
     if (!pendingArchiveGroup) return;
+    const archivedGroupId = pendingArchiveGroup.id;
     try {
-      await archiveGroup(pendingArchiveGroup.id);
+      await archiveGroup(archivedGroupId);
+      const archivedSessionIds = new Set(
+        sessionsRef.current
+          .filter((session) => session.groupId === archivedGroupId)
+          .map((session) => session.id)
+      );
+      setSessions((prev) => prev.filter((session) => session.groupId !== archivedGroupId));
+      if (currentSessionId && archivedSessionIds.has(currentSessionId)) {
+        setCurrentSessionId(null);
+      }
+      emitSessionListUpdated();
       setPendingArchiveGroup(null);
     } catch (error) {
       console.error('[ChatV2Page] Failed to archive group:', getErrorMessage(error));
     }
-  }, [archiveGroup, pendingArchiveGroup, setPendingArchiveGroup]);
+  }, [archiveGroup, currentSessionId, pendingArchiveGroup, sessionsRef, setCurrentSessionId, setPendingArchiveGroup, setSessions]);
 
   const moveSessionToGroup = useCallback(async (sessionId: string, groupId?: string) => {
     try {

@@ -34,9 +34,9 @@ import { debugLog } from '@/debug-panel/debugMasterSwitch';
 const LIST_ITEM_HEIGHT = 40;
 
 // 网格模式虚拟滚动常量
-const GRID_ITEM_MIN_WIDTH = 88;  // minmax(88px, 1fr)
+const GRID_ITEM_MIN_WIDTH = 104; // minmax(104px, 1fr)
 const GRID_GAP = 8;              // gap-2 = 0.5rem = 8px
-const GRID_ROW_HEIGHT = 120;     // 网格行高度（包含内容）
+const GRID_ROW_HEIGHT = 124;     // 网格行高度（包含内容）
 const GRID_PADDING = 12;         // p-3 = 0.75rem = 12px
 
 /**
@@ -275,6 +275,17 @@ export function FinderFileList({
     estimateSize: () => GRID_ROW_HEIGHT + GRID_GAP,
     overscan: 2,
   });
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      if (viewMode === 'grid') {
+        gridVirtualizer.measure();
+      } else {
+        listVirtualizer.measure();
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [viewMode, items.length, gridColumns, gridContainerWidth, gridVirtualizer, listVirtualizer]);
 
   // 拖拽开始
   const handleDragStart = useCallback((event: DragStartEvent) => {
@@ -608,27 +619,28 @@ export function FinderFileList({
                     style={{
                       top: `${virtualRow.start}px`,
                       height: `${GRID_ROW_HEIGHT}px`,
-                      gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))`,
+                      gridTemplateColumns: `repeat(${gridColumns}, minmax(min(${GRID_ITEM_MIN_WIDTH}px, 100%), 1fr))`,
                     }}
                   >
                     {rowItems.map(item => (
-                      <SortableFinderFileItem
-                        key={item.id}
-                        id={item.id}
-                        item={item}
-                        viewMode={viewMode}
-                        isSelected={selectedIds.has(item.id)}
-                        isActive={activeFileId === item.id}
-                        isHighlighted={highlightedIds?.has(item.id)}
-                        onSelect={(mode) => onSelect(item.id, mode)}
-                        onOpen={() => onOpen(item)}
-                        onContextMenu={(e) => onContextMenu(e, item)}
-                        enableDrag={enableDragDrop && editingId !== item.id}
-                        isEditing={editingId === item.id}
-                        onEditConfirm={(newName) => onEditConfirm?.(item.id, newName)}
-                        onEditCancel={onEditCancel}
-                        compact={compact}
-                      />
+                      <div key={item.id} className="min-w-0 flex justify-center">
+                        <SortableFinderFileItem
+                          id={item.id}
+                          item={item}
+                          viewMode={viewMode}
+                          isSelected={selectedIds.has(item.id)}
+                          isActive={activeFileId === item.id}
+                          isHighlighted={highlightedIds?.has(item.id)}
+                          onSelect={(mode) => onSelect(item.id, mode)}
+                          onOpen={() => onOpen(item)}
+                          onContextMenu={(e) => onContextMenu(e, item)}
+                          enableDrag={enableDragDrop && editingId !== item.id}
+                          isEditing={editingId === item.id}
+                          onEditConfirm={(newName) => onEditConfirm?.(item.id, newName)}
+                          onEditCancel={onEditCancel}
+                          compact={compact}
+                        />
+                      </div>
                     ))}
                   </div>
                 );

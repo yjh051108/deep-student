@@ -7,7 +7,7 @@
  * - ★ 支持视图级别的配置隔离，只有活跃视图的配置才会生效
  */
 
-import React, { createContext, useContext, useState, useCallback, useLayoutEffect, useRef, type ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react';
 
 /** 移动端顶栏配置 */
 export interface MobileHeaderConfig {
@@ -54,6 +54,44 @@ const defaultConfig: MobileHeaderConfig = {
 
 const MobileHeaderContext = createContext<MobileHeaderContextValue | null>(null);
 
+function getReactNodeSignature(node: ReactNode): string {
+  if (node == null || typeof node === 'boolean') {
+    return '';
+  }
+  if (typeof node === 'string' || typeof node === 'number') {
+    return String(node);
+  }
+  if (Array.isArray(node)) {
+    return node.map(getReactNodeSignature).join('|');
+  }
+  if (React.isValidElement(node)) {
+    const typeName = typeof node.type === 'string'
+      ? node.type
+      : ((node.type as { displayName?: string; name?: string }).displayName
+        || (node.type as { displayName?: string; name?: string }).name
+        || 'Component');
+    const props = node.props as Record<string, unknown>;
+    const propSignature = Object.keys(props)
+      .filter((key) => key !== 'children' && typeof props[key] !== 'function')
+      .sort()
+      .map((key) => `${key}:${String(props[key])}`)
+      .join(',');
+    return `${typeName}:${node.key ?? ''}{${propSignature}}(${getReactNodeSignature(props.children as ReactNode)})`;
+  }
+  return typeof node;
+}
+
+function areHeaderConfigsEqual(a: MobileHeaderConfig, b: MobileHeaderConfig): boolean {
+  return Object.is(a.hidden, b.hidden)
+    && Object.is(a.title, b.title)
+    && getReactNodeSignature(a.titleNode) === getReactNodeSignature(b.titleNode)
+    && Object.is(a.subtitle, b.subtitle)
+    && getReactNodeSignature(a.rightActions) === getReactNodeSignature(b.rightActions)
+    && Object.is(a.showMenu, b.showMenu)
+    && Object.is(a.showBackArrow, b.showBackArrow)
+    && Object.is(a.suppressGlobalBackButton, b.suppressGlobalBackButton);
+}
+
 /** Provider 组件 */
 export const MobileHeaderProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // 当前显示的配置
@@ -66,32 +104,53 @@ export const MobileHeaderProvider: React.FC<{ children: ReactNode }> = ({ childr
   // 设置配置（带视图 ID）
   const setConfig = useCallback((viewId: string, newConfig: MobileHeaderConfig) => {
     // 缓存该视图的配置
-    configCacheRef.current.set(viewId, newConfig);
+    const cachedConfig = configCacheRef.current.get(viewId);
+    if (!cachedConfig || !areHeaderConfigsEqual(cachedConfig, newConfig)) {
+      configCacheRef.current.set(viewId, newConfig);
+    }
     // 只有当前活跃视图才立即应用配置
     if (activeViewRef.current === viewId) {
-      setConfigState(newConfig);
+      setConfigState((prev) => (
+        areHeaderConfigsEqual(prev, newConfig) ? prev : newConfig
+      ));
     }
   }, []);
 
   // 设置活跃视图
   const setActiveView = useCallback((viewId: string) => {
+    if (activeViewRef.current === viewId) {
+      return;
+    }
     activeViewRef.current = viewId;
     // 应用该视图缓存的配置
     const cachedConfig = configCacheRef.current.get(viewId);
     if (cachedConfig) {
-      setConfigState(cachedConfig);
+      setConfigState((prev) => (
+        areHeaderConfigsEqual(prev, cachedConfig) ? prev : cachedConfig
+      ));
     } else {
       // 如果没有缓存（懒加载组件还没加载），先显示空配置，页面加载后会更新
-      setConfigState(defaultConfig);
+      setConfigState((prev) => (
+        areHeaderConfigsEqual(prev, defaultConfig) ? prev : defaultConfig
+      ));
     }
   }, []);
 
   const resetConfig = useCallback(() => {
-    setConfigState(defaultConfig);
+    setConfigState((prev) => (
+      areHeaderConfigsEqual(prev, defaultConfig) ? prev : defaultConfig
+    ));
   }, []);
 
+  const contextValue = useMemo<MobileHeaderContextValue>(() => ({
+    config,
+    setConfig,
+    resetConfig,
+    setActiveView,
+  }), [config, setConfig, resetConfig, setActiveView]);
+
   return (
-    <MobileHeaderContext.Provider value={{ config, setConfig, resetConfig, setActiveView }}>
+    <MobileHeaderContext.Provider value={contextValue}>
       {children}
     </MobileHeaderContext.Provider>
   );
@@ -175,12 +234,13 @@ export function useSetMobileHeaderActiveView(): (viewId: string) => void {
  */
 export const MobileHeaderActiveViewSync: React.FC<{ activeView: string }> = ({ activeView }) => {
   const ctx = useContext(MobileHeaderContext);
+  const setActiveView = ctx?.setActiveView;
 
   useLayoutEffect(() => {
-    if (ctx) {
-      ctx.setActiveView(activeView);
+    if (setActiveView) {
+      setActiveView(activeView);
     }
-  }, [activeView, ctx]);
+  }, [activeView, setActiveView]);
 
   return null;
 };

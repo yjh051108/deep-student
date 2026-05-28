@@ -11,6 +11,30 @@ vi.mock('@tauri-apps/api/core', () => ({
   convertFileSrc: (path: string) => `asset://mock${path}`,
 }));
 
+vi.mock('@/features/mindmap/components/mindmap/MindMapEmbed', () => ({
+  MindMapEmbed: ({
+    height,
+    displayTitle,
+    expandLargeMaps,
+    zoomOnScroll,
+  }: {
+    height: number;
+    displayTitle?: string;
+    expandLargeMaps?: boolean;
+    zoomOnScroll?: boolean;
+  }) => (
+    <div
+      className="mindmap-container"
+      data-height={height}
+      data-expand-large-maps={String(expandLargeMaps)}
+      data-zoom-on-scroll={String(zoomOnScroll)}
+      style={{ height: `${height}px` }}
+    >
+      {displayTitle}
+    </div>
+  ),
+}));
+
 const FLOWTOKEN_ANIMATION_SELECTOR =
   '[style*="animation-name: ft-fadeIn"]';
 
@@ -91,15 +115,16 @@ describe('MarkdownRenderer flowtoken streaming animation', () => {
     expect(container.querySelector('.think-content [style*="animation-name: ft-fadeIn"]')).not.toBeNull();
   });
 
-  it('uses flowtoken for citation-like streaming blocks (content gate removed)', () => {
+  it('keeps citation-like streaming blocks on the app markdown path', () => {
     const { container } = render(
       <StreamingBlockRenderer content="参考这个结论 [知识库-1]" isStreaming />
     );
 
-    expect(container.querySelector('.stream-block')?.getAttribute('data-flowtoken')).toBe('true');
+    expect(container.querySelector('.stream-block')?.getAttribute('data-flowtoken')).toBe('false');
+    expect(container.querySelector('.markdown-content')).not.toBeNull();
   });
 
-  it('keeps streaming blocks on flowtoken while content grows (content gate removed)', () => {
+  it('keeps citation-like streaming blocks off flowtoken while content grows', () => {
     const { container, rerender } = render(
       <StreamingBlockRenderer content="参考这个结论 [知识库-1]" isStreaming />
     );
@@ -109,8 +134,56 @@ describe('MarkdownRenderer flowtoken streaming animation', () => {
     );
 
     const block = container.querySelector('.stream-block');
-    expect(block?.getAttribute('data-flowtoken')).toBe('true');
+    expect(block?.getAttribute('data-flowtoken')).toBe('false');
     expect(block?.getAttribute('data-motion-layer')).toBe('inline');
+  });
+
+  it('renders streaming mindmap citations through the app markdown renderer', () => {
+    const content = '<span data-mindmap-citation="true" data-mindmap-id="mm_123" data-mindmap-title="%E5%AF%BC%E5%9B%BE">导图</span>';
+    const { container } = render(
+      <StreamingBlockRenderer content={content} isStreaming />
+    );
+
+    expect(container.querySelector('.stream-block')?.getAttribute('data-flowtoken')).toBe('false');
+    expect(container.querySelector('.mindmap-container')).not.toBeNull();
+    expect(container.textContent).toContain('导图');
+  });
+
+  it('keeps streaming mindmap citations at the final card height instead of swapping badge to embed', () => {
+    const content = '<span data-mindmap-citation="true" data-mindmap-id="mm_123" data-mindmap-title="%E5%AF%BC%E5%9B%BE">导图</span>';
+    const { container } = render(<MarkdownRenderer content={content} isStreaming />);
+    const embed = container.querySelector('.mindmap-container') as HTMLElement | null;
+
+    expect(embed).not.toBeNull();
+    expect(embed).toHaveAttribute('data-height', '220');
+    expect(embed).toHaveAttribute('data-expand-large-maps', 'false');
+  });
+
+  it('renders completed mindmap citations with a stable fixed embed height', () => {
+    const content = '<span data-mindmap-citation="true" data-mindmap-id="mm_123" data-mindmap-title="%E5%AF%BC%E5%9B%BE">导图</span>';
+    const { container } = render(<MarkdownRenderer content={content} isStreaming={false} />);
+    const embed = container.querySelector('.mindmap-container') as HTMLElement | null;
+
+    expect(embed).not.toBeNull();
+    expect(embed).toHaveAttribute('data-height', '220');
+    expect(embed).toHaveAttribute('data-expand-large-maps', 'false');
+    expect(embed).toHaveAttribute('data-zoom-on-scroll', 'false');
+    expect(embed).toHaveStyle('height: 220px');
+  });
+
+  it('does not leave a blank mindmap card for empty citation ids', () => {
+    const content = '<span data-mindmap-citation="true" data-mindmap-id="" data-mindmap-title="%E5%AF%BC%E5%9B%BE">导图</span>';
+    const { container } = render(<MarkdownRenderer content={content} isStreaming={false} />);
+
+    expect(container.querySelector('.mindmap-container')).toBeNull();
+  });
+
+  it('does not throw on malformed mindmap title encoding', () => {
+    const content = '<span data-mindmap-citation="true" data-mindmap-id="mm_123" data-mindmap-title="bad%title">导图</span>';
+    const { container } = render(<MarkdownRenderer content={content} isStreaming={false} />);
+
+    expect(container.querySelector('.mindmap-container')).not.toBeNull();
+    expect(container.textContent).toContain('bad%title');
   });
 
   it('keeps dangling markdown text visible in the flowtoken streaming path', () => {
@@ -122,13 +195,13 @@ describe('MarkdownRenderer flowtoken streaming animation', () => {
     expect(container.querySelector('.stream-block')?.getAttribute('data-flowtoken')).toBe('true');
   });
 
-  it('uses flowtoken for bare LaTeX streaming blocks (content gate removed)', () => {
+  it('keeps bare LaTeX streaming blocks on the app markdown path', () => {
     const { container } = render(
       <StreamingBlockRenderer content={'score(Q, K) = \\\\frac{QK^T}{\\\\sqrt{d_k}}'} isStreaming />
     );
 
-    expect(container.querySelector('.stream-block')?.getAttribute('data-flowtoken')).toBe('true');
-    expect(container.querySelector('.flowtoken-markdown')).not.toBeNull();
+    expect(container.querySelector('.stream-block')?.getAttribute('data-flowtoken')).toBe('false');
+    expect(container.querySelector('.markdown-content')).not.toBeNull();
     expect(container.textContent).not.toContain('[object Object]');
   });
 

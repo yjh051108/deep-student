@@ -100,6 +100,15 @@ export function useSmoothWheel(
       active = false;
     };
 
+    const cancelSmoothWheel = () => {
+      const el = resolveScrollEl();
+      if (el) {
+        target = el.scrollTop;
+        lastApplied = el.scrollTop;
+      }
+      stop();
+    };
+
     const tick = () => {
       const el = resolveScrollEl();
       if (!el) {
@@ -162,8 +171,10 @@ export function useSmoothWheel(
     };
 
     hostElement.addEventListener('wheel', onWheel, { passive: false, capture: true });
+    hostElement.addEventListener('smooth-wheel:cancel', cancelSmoothWheel as EventListener);
     return () => {
       hostElement.removeEventListener('wheel', onWheel as EventListener, { capture: true });
+      hostElement.removeEventListener('smooth-wheel:cancel', cancelSmoothWheel as EventListener);
       stop();
     };
   }, [hostElement, enabled]);

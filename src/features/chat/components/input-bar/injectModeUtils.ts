@@ -40,7 +40,7 @@ export function getEffectiveReadyModes(
 ): MediaInjectMode[] | undefined {
   const effectiveStatus = status || attachment.processingStatus;
 
-  // 后端图片管线上传完成后立即将 image 加入 readyModes，
+  // 后端图片管线完成内容验证后才将 image 加入 readyModes，
   // 不再需要前端虚拟补充。直接使用后端报告的 readyModes。
 
   if (effectiveStatus?.readyModes?.length) {
@@ -51,18 +51,8 @@ export function getEffectiveReadyModes(
     }
   }
 
-  if (effectiveStatus?.stage === 'completed' || effectiveStatus?.stage === 'completed_with_issues') {
-    return mediaType === 'pdf' ? ['text'] : ['image'];
-  }
-
   if (attachment.status === 'ready' && !effectiveStatus) {
     return mediaType === 'pdf' ? ['text'] : ['image'];
-  }
-
-  // 图片附件：image 模式在上传完成后即可用（原始数据已就位），
-  // 无论后端 readyModes 是否已返回都应乐观包含 'image'
-  if (mediaType === 'image' && (attachment.status === 'processing' || attachment.status === 'ready')) {
-    return ['image'];
   }
 
   return undefined;

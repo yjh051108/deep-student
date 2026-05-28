@@ -277,6 +277,8 @@ export interface PdfProcessingStatus {
   readyModes?: Array<'text' | 'ocr' | 'image'>;
   /** 错误信息（error 状态时填充） */
   error?: string;
+  /** 已完成但存在问题的处理阶段 */
+  failedStages?: Array<{ stage: string; message: string; retriable?: boolean }>;
   /** 媒体类型（v2.0 新增） */
   mediaType?: MediaType;
 }

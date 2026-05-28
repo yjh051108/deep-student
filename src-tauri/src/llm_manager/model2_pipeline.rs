@@ -4821,9 +4821,19 @@ impl LLMManager {
         let requested_image_count = image_payloads.as_ref().map(|v| v.len()).unwrap_or(0);
         let mut attached_payloads: Vec<ImagePayload> = Vec::new();
 
+        let can_attach_images = config.is_multimodal || !effective_engine.is_native_ocr();
+
         // 先添加图片（必须在文本之前）
         if let Some(images) = image_payloads {
-            if config.is_multimodal {
+            if can_attach_images {
+                if !config.is_multimodal {
+                    warn!(
+                        "OCR模型({})未标记为多模态，但 OCR 引擎 {} 需要视觉输入，按 OCR 引擎能力附加 {} 张图片",
+                        config.model,
+                        effective_engine.as_str(),
+                        images.len()
+                    );
+                }
                 for payload in images {
                     content_parts.push(json!({
                         "type": "image_url",
@@ -4839,11 +4849,11 @@ impl LLMManager {
                     attached_payloads.push(payload);
                 }
             } else if !images.is_empty() {
-                warn!(
-                    "OCR模型({})未标记为多模态，忽略 {} 张图片",
+                return Err(AppError::configuration(format!(
+                    "OCR模型({})未标记为多模态，且当前 OCR 引擎 {} 不能通过 raw prompt 附加图片",
                     config.model,
-                    images.len()
-                );
+                    effective_engine.as_str()
+                )));
             }
         }
 

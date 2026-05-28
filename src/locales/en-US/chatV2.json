@@ -216,6 +216,7 @@
       "ocrProcessingProgress": "OCR {{current}}/{{total}}",
       "vectorIndexing": "Indexing",
       "completed": "Completed",
+      "completedWithIssues": "Completed with issues",
       "error": "Failed",
       "pdfProcessing": "Processing PDF",
       "imageProcessing": "Processing image"
@@ -1061,7 +1062,9 @@
     "createdAt": "Created",
     "groupByTime": "Group by time",
     "groupByGroup": "Group by category",
-    "ungrouped": "Ungrouped"
+    "ungrouped": "Ungrouped",
+    "staleTopic": "Archived or Missing Topic",
+    "staleTopicDescription": "These sessions still keep an old topic ID, but that topic is not currently active."
   },
   "search": {
     "titleMode": "Title",

@@ -2153,6 +2153,32 @@ impl MemoryService {
         }))
     }
 
+    pub fn get_tree_in_folder_path(
+        &self,
+        folder_path: Option<&str>,
+    ) -> VfsResult<Option<FolderTreeNode>> {
+        let Some(path) = folder_path.map(str::trim).filter(|path| !path.is_empty()) else {
+            return self.get_tree();
+        };
+        let root_id = self.ensure_root_folder_id()?;
+        let Some(folder_id) = self.resolve_path_to_folder_id(&root_id, path)? else {
+            return Ok(None);
+        };
+        let folder = match VfsFolderRepo::get_folder(&self.vfs_db, &folder_id)? {
+            Some(folder) => folder,
+            None => return Ok(None),
+        };
+        let conn = self.vfs_db.get_conn_safe()?;
+        let children = self.build_subtree(&conn, &folder_id)?;
+        let items = VfsFolderRepo::list_items_by_folder_with_conn(&conn, Some(&folder_id))?;
+
+        Ok(Some(FolderTreeNode {
+            folder,
+            children,
+            items,
+        }))
+    }
+
     fn build_subtree(
         &self,
         conn: &rusqlite::Connection,

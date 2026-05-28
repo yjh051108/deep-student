@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react';
+import React, { useEffect, useState, useCallback, useRef, lazy, Suspense, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { MagnifyingGlass, Plus, FolderPlus, X, Trash, CircleNotch, FlowArrow, CheckSquare, ListChecks, CaretLeft, CaretRight, House } from '@phosphor-icons/react';
 import { open as dialogOpen } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { textbookDstuAdapter } from '@/dstu/adapters/textbookDstuAdapter';
 import { attachmentDstuAdapter } from '@/dstu/adapters/attachmentDstuAdapter';
@@ -70,6 +71,8 @@ import { DesktopView, type CreateResourceType } from './components/finder';
 import type { DesktopRootConfig } from './stores/desktopStore';
 import { useFinderStore, type QuickAccessType } from './stores/finderStore';
 import { useRecentStore } from './stores/recentStore';
+import { setGroupCache } from '@/features/chat/core/store/groupCache';
+import type { SessionGroup } from '@/features/chat/types/group';
 import { useLearningHubNavigationSafe } from './LearningHubNavigationContext';
 import { useBreakpoint } from '@/hooks/useBreakpoint';
 import {
@@ -125,6 +128,9 @@ export function LearningHubSidebar({
   mobileBottomPadding = false,
   hasOpenApp = false,
   onCloseApp,
+  topicRootFolderId,
+  topicGroupId,
+  topicGroupName,
   hideToolbarAndNav = false,
   highlightedIds,
 }: LearningHubSidebarProps) {
@@ -170,8 +176,44 @@ export function LearningHubSidebar({
   const currentPathDisplay = getFinderPathDisplayPath(currentPath);
   const viewCapabilities = getViewCapabilities(currentPath.viewKind);
   const currentCreatableFolderId = getCreatableFolderId(currentPath);
+  const [resolvedTopicRootFolderId, setResolvedTopicRootFolderId] = useState<string | null>(topicRootFolderId ?? null);
+  const effectiveTopicRootFolderId = topicRootFolderId ?? resolvedTopicRootFolderId;
+  const effectiveCreateFolderId = currentCreatableFolderId ?? effectiveTopicRootFolderId ?? null;
   const baseQuickAccessType = getQuickAccessTypeFromPath(currentPath) ?? null;
   const isTrashView = currentPath.viewKind === 'trash';
+
+  useEffect(() => {
+    setResolvedTopicRootFolderId(topicRootFolderId ?? null);
+  }, [topicRootFolderId]);
+
+  useEffect(() => {
+    if (mode !== 'canvas' || !topicGroupId) {
+      return;
+    }
+
+    let cancelled = false;
+    const refreshTopicRoot = async () => {
+      try {
+        const group = await invoke<SessionGroup | null>('chat_v2_get_group', { groupId: topicGroupId });
+        if (cancelled || !group) return;
+        setGroupCache(group);
+        const rootFolderId = group.pinnedResourceIds?.find((id) => typeof id === 'string' && id.startsWith('fld_')) ?? null;
+        setResolvedTopicRootFolderId(rootFolderId);
+      } catch (error) {
+        console.warn('[LearningHubSidebar] Failed to resolve topic resource root:', error);
+      }
+    };
+
+    void refreshTopicRoot();
+    const onGroupsUpdated = () => {
+      void refreshTopicRoot();
+    };
+    window.addEventListener('chat-v2:groups-updated', onGroupsUpdated);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('chat-v2:groups-updated', onGroupsUpdated);
+    };
+  }, [mode, topicGroupId]);
 
   // ★ 记忆系统改造：跟踪记忆根文件夹 ID，用于高亮侧边栏
   // 在组件挂载和 viewKind 变化时刷新（用户可能通过 MemoryView 设置了根文件夹后返回）
@@ -186,8 +228,21 @@ export function LearningHubSidebar({
     currentPath.folderId === memoryRootFolderId ||
     currentPath.breadcrumbs?.some(b => b.id === memoryRootFolderId)
   );
+  const memoryTreeRootPath = useMemo(() => {
+    if (!memoryRootFolderId) return undefined;
+    const rootIndex = currentPath.breadcrumbs?.findIndex(b => b.id === memoryRootFolderId) ?? -1;
+    if (rootIndex < 0) return undefined;
+    const segments = currentPath.breadcrumbs
+      .slice(rootIndex + 1)
+      .map(b => b.name.trim())
+      .filter(Boolean);
+    return segments.length > 0 ? segments.join('/') : undefined;
+  }, [currentPath.breadcrumbs, memoryRootFolderId]);
   const currentQuickAccessType = isInMemoryFolder ? 'memory' as QuickAccessType : baseQuickAccessType;
   const canCreateInCurrentView = viewCapabilities.canCreate;
+  const hasResolvedCreateScope =
+    mode !== 'canvas' || !topicGroupId || Boolean(effectiveCreateFolderId);
+  const canCreateInResolvedScope = canCreateInCurrentView && hasResolvedCreateScope;
   const canSearchInCurrentView = viewCapabilities.canSearch;
 
   // ★ Bug4 修复：canvas 模式下，如果 currentPath 是特殊视图（indexStatus/memory/desktop），
@@ -196,9 +251,29 @@ export function LearningHubSidebar({
   useEffect(() => {
     if (mode === 'canvas' && CANVAS_BLOCKED_VIEW_KINDS.has(currentPath.viewKind)) {
       debugLog.log('[LearningHub] canvas 模式检测到特殊视图，重置到 root:', currentPath.viewKind);
-      setCurrentPathWithoutHistory(null);
+      setCurrentPathWithoutHistory(null, { replaceHistory: true });
     }
   }, [mode, currentPath.viewKind, setCurrentPathWithoutHistory]); // 仅在组件挂载/mode 变化时检查，避免循环
+
+  useEffect(() => {
+    if (mode !== 'canvas' || !effectiveTopicRootFolderId || currentPath.folderId === effectiveTopicRootFolderId) {
+      return;
+    }
+    const isInsideTopicRoot =
+      currentPath.viewKind === 'folder' &&
+      currentPath.breadcrumbs?.some((breadcrumb) => breadcrumb.id === effectiveTopicRootFolderId);
+    if (isInsideTopicRoot) {
+      return;
+    }
+    void setCurrentPathWithoutHistory(effectiveTopicRootFolderId, { replaceHistory: true });
+  }, [
+    mode,
+    effectiveTopicRootFolderId,
+    currentPath.folderId,
+    currentPath.viewKind,
+    currentPath.breadcrumbs,
+    setCurrentPathWithoutHistory,
+  ]);
 
   // ★ 搜索防抖处理：延迟 300ms 触发 API 调用，避免快速输入导致频繁请求
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
@@ -386,6 +461,15 @@ export function LearningHubSidebar({
     }
   };
 
+  const handleFinderSelect = (id: string, selectMode: 'single' | 'toggle' | 'range') => {
+    select(id, selectMode);
+    if (selectMode !== 'single') return;
+
+    const item = items.find(i => i.id === id);
+    if (!item || item.type === 'folder') return;
+    handleOpen(item);
+  };
+
   const handleRefresh = useCallback(async () => {
     if (!isMountedRef.current) return;
     await finderRefresh();
@@ -430,12 +514,19 @@ export function LearningHubSidebar({
 
   // Open create dialog
   const ensureCreatableView = useCallback(() => {
-    if (canCreateInCurrentView) {
+    if (!canCreateInCurrentView) {
+      showGlobalNotification('warning', t('finder.create.notAllowedHere', '当前视图不支持新建资源'));
+      return false;
+    }
+    if (!hasResolvedCreateScope) {
+      showGlobalNotification('warning', t('finder.create.topicRootResolving', '正在准备当前课题的资源根目录，请稍后再试'));
+      return false;
+    }
+    if (canCreateInResolvedScope) {
       return true;
     }
-    showGlobalNotification('warning', t('finder.create.notAllowedHere', '当前视图不支持新建资源'));
     return false;
-  }, [canCreateInCurrentView, t]);
+  }, [canCreateInCurrentView, canCreateInResolvedScope, hasResolvedCreateScope, t]);
 
   const handleNewFolder = () => {
     if (!ensureCreatableView()) return;
@@ -448,7 +539,7 @@ export function LearningHubSidebar({
     if (!ensureCreatableView()) return;
     const result = await folderApi.createFolder(
       t('finder.create.defaultFolderName', '新建文件夹'),
-      currentCreatableFolderId ?? undefined
+      effectiveCreateFolderId ?? undefined
     );
 
     if (!isMountedRef.current) return;
@@ -460,14 +551,14 @@ export function LearningHubSidebar({
     }
 
     showGlobalNotification('error', result.error.toUserMessage());
-  }, [currentCreatableFolderId, ensureCreatableView, handleRefresh, t]);
+  }, [effectiveCreateFolderId, ensureCreatableView, handleRefresh, t]);
 
   const handleNewNote = async () => {
     if (!ensureCreatableView()) return;
     // ★ 2025-12-13: 改为与题目集/翻译/作文一致，直接创建空笔记
     const result = await createEmpty({
       type: 'note',
-      folderId: currentCreatableFolderId,
+      folderId: effectiveCreateFolderId,
     });
 
     // ★ MEDIUM-005: 检查组件是否已卸载
@@ -487,7 +578,7 @@ export function LearningHubSidebar({
 
   const importMarkdownPathNotes = useCallback(async (
     filePaths: string[],
-    folderId: string | null = currentCreatableFolderId,
+    folderId: string | null = effectiveCreateFolderId,
   ) => {
     if (filePaths.length === 0) {
       return { importedNodes: [] as DstuNode[], failedCount: 0, firstError: null as string | null, failedFiles: [] as string[] };
@@ -516,11 +607,11 @@ export function LearningHubSidebar({
       firstError: result.value.failed[0]?.message ?? null,
       failedFiles: result.value.failed.map((item) => extractDisplayFileName(item.file_path)),
     };
-  }, [currentCreatableFolderId]);
+  }, [effectiveCreateFolderId]);
 
   const importMarkdownFileObjects = useCallback(async (
     files: File[],
-    folderId: string | null = currentCreatableFolderId,
+    folderId: string | null = effectiveCreateFolderId,
   ) => {
     if (files.length === 0) {
       return { importedNodes: [] as DstuNode[], failedCount: 0, firstError: null as string | null, failedFiles: [] as string[] };
@@ -561,7 +652,7 @@ export function LearningHubSidebar({
     }
 
     return { importedNodes, failedCount, firstError, failedFiles };
-  }, [currentCreatableFolderId, t]);
+  }, [effectiveCreateFolderId, t]);
 
   const notifyMarkdownImportResult = useCallback((
     importedCount: number,
@@ -599,7 +690,7 @@ export function LearningHubSidebar({
     onOpenApp(dstuNodeToResourceListItem(node, 'note'));
   }, [onOpenApp]);
 
-  const handleImportMarkdownNote = useCallback(async (folderId: string | null = currentCreatableFolderId) => {
+  const handleImportMarkdownNote = useCallback(async (folderId: string | null = effectiveCreateFolderId) => {
     if (!ensureCreatableView()) return;
 
     try {
@@ -630,25 +721,12 @@ export function LearningHubSidebar({
     } catch (error) {
       showGlobalNotification('error', error instanceof Error ? error.message : t('finder.markdownImport.failed', 'Markdown 导入失败'));
     }
-  }, [currentCreatableFolderId, ensureCreatableView, handleRefresh, importMarkdownPathNotes, notifyMarkdownImportResult, openImportedMarkdownNote, t]);
+  }, [effectiveCreateFolderId, ensureCreatableView, handleRefresh, importMarkdownPathNotes, notifyMarkdownImportResult, openImportedMarkdownNote, t]);
 
-  // ★ 记忆系统改造：拦截"记忆"入口，导航到记忆根文件夹
+  // ★ 记忆入口进入作用域感知的 MemoryView，避免绕过 scope 直接浏览原始记忆文件树。
   const handleQuickAccessNavigate = useCallback(async (type: QuickAccessType) => {
-    if (type === 'memory') {
-      try {
-        const config = await getMemoryConfig();
-        if (config.memoryRootFolderId) {
-          // 记忆根文件夹已配置，直接导航到该文件夹
-          enterFolder(config.memoryRootFolderId, config.memoryRootFolderTitle || '记忆');
-          return;
-        }
-      } catch (e) {
-        console.warn('[LearningHub] Failed to get memory config, falling back to MemoryView:', e);
-      }
-      // 未配置根文件夹或获取失败，回退到 MemoryView（用于引导设置）
-    }
     quickAccessNavigate(type);
-  }, [enterFolder, quickAccessNavigate]);
+  }, [quickAccessNavigate]);
 
   const focusSearchInput = useCallback(() => {
     setQuickAccessCollapsed(false);
@@ -681,7 +759,7 @@ export function LearningHubSidebar({
     // ★ 创建空题目集文件并打开应用面板
     const result = await createEmpty({
       type: 'exam',
-      folderId: currentCreatableFolderId,
+      folderId: effectiveCreateFolderId,
     });
 
     // ★ MEDIUM-005: 检查组件是否已卸载
@@ -783,7 +861,7 @@ export function LearningHubSidebar({
       });
 
       // ★ M-fix: 传递当前文件夹ID，使文件导入到当前浏览的文件夹中
-      const targetFolderId = currentCreatableFolderId;
+      const targetFolderId = effectiveCreateFolderId;
       const result = await textbookDstuAdapter.addTextbooks(filePaths, targetFolderId);
 
       // ★ MEDIUM-005: 检查组件是否已卸载
@@ -847,7 +925,7 @@ export function LearningHubSidebar({
     // ★ 创建空翻译文件并打开应用面板
     const result = await createEmpty({
       type: 'translation',
-      folderId: currentCreatableFolderId,
+      folderId: effectiveCreateFolderId,
     });
 
     // ★ MEDIUM-005: 检查组件是否已卸载
@@ -869,7 +947,7 @@ export function LearningHubSidebar({
     // ★ 创建空作文文件并打开应用面板
     const result = await createEmpty({
       type: 'essay',
-      folderId: currentCreatableFolderId,
+      folderId: effectiveCreateFolderId,
     });
 
     // ★ MEDIUM-005: 检查组件是否已卸载
@@ -891,7 +969,7 @@ export function LearningHubSidebar({
     // ★ 创建空思维导图文件并打开应用面板
     const result = await createEmpty({
       type: 'mindmap',
-      folderId: currentCreatableFolderId,
+      folderId: effectiveCreateFolderId,
     });
 
     // ★ MEDIUM-005: 检查组件是否已卸载
@@ -919,6 +997,7 @@ export function LearningHubSidebar({
       showGlobalNotification('warning', t('finder.dragDrop.notAllowedHere', '当前视图不支持拖入文件'));
       return;
     }
+    if (!ensureCreatableView()) return;
     // 统一导入主链路：本次拖拽已走路径分支，后续 files 回调直接跳过。
     pathsDropHandledRef.current = true;
     if (importProgress.isImporting) return;
@@ -963,7 +1042,7 @@ export function LearningHubSidebar({
     let firstImportedNode: DstuNode | null = null;
 
     try {
-      const dropTargetFolderId = currentCreatableFolderId;
+      const dropTargetFolderId = effectiveCreateFolderId;
 
       if (markdownNotePaths.length > 0) {
         const markdownResult = await importMarkdownPathNotes(markdownNotePaths, dropTargetFolderId);
@@ -1049,7 +1128,7 @@ export function LearningHubSidebar({
                 const result = await attachmentDstuAdapter.create(
                   file,
                   isImage ? 'image' : 'file',
-                  currentCreatableFolderId ? { folderId: currentCreatableFolderId } : undefined,
+                  dropTargetFolderId ? { folderId: dropTargetFolderId } : undefined,
                 );
                 return { ok: result.ok, name };
               } catch (e) {
@@ -1103,7 +1182,7 @@ export function LearningHubSidebar({
       setImportProgress(prev => ({ ...prev, isImporting: false }));
       showGlobalNotification('error', t('finder.dragDrop.importFailed', '文件导入失败'));
     }
-  }, [currentCreatableFolderId, currentPath, currentQuickAccessType, importMarkdownPathNotes, importProgress.isImporting, openImportedMarkdownNote, t, handleRefresh, onOpenApp]);
+  }, [effectiveCreateFolderId, currentPath, currentQuickAccessType, ensureCreatableView, importMarkdownPathNotes, importProgress.isImporting, openImportedMarkdownNote, t, handleRefresh, onOpenApp]);
 
   /**
    * 处理浏览器 File 对象拖拽（非 Tauri 环境兜底）
@@ -1118,6 +1197,7 @@ export function LearningHubSidebar({
       showGlobalNotification('warning', t('finder.dragDrop.notAllowedHere', '当前视图不支持拖入文件'));
       return;
     }
+    if (!ensureCreatableView()) return;
 
     debugLog.log('[LearningHub] 浏览器拖拽导入:', files.length, '个文件');
 
@@ -1134,7 +1214,7 @@ export function LearningHubSidebar({
     let firstImportedNode: DstuNode | null = null;
 
     if (markdownFiles.length > 0) {
-      const markdownResult = await importMarkdownFileObjects(markdownFiles, currentCreatableFolderId);
+      const markdownResult = await importMarkdownFileObjects(markdownFiles, effectiveCreateFolderId);
       if (!isMountedRef.current) return;
 
       totalSuccess += markdownResult.importedNodes.length;
@@ -1152,6 +1232,7 @@ export function LearningHubSidebar({
             const result = await attachmentDstuAdapter.create(
               file,
               isImage ? 'image' : 'file',
+              effectiveCreateFolderId ? { folderId: effectiveCreateFolderId } : undefined,
             );
             return result.ok;
           } catch {
@@ -1189,10 +1270,11 @@ export function LearningHubSidebar({
         openImportedMarkdownNote(firstImportedNode);
       }
     }
-  }, [currentCreatableFolderId, currentPath, currentQuickAccessType, handleRefresh, importMarkdownFileObjects, openImportedMarkdownNote, t]);
+  }, [effectiveCreateFolderId, currentPath, currentQuickAccessType, ensureCreatableView, handleRefresh, importMarkdownFileObjects, openImportedMarkdownNote, t]);
 
   // 是否允许拖拽导入（排除回收站、特殊视图等）
-  const isDragDropEnabled = mode !== 'canvas' && !isDragDropBlockedView(currentPath);
+  const isDragDropEnabled =
+    mode !== 'canvas' && canCreateInResolvedScope && !isDragDropBlockedView(currentPath);
 
   // Create folder (note creation moved to handleNewNote)
   const handleCreate = async () => {
@@ -1203,7 +1285,7 @@ export function LearningHubSidebar({
     // ★ 2025-12-13: 对话框现在只用于创建文件夹，笔记创建使用 createEmpty
     const result = await folderApi.createFolder(
       createDialogName.trim(),
-      currentCreatableFolderId ?? undefined
+      effectiveCreateFolderId ?? undefined
     );
 
     // ★ MEDIUM-005: 检查组件是否已卸载
@@ -2200,7 +2282,7 @@ export function LearningHubSidebar({
           onNewTranslation={handleNewTranslation}
           onNewEssay={handleNewEssay}
           onNewMindMap={handleNewMindMap}
-          createDisabled={!canCreateInCurrentView}
+          createDisabled={!canCreateInResolvedScope}
           // Counts
           favoriteCount={0}
         />
@@ -2268,7 +2350,7 @@ export function LearningHubSidebar({
                       size="sm"
                       className="h-7 w-7 p-0"
                       title={t('finder.toolbar.new', '新建')}
-                      disabled={!canCreateInCurrentView}
+                      disabled={!canCreateInResolvedScope}
                     >
                       <Plus className="w-4 h-4" />
                     </NotionButton>
@@ -2493,7 +2575,11 @@ export function LearningHubSidebar({
               <CircleNotch className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           }>
-            <MemoryView onOpenApp={onOpenApp} />
+            <MemoryView
+              onOpenApp={onOpenApp}
+              topicGroupId={topicGroupId}
+              topicGroupName={topicGroupName}
+            />
           </Suspense>
         ) : currentPath.viewKind === 'desktop' ? (
           <DesktopView
@@ -2568,7 +2654,6 @@ export function LearningHubSidebar({
           {/* ★ 记忆系统改造：记忆文件夹内显示专属工具栏 */}
           {isInMemoryFolder && mode !== 'canvas' && (
             <MemoryFolderBanner
-              onRefresh={handleRefresh}
               isTreeView={memoryTreeView}
               onToggleTreeView={() => setMemoryTreeView(v => !v)}
             />
@@ -2576,6 +2661,7 @@ export function LearningHubSidebar({
           {/* ★ 记忆系统改造：树状图预览模式 */}
           {isInMemoryFolder && memoryTreeView && mode !== 'canvas' ? (
             <MemoryTreePreview
+              rootPath={memoryTreeRootPath}
               onNavigateToFolder={(folderId) => {
                 setMemoryTreeView(false);
                 enterFolder(folderId);
@@ -2599,7 +2685,7 @@ export function LearningHubSidebar({
                       // ★ 多选模式下，普通单击改为 toggle 模式，允许累加/取消选择
                       select(id, selectMode === 'single' ? 'toggle' : selectMode);
                     }
-                  : select
+                  : handleFinderSelect
             }
             onOpen={
               mode === 'canvas'

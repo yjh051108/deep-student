@@ -23,7 +23,6 @@ import type { DstuNode } from '@/dstu/types';
 import { createEmpty, dstu, type CreatableResourceType } from '@/dstu';
 import { showGlobalNotification } from '@/components/UnifiedNotification';
 import { setPendingMemoryLocate } from '@/utils/pendingMemoryLocate';
-import { getMemoryConfig } from '@/api/memoryApi';
 import { LearningHubSidebar } from './LearningHubSidebar';
 import type { ResourceListItem, ResourceType } from './types';
 import { cn } from '@/lib/utils';
@@ -54,6 +53,7 @@ import { setActiveTabForExternal } from './activeTabAccessor';
 import { COMMAND_EVENTS, useCommandEvents } from '@/command-palette/hooks/useCommandEvents';
 import { getCreatableFolderId } from './viewGuards';
 import { getQuickAccessTypeFromLauncherType, getViewCapabilities } from './learningHubContracts';
+import { setLearningHubLocalBackHandler } from './LearningHubNavigationContext';
 
 // ============================================================================
 // 三屏滑动布局类型和常量
@@ -111,6 +111,7 @@ export const LearningHubPage: React.FC = () => {
   const [tabs, setTabs] = useState<OpenTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [splitView, setSplitView] = useState<SplitViewState | null>(null);
+  const [localSidebarCollapsed, setLocalSidebarCollapsed] = useState(false);
 
   // 派生状态
   const activeTab = tabs.find(t => t.tabId === activeTabId) ?? null;
@@ -121,14 +122,18 @@ export const LearningHubPage: React.FC = () => {
   activeTabIdRef.current = activeTabId;
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
+  const hadOpenAppRef = useRef(false);
 
   const openTab = useCallback((app: Omit<OpenTab, 'tabId' | 'openedAt'>) => {
+    if (!isSmallScreen) {
+      setLocalSidebarCollapsed(false);
+    }
     setTabs(prev => {
       // 1. 已存在同 resourceId 的 tab → 激活并更新 openedAt（LRU）
       const existing = prev.find(t => t.resourceId === app.resourceId);
       if (existing) {
         setActiveTabId(existing.tabId);
-        return prev.map(t => t.tabId === existing.tabId ? { ...t, openedAt: Date.now() } : t);
+        return prev.map(t => t.tabId === existing.tabId ? { ...t, ...app, openedAt: Date.now() } : t);
       }
       // 2. 超出上限时 LRU 淘汰最旧的非固定、非活跃 tab
       let next = [...prev];
@@ -146,7 +151,7 @@ export const LearningHubPage: React.FC = () => {
       setActiveTabId(newTab.tabId);
       return [...next, newTab];
     });
-  }, []);
+  }, [isSmallScreen]);
 
   const closeTab = useCallback((tabId: string) => {
     setTabs(prev => {
@@ -263,6 +268,23 @@ export const LearningHubPage: React.FC = () => {
   const [screenPosition, setScreenPosition] = useState<ScreenPosition>('center');
   const [activeAppType, setActiveAppType] = useState<string>('all');
 
+  useEffect(() => {
+    const shouldOverrideBack = isSmallScreen ? screenPosition === 'right' : hasOpenApp;
+    return setLearningHubLocalBackHandler({
+      canGoBack: shouldOverrideBack,
+      goBack: () => {
+        if (isSmallScreen) {
+          setScreenPosition('center');
+          return;
+        }
+        const currentActiveId = activeTabIdRef.current;
+        if (currentActiveId) {
+          closeTabWithSplit(currentActiveId);
+        }
+      },
+    });
+  }, [closeTabWithSplit, hasOpenApp, isSmallScreen, screenPosition]);
+
   // 拖拽状态
   const containerRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef({
@@ -303,23 +325,13 @@ export const LearningHubPage: React.FC = () => {
   const finderJumpToBreadcrumb = useFinderStore(state => state.jumpToBreadcrumb);
   const finderRefresh = useFinderStore(state => state.refresh);
   const finderQuickAccessNavigate = useFinderStore(state => state.quickAccessNavigate);
-  const finderEnterFolder = useFinderStore(state => state.enterFolder);
   const finderBreadcrumbs = finderCurrentPath.breadcrumbs;
   const finderViewCapabilities = getViewCapabilities(finderCurrentPath.viewKind);
 
-  // ★ 记忆系统改造：导航到记忆文件夹（优先 enterFolder，回退 MemoryView）
+  // ★ 记忆入口必须进入作用域感知的 MemoryView，避免暴露原始 DSTU 记忆根文件树。
   const navigateToMemory = useCallback(async () => {
-    try {
-      const config = await getMemoryConfig();
-      if (config.memoryRootFolderId) {
-        finderEnterFolder(config.memoryRootFolderId, config.memoryRootFolderTitle || '记忆');
-        return;
-      }
-    } catch (e) {
-      console.warn('[LearningHubPage] Failed to get memory config:', e);
-    }
     finderQuickAccessNavigate('memory');
-  }, [finderEnterFolder, finderQuickAccessNavigate]);
+  }, [finderQuickAccessNavigate]);
 
   // ========== VFS 引用模式注入 ==========
   const { injectToChat, canInject, isInjecting } = useVfsContextInject();
@@ -520,7 +532,6 @@ export const LearningHubPage: React.FC = () => {
 
   // ========== 侧边栏收缩状态 ==========
   const globalLeftPanelCollapsed = useUIStore((state) => state.leftPanelCollapsed);
-  const [localSidebarCollapsed, setLocalSidebarCollapsed] = useState(false);
   const sidebarCollapsed = globalLeftPanelCollapsed || localSidebarCollapsed;
 
   // ★ 当 Topbar 按钮将 globalLeftPanelCollapsed 切换为 false（展开）时，
@@ -530,6 +541,12 @@ export const LearningHubPage: React.FC = () => {
       setLocalSidebarCollapsed(false);
     }
   }, [globalLeftPanelCollapsed]);
+
+  useEffect(() => {
+    if (hasOpenApp && globalLeftPanelCollapsed && !isSmallScreen) {
+      useUIStore.getState().setLeftPanelCollapsed(false);
+    }
+  }, [globalLeftPanelCollapsed, hasOpenApp, isSmallScreen]);
 
   const handleSidebarCollapsedChange = useCallback((collapsed: boolean) => {
     setLocalSidebarCollapsed(collapsed);
@@ -880,26 +897,26 @@ export const LearningHubPage: React.FC = () => {
   // 应用面板引用，用于控制展开/折叠
   const appPanelRef = useRef<ImperativePanelHandle>(null);
   
-  // ★ 当标签页打开/全部关闭时控制面板展开/折叠
+  // ★ 当标签页打开/全部关闭时同步桌面面板宽度与移动端位置
   useEffect(() => {
-    const appPanel = appPanelRef.current;
-
     if (tabs.length > 0) {
-      if (appPanel) {
-        appPanel.expand();
-        requestAnimationFrame(() => {
-          setLocalSidebarCollapsed(true);
-        });
+      const wasOpen = hadOpenAppRef.current;
+      hadOpenAppRef.current = true;
+      if (wasOpen) {
+        return;
       }
-    } else {
-      if (appPanel) {
-        appPanel.collapse();
-      }
-      setLocalSidebarCollapsed(false);
-      // 移动端：所有 tab 关闭后返回中间屏
-      if (isSmallScreen) {
-        setScreenPosition('center');
-      }
+      const frame = window.requestAnimationFrame(() => {
+        sidebarPanelRef.current?.resize(35);
+        appPanelRef.current?.resize(65);
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
+
+    hadOpenAppRef.current = false;
+    setLocalSidebarCollapsed(false);
+    // 移动端：所有 tab 关闭后返回中间屏
+    if (isSmallScreen) {
+      setScreenPosition('center');
     }
   }, [tabs.length, isSmallScreen]);
 
@@ -1029,18 +1046,16 @@ export const LearningHubPage: React.FC = () => {
           </PanelResizeHandle>
         )}
 
-        {/* 右侧：原生应用面板（始终渲染，通过 collapsible 控制显示） */}
-        <Panel
-          ref={appPanelRef}
-          defaultSize={75}
-          minSize={40}
-          collapsible={true}
-          collapsedSize={0}
-          id="learning-hub-app"
-          order={2}
-          className="h-full"
-        >
-          {tabs.length > 0 && (
+        {/* 右侧：原生应用面板。没有打开资源时不渲染，避免恢复到历史 0 宽布局。 */}
+        {hasOpenApp && (
+          <Panel
+            ref={appPanelRef}
+            defaultSize={75}
+            minSize={40}
+            id="learning-hub-app"
+            order={2}
+            className="h-full"
+          >
             <div className="study-shell-panel h-full flex flex-col min-w-0">
               {/* ★ 标签页栏 */}
               <TabBar
@@ -1065,8 +1080,8 @@ export const LearningHubPage: React.FC = () => {
                 />
               </div>
             </div>
-          )}
-        </Panel>
+          </Panel>
+        )}
       </PanelGroup>
     </div>
   );

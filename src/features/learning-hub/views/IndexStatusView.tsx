@@ -232,7 +232,7 @@ export const IndexStatusView: React.FC = () => {
   const [ocrInfo, setOcrInfo] = useState<ResourceOcrInfo | null>(null);
   const [textChunks, setTextChunks] = useState<TextChunkInfo[]>([]);
   const [inspectLoading, setInspectLoading] = useState(false);
-  const [clearingOcr, setClearingOcr] = useState(false);
+  const [clearingOcrIds, setClearingOcrIds] = useState<Set<string>>(() => new Set());
 
   // ========== 原生多模态索引状态 ==========
   const [mmIndexing, setMmIndexing] = useState(false);
@@ -573,7 +573,7 @@ export const IndexStatusView: React.FC = () => {
 
   // ========== 数据透视：清除 OCR 并重做 ==========
   const handleClearOcrAndReindex = useCallback(async (resourceId: string) => {
-    setClearingOcr(true);
+    setClearingOcrIds((prev) => new Set(prev).add(resourceId));
     try {
       await clearResourceOcr(resourceId);
       showGlobalNotification('info', t('indexStatus.notification.ocrClearedReindexing'));
@@ -592,7 +592,11 @@ export const IndexStatusView: React.FC = () => {
       debugLog.error('[IndexStatusView] clearResourceOcr failed:', err);
       showGlobalNotification('error', t('indexStatus.notification.clearOcrFailed'), err instanceof Error ? err.message : t('indexStatus.notification.unknownError'));
     } finally {
-      setClearingOcr(false);
+      setClearingOcrIds((prev) => {
+        const next = new Set(prev);
+        next.delete(resourceId);
+        return next;
+      });
     }
   }, [loadData]);
 
@@ -624,6 +628,15 @@ export const IndexStatusView: React.FC = () => {
     try {
       // 使用后端批量索引 API，进度通过事件更新
       await batchIndexPending(pendingCount);
+      setBatchIndexing(false);
+      setBatchProgress(100);
+      setBatchMessage(t('indexStatus.notification.batchCompleted'));
+      loadData();
+      setTimeout(() => {
+        if (!mountedRef.current) return;
+        setBatchProgress(0);
+        setBatchMessage('');
+      }, 2000);
       // 完成事件会在事件监听器中处理
     } catch (err: unknown) {
       setBatchIndexing(false);
@@ -663,6 +676,15 @@ export const IndexStatusView: React.FC = () => {
       let batchFailed = false;
       try {
         await batchIndexPending(pendingTextCount);
+        setBatchIndexing(false);
+        setBatchProgress(100);
+        setBatchMessage(t('indexStatus.notification.batchCompleted'));
+        loadData();
+        setTimeout(() => {
+          if (!mountedRef.current) return;
+          setBatchProgress(0);
+          setBatchMessage('');
+        }, 2000);
       } catch (err: unknown) {
         debugLog.error('[IndexStatusView] OCR 文本索引失败:', err);
         batchFailed = true;
@@ -1024,6 +1046,7 @@ export const IndexStatusView: React.FC = () => {
     const isReindexing = reindexingIds.has(resource.resourceId);
     const isStale = resource.isStale;
     const isUnsupportedType = UNSUPPORTED_INDEX_TYPES.has(resource.resourceType);
+    const isClearingOcr = clearingOcrIds.has(resource.resourceId);
     // 有 indexError 的资源也应该可以重新索引
     const hasIndexError = !!resource.textIndexError;
     // ★ 2026-02 修复：空内容判断使用结构化条件替代字符串硬编码匹配
@@ -1396,10 +1419,10 @@ export const IndexStatusView: React.FC = () => {
                     variant="outline"
                     size="sm"
                     onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleClearOcrAndReindex(resource.resourceId); }}
-                    disabled={clearingOcr}
+                    disabled={isClearingOcr}
                     className="text-xs gap-1.5 text-destructive hover:text-destructive"
                   >
-                    {clearingOcr ? <CircleNotch className="h-3.5 w-3.5 animate-spin" /> : <Eraser className="h-3.5 w-3.5" />}
+                    {isClearingOcr ? <CircleNotch className="h-3.5 w-3.5 animate-spin" /> : <Eraser className="h-3.5 w-3.5" />}
                     清除 OCR 并重做
                   </NotionButton>
                 )}
@@ -2106,10 +2129,10 @@ export const IndexStatusView: React.FC = () => {
                           variant="outline"
                           size="sm"
                           onClick={() => inspectingResourceId && handleClearOcrAndReindex(inspectingResourceId)}
-                          disabled={clearingOcr}
+                          disabled={!!inspectingResourceId && clearingOcrIds.has(inspectingResourceId)}
                           className="text-xs gap-1.5 text-destructive hover:text-destructive"
                         >
-                          {clearingOcr ? <CircleNotch className="h-3.5 w-3.5 animate-spin" /> : <Eraser className="h-3.5 w-3.5" />}
+                          {!!inspectingResourceId && clearingOcrIds.has(inspectingResourceId) ? <CircleNotch className="h-3.5 w-3.5 animate-spin" /> : <Eraser className="h-3.5 w-3.5" />}
                           {t('indexStatus.action.clearOcrAndReindex')}
                         </NotionButton>
                       </div>

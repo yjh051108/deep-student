@@ -26,7 +26,7 @@ use crate::multimodal::types::{IndexProgressEvent, MultimodalInput};
 use crate::vfs::database::VfsDatabase;
 use crate::vfs::error::{VfsError, VfsResult};
 use crate::vfs::lance_store::{VfsLanceRow, VfsLanceStore};
-use crate::vfs::repos::{embedding_dim_repo, VfsBlobRepo, MODALITY_MULTIMODAL};
+use crate::vfs::repos::{embedding_dim_repo, VfsBlobRepo, VfsFileRepo, MODALITY_MULTIMODAL};
 
 // ============================================================================
 // 类型定义
@@ -631,71 +631,91 @@ impl VfsMultimodalService {
             }
 
             extracted_pages
-        } else if source_type == "image" {
-            // ★ T01 修复: 图片类型没有 preview_json 时，直接使用原图作为单页索引
-            // 查询 blob_hash 和 mime_type
-            let image_info: (Option<String>, Option<String>) = conn
+        } else {
+            // 单图资源通常没有 preview_json；直接使用原图作为单页多模态索引。
+            // 旧版本的小图可能只内嵌在 resources.data，这里会先惰性补成 blob。
+            let image_info: Option<(String, Option<String>)> = conn
                 .query_row(
-                    "SELECT blob_hash, mime_type FROM files WHERE id = ?1",
+                    r#"SELECT "type", mime_type FROM files WHERE id = ?1"#,
                     params![source_id],
-                    |row| {
-                        Ok((
-                            row.get::<_, Option<String>>(0)?,
-                            row.get::<_, Option<String>>(1)?,
-                        ))
-                    },
+                    |row| Ok((row.get(0)?, row.get(1)?)),
                 )
-                .optional()?
-                .unwrap_or((None, None));
+                .optional()?;
 
-            if let (Some(blob_hash), mime_type) = image_info {
-                // 从 VFS Blob 获取文件路径并读取数据
-                match VfsBlobRepo::get_blob_path(&self.vfs_db, &blob_hash)? {
-                    Some(blob_path) => match tokio::fs::read(&blob_path).await {
-                        Ok(blob_data) => {
-                            let image_base64 = BASE64.encode(&blob_data);
-                            let mime = mime_type.unwrap_or_else(|| "image/png".to_string());
-                            info!(
-                                    "[VfsMultimodalService] Image fallback: using blob_hash={} for single-page index",
+            let is_image = image_info
+                .as_ref()
+                .map(|(file_type, mime_type)| {
+                    file_type == "image"
+                        || mime_type
+                            .as_deref()
+                            .map(|mime| mime.starts_with("image/"))
+                            .unwrap_or(false)
+                })
+                .unwrap_or(false);
+
+            if is_image {
+                match VfsFileRepo::ensure_image_blob_with_conn(
+                    &conn,
+                    self.vfs_db.blobs_dir(),
+                    source_id,
+                )? {
+                    Some(blob_hash) => {
+                        let mime_type = image_info
+                            .and_then(|(_, mime_type)| mime_type)
+                            .unwrap_or_else(|| "image/png".to_string());
+
+                        match VfsBlobRepo::get_blob_path_with_conn(
+                            &conn,
+                            self.vfs_db.blobs_dir(),
+                            &blob_hash,
+                        )? {
+                            Some(blob_path) => match tokio::fs::read(&blob_path).await {
+                                Ok(blob_data) => {
+                                    let image_base64 = BASE64.encode(&blob_data);
+                                    info!(
+                                        "[VfsMultimodalService] Image fallback: using blob_hash={} for single-page index",
+                                        blob_hash
+                                    );
+                                    vec![VfsMultimodalPage {
+                                        page_index: 0,
+                                        image_base64: Some(image_base64),
+                                        image_mime: Some(mime_type),
+                                        text_content: None,
+                                        blob_hash: Some(blob_hash),
+                                    }]
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        "[VfsMultimodalService] Failed to read image blob file: {}",
+                                        e
+                                    );
+                                    vec![]
+                                }
+                            },
+                            None => {
+                                warn!(
+                                    "[VfsMultimodalService] Image blob_hash not found in blobs: {}",
                                     blob_hash
                                 );
-                            vec![VfsMultimodalPage {
-                                page_index: 0,
-                                image_base64: Some(image_base64),
-                                image_mime: Some(mime),
-                                text_content: None,
-                                blob_hash: Some(blob_hash),
-                            }]
+                                vec![]
+                            }
                         }
-                        Err(e) => {
-                            warn!(
-                                "[VfsMultimodalService] Failed to read image blob file: {}",
-                                e
-                            );
-                            vec![]
-                        }
-                    },
+                    }
                     None => {
                         warn!(
-                            "[VfsMultimodalService] Image blob_hash not found in blobs: {}",
-                            blob_hash
+                            "[VfsMultimodalService] Image {} has no readable blob, cannot index",
+                            source_id
                         );
                         vec![]
                     }
                 }
             } else {
                 warn!(
-                    "[VfsMultimodalService] Image {} has no blob_hash, cannot index",
+                    "[VfsMultimodalService] Resource {} has no preview_json in business table",
                     source_id
                 );
                 vec![]
             }
-        } else {
-            warn!(
-                "[VfsMultimodalService] Resource {} has no preview_json in business table",
-                source_id
-            );
-            vec![]
         };
 
         if let Some(progress_tx) = progress_tx.as_ref() {

@@ -1194,6 +1194,193 @@ impl VfsFileRepo {
         })
     }
 
+    /// Ensure an image file has a blob row and `files.blob_hash`.
+    ///
+    /// Historical small images were stored only as base64 in `resources.data`.
+    /// Native multimodal indexing and OCR both consume blob files, so lazily
+    /// materialize that inline image into the blob store when it is first used.
+    pub fn ensure_image_blob_with_conn(
+        conn: &Connection,
+        blobs_dir: &Path,
+        file_id: &str,
+    ) -> VfsResult<Option<String>> {
+        let file = match Self::get_file_with_conn(conn, file_id)? {
+            Some(file) => file,
+            None => return Ok(None),
+        };
+
+        let is_image = file.file_type == "image"
+            || file
+                .mime_type
+                .as_deref()
+                .map(|m| m.starts_with("image/"))
+                .unwrap_or(false);
+        if !is_image {
+            return Ok(file.blob_hash);
+        }
+
+        if let Some(blob_hash) = file.blob_hash.as_deref().filter(|h| !h.trim().is_empty()) {
+            if VfsBlobRepo::get_blob_path_with_conn(conn, blobs_dir, blob_hash)?.is_some() {
+                return Ok(Some(blob_hash.to_string()));
+            }
+            warn!(
+                "[VFS::FileRepo] Image file {} has missing blob {}, trying inline repair",
+                file_id, blob_hash
+            );
+        }
+
+        if let Some(resource_id) = file.resource_id.as_deref() {
+            let inline_data: Option<String> = conn
+                .query_row(
+                    "SELECT data FROM resources WHERE id = ?1",
+                    params![resource_id],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .optional()?
+                .flatten()
+                .filter(|data| !data.trim().is_empty());
+
+            if let Some(inline_data) = inline_data {
+                match Self::decode_inline_base64(&inline_data) {
+                    Ok(bytes) if !bytes.is_empty() => {
+                        let extension = Self::image_extension(
+                            file.mime_type.as_deref(),
+                            Some(file.file_name.as_str()),
+                        );
+                        let blob = VfsBlobRepo::store_blob_with_conn(
+                            conn,
+                            blobs_dir,
+                            &bytes,
+                            file.mime_type.as_deref(),
+                            extension.as_deref(),
+                        )?;
+                        let now = chrono::Utc::now()
+                            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+                            .to_string();
+                        let now_ms = chrono::Utc::now().timestamp_millis();
+
+                        let repaired_hash = blob.hash.clone();
+                        conn.execute(
+                            "UPDATE files SET blob_hash = ?1, updated_at = ?2 WHERE id = ?3",
+                            params![repaired_hash, now, file_id],
+                        )?;
+                        conn.execute(
+                            "UPDATE resources SET external_hash = ?1, updated_at = ?2 WHERE id = ?3 AND (external_hash IS NULL OR external_hash = '')",
+                            params![repaired_hash, now_ms, resource_id],
+                        )?;
+
+                        info!(
+                            "[VFS::FileRepo] Repaired inline image {} into blob {}",
+                            file_id, repaired_hash
+                        );
+                        return Ok(Some(repaired_hash));
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        warn!(
+                            "[VFS::FileRepo] Failed to decode inline image for {}: {}",
+                            file_id, e
+                        );
+                    }
+                }
+            }
+        }
+
+        if let Some(compressed_hash) = file
+            .compressed_blob_hash
+            .as_deref()
+            .filter(|h| !h.trim().is_empty())
+        {
+            if VfsBlobRepo::get_blob_path_with_conn(conn, blobs_dir, compressed_hash)?.is_some() {
+                warn!(
+                    "[VFS::FileRepo] Using compressed image blob {} as fallback for {}",
+                    compressed_hash, file_id
+                );
+                let now = chrono::Utc::now()
+                    .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+                    .to_string();
+                conn.execute(
+                    "UPDATE files SET blob_hash = ?1, updated_at = ?2 WHERE id = ?3 AND (blob_hash IS NULL OR blob_hash = '')",
+                    params![compressed_hash, now, file_id],
+                )?;
+                return Ok(Some(compressed_hash.to_string()));
+            }
+        }
+
+        Ok(None)
+    }
+
+    pub fn ensure_image_blob_for_resource_with_conn(
+        conn: &Connection,
+        blobs_dir: &Path,
+        resource_id: &str,
+    ) -> VfsResult<Option<String>> {
+        let file_id: Option<String> = conn
+            .query_row(
+                r#"
+                SELECT f.id
+                FROM files f
+                LEFT JOIN resources r ON r.id = ?1
+                WHERE (f.resource_id = ?1 OR (r.source_id IS NOT NULL AND f.id = r.source_id))
+                  AND (f."type" = 'image' OR f.mime_type LIKE 'image/%')
+                ORDER BY CASE WHEN f.resource_id = ?1 THEN 0 ELSE 1 END, f.updated_at DESC
+                LIMIT 1
+                "#,
+                params![resource_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+
+        match file_id {
+            Some(file_id) => Self::ensure_image_blob_with_conn(conn, blobs_dir, &file_id),
+            None => Ok(None),
+        }
+    }
+
+    fn decode_inline_base64(input: &str) -> VfsResult<Vec<u8>> {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+
+        let trimmed = input.trim();
+        let raw = if trimmed.starts_with("data:") {
+            trimmed
+                .split_once(',')
+                .map(|(_, data)| data)
+                .ok_or_else(|| VfsError::InvalidArgument {
+                    param: "resources.data".to_string(),
+                    reason: "Invalid data URL".to_string(),
+                })?
+        } else {
+            trimmed
+        };
+
+        STANDARD
+            .decode(raw.as_bytes())
+            .map_err(|e| VfsError::InvalidArgument {
+                param: "resources.data".to_string(),
+                reason: format!("Invalid base64 image data: {}", e),
+            })
+    }
+
+    fn image_extension(mime_type: Option<&str>, file_name: Option<&str>) -> Option<String> {
+        match mime_type {
+            Some("image/jpeg") | Some("image/jpg") => return Some("jpg".to_string()),
+            Some("image/png") => return Some("png".to_string()),
+            Some("image/webp") => return Some("webp".to_string()),
+            Some("image/gif") => return Some("gif".to_string()),
+            Some("image/bmp") => return Some("bmp".to_string()),
+            Some("image/svg+xml") => return Some("svg".to_string()),
+            Some("image/heic") => return Some("heic".to_string()),
+            Some("image/heif") => return Some("heif".to_string()),
+            _ => {}
+        }
+
+        file_name
+            .and_then(|name| Path::new(name).extension())
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_lowercase())
+            .filter(|ext| !ext.is_empty() && ext.len() < 10)
+    }
+
     // ========================================================================
     // 获取文件内容
     // ========================================================================

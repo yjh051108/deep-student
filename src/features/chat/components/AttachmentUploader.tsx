@@ -33,6 +33,7 @@ import { getErrorMessage } from '@/utils/errorUtils';
 import { vfsRefApi } from '../context/vfsRefApi';
 import { logAttachment } from '../debug/chatV2Logger';
 import { useTauriDragAndDrop } from '@/hooks/useTauriDragAndDrop';
+import { usePdfProcessingStore } from '@/features/pdf';
 // P1-08: 统一使用核心常量
 import {
   ATTACHMENT_MAX_SIZE,
@@ -47,6 +48,19 @@ import {
   ImageFileIcon, 
   DocxFileIcon 
 } from '@/features/learning-hub/icons/ResourceIcons';
+
+type ReadyMode = 'text' | 'ocr' | 'image';
+type MediaProcessingStage =
+  | 'pending'
+  | 'text_extraction'
+  | 'page_rendering'
+  | 'page_compression'
+  | 'image_compression'
+  | 'ocr_processing'
+  | 'vector_indexing'
+  | 'completed'
+  | 'completed_with_issues'
+  | 'error';
 
 // ============================================================================
 // Props 定义
@@ -310,6 +324,34 @@ export const AttachmentUploader: React.FC<AttachmentUploaderProps> = ({
             attachment.resourceId = result.resourceId;
             // 保存 sourceId 用于 VFS 引用解析
             (attachment as AttachmentMeta & { sourceId?: string }).sourceId = uploadResult.sourceId;
+
+            const isPdf = attachment.mimeType === 'application/pdf'
+              || attachment.name.toLowerCase().endsWith('.pdf');
+            const isMedia = isImage || isPdf;
+            if (isMedia) {
+              const stage = (uploadResult.processingStatus
+                || (isPdf ? 'page_compression' : 'image_compression')) as MediaProcessingStage;
+              const readyModes = (uploadResult.readyModes || [])
+                .filter((mode): mode is ReadyMode => mode === 'text' || mode === 'ocr' || mode === 'image');
+              const percent = uploadResult.processingPercent ?? (isPdf ? 25 : 10);
+              const mediaType = isPdf ? 'pdf' : 'image';
+              const isCompleted = stage === 'completed' || stage === 'completed_with_issues';
+
+              attachment.status = isCompleted ? 'ready' : 'processing';
+              attachment.processingStatus = {
+                stage,
+                percent: isCompleted ? 100 : percent,
+                readyModes,
+                mediaType,
+              };
+
+              usePdfProcessingStore.getState().update(uploadResult.sourceId, {
+                stage,
+                percent: isCompleted ? 100 : percent,
+                readyModes,
+                mediaType,
+              });
+            }
 
             // 添加到 UI 状态以显示附件预览
             store.getState().addAttachment(attachment);

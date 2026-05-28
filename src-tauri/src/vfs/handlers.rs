@@ -14,16 +14,19 @@ use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
+use crate::chat_v2::repo::ChatV2Repo;
+use crate::chat_v2::types::PersistStatus;
 use crate::utils::unicode::sanitize_unicode;
 use crate::vfs::attachment_config::AttachmentConfig;
 use crate::vfs::database::VfsDatabase;
 use crate::vfs::error::{VfsError, VfsResult};
 use crate::vfs::index_service::VfsIndexService;
+use crate::vfs::indexing::VfsChunker;
 use crate::vfs::pdf_processing_service::{PdfProcessingService, ProcessingStage};
 use crate::vfs::repos::{
-    VfsAttachmentRepo, VfsBlobRepo, VfsEssayRepo, VfsExamRepo, VfsIndexStateRepo, VfsMindMapRepo,
-    VfsNoteRepo, VfsResourceRepo, VfsTextbookRepo, VfsTranslationRepo, INDEX_STATE_DISABLED,
-    INDEX_STATE_PENDING,
+    VfsAttachmentRepo, VfsBlobRepo, VfsEssayRepo, VfsExamRepo, VfsFileRepo, VfsFolderRepo,
+    VfsIndexStateRepo, VfsMindMapRepo, VfsNoteRepo, VfsResourceRepo, VfsTextbookRepo,
+    VfsTranslationRepo, INDEX_STATE_DISABLED, INDEX_STATE_PENDING,
 };
 use crate::vfs::types::*;
 use crate::vfs::unit_builder::UnitBuildInput;
@@ -1011,8 +1014,6 @@ fn parse_timestamp(s: &str) -> i64 {
 // 路径缓存命令（Prompt 3: 引用模式上下文注入）
 // ============================================================================
 
-use crate::vfs::repos::VfsFolderRepo;
-
 /// 获取资源的当前路径
 ///
 /// 优先返回缓存路径（folder_items.cached_path），若未缓存则实时计算并更新缓存。
@@ -1304,12 +1305,102 @@ pub struct VfsUploadAttachmentParamsExt {
     pub attachment_type: Option<String>,
     #[serde(default)]
     pub folder_id: Option<String>,
+    #[serde(default)]
+    pub session_id: Option<String>,
+    #[serde(default)]
+    pub group_id: Option<String>,
+}
+
+fn resolve_upload_topic_folder_id(
+    vfs_db: &VfsDatabase,
+    chat_db: &crate::chat_v2::database::ChatV2Database,
+    group_id: Option<&str>,
+    session_id: Option<&str>,
+) -> Result<Option<String>, String> {
+    let conn = chat_db.get_conn_safe().map_err(|e| e.to_string())?;
+    let explicit_group_id = group_id.and_then(|id| {
+        let trimmed = id.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    });
+    let explicit_session_id = session_id.and_then(|id| {
+        let trimmed = id.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    });
+    let normalized_group_id = if explicit_group_id.is_some() {
+        explicit_group_id
+    } else if let Some(session_id) = explicit_session_id {
+        let session = ChatV2Repo::get_session_with_conn(&conn, &session_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "当前会话不存在，已拒绝把附件写入全局根目录。".to_string())?;
+        session.group_id
+    } else {
+        None
+    };
+
+    let Some(group_id) = normalized_group_id else {
+        if group_id.map(|id| !id.trim().is_empty()).unwrap_or(false) {
+            return Err("当前课题资源根目录不可用，已拒绝把附件写入全局根目录。".to_string());
+        }
+        return Ok(None);
+    };
+
+    let Some(mut group) =
+        ChatV2Repo::get_group_with_conn(&conn, &group_id).map_err(|e| e.to_string())?
+    else {
+        return Err("当前课题不存在，已拒绝把附件写入全局根目录。".to_string());
+    };
+
+    if group.persist_status != PersistStatus::Active {
+        return Err("当前课题已归档或不可用，已拒绝把附件写入全局根目录。".to_string());
+    }
+
+    let next_pinned = crate::chat_v2::handlers::group_handlers::ensure_group_folder(
+        vfs_db,
+        &group.name,
+        group.pinned_resource_ids.clone(),
+    )?;
+    let folder_id = next_pinned
+        .iter()
+        .find(|id| id.trim().starts_with("fld_"))
+        .cloned();
+
+    if next_pinned != group.pinned_resource_ids {
+        group.pinned_resource_ids = next_pinned;
+        ChatV2Repo::update_group_with_conn(&conn, &group).map_err(|e| e.to_string())?;
+    }
+
+    Ok(folder_id)
+}
+
+fn folder_is_within_upload_root(
+    vfs_db: &VfsDatabase,
+    folder_id: &str,
+    root_folder_id: &str,
+) -> Result<bool, String> {
+    if folder_id == root_folder_id {
+        return Ok(true);
+    }
+
+    let folder_ids = VfsFolderRepo::get_folder_ids_recursive(vfs_db, root_folder_id)
+        .map_err(|e| e.to_string())?;
+    Ok(folder_ids.iter().any(|id| id == folder_id))
 }
 
 #[tauri::command]
 pub async fn vfs_upload_attachment(
     params: VfsUploadAttachmentParamsExt,
+    app: AppHandle,
     vfs_db: State<'_, Arc<VfsDatabase>>,
+    chat_v2_db: State<'_, Arc<crate::chat_v2::database::ChatV2Database>>,
+    database: State<'_, crate::database::Database>,
     pdf_processing_service: State<'_, Arc<PdfProcessingService>>,
 ) -> Result<VfsUploadAttachmentResult, String> {
     log::info!(
@@ -1323,15 +1414,46 @@ pub async fn vfs_upload_attachment(
     let is_pdf =
         params.mime_type == "application/pdf" || params.name.to_lowercase().ends_with(".pdf");
 
+    let topic_folder_id = resolve_upload_topic_folder_id(
+        vfs_db.inner().as_ref(),
+        chat_v2_db.inner().as_ref(),
+        params.group_id.as_deref(),
+        params.session_id.as_deref(),
+    )?;
+
     let target_folder_id = match params.folder_id {
-        Some(ref id) if !id.is_empty() => Some(id.clone()),
+        Some(ref id) if !id.trim().is_empty() => {
+            let requested_folder_id = id.trim().to_string();
+            if let Some(ref topic_root_id) = topic_folder_id {
+                if folder_is_within_upload_root(
+                    vfs_db.inner().as_ref(),
+                    &requested_folder_id,
+                    topic_root_id,
+                )? {
+                    Some(requested_folder_id)
+                } else {
+                    log::warn!(
+                        "[VFS::handlers] upload folder {} is outside current topic root {}; using topic root instead",
+                        requested_folder_id,
+                        topic_root_id
+                    );
+                    Some(topic_root_id.clone())
+                }
+            } else {
+                Some(requested_folder_id)
+            }
+        }
         _ => {
-            let config = AttachmentConfig::new(vfs_db.inner().clone());
-            Some(
-                config
-                    .get_or_create_root_folder()
-                    .map_err(|e| e.to_string())?,
-            )
+            if let Some(folder_id) = topic_folder_id {
+                Some(folder_id)
+            } else {
+                let config = AttachmentConfig::new(vfs_db.inner().clone());
+                Some(
+                    config
+                        .get_or_create_root_folder()
+                        .map_err(|e| e.to_string())?,
+                )
+            }
         }
     };
 
@@ -1342,9 +1464,33 @@ pub async fn vfs_upload_attachment(
         attachment_type: params.attachment_type,
     };
 
-    let result =
+    let mut result =
         VfsAttachmentRepo::upload_with_folder(&vfs_db, upload_params, target_folder_id.as_deref())
             .map_err(|e| e.to_string())?;
+
+    let is_image = params.mime_type.starts_with("image/");
+    let ocr_config = OcrStrategyConfig::load_from_db(&database);
+    if is_image && result.attachment.blob_hash.is_none() {
+        if let Ok(conn) = vfs_db.get_conn_safe() {
+            match VfsFileRepo::ensure_image_blob_with_conn(
+                &conn,
+                vfs_db.blobs_dir(),
+                &result.source_id,
+            ) {
+                Ok(Some(blob_hash)) => {
+                    result.attachment.blob_hash = Some(blob_hash);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    log::warn!(
+                        "[VFS::handlers] Failed to repair image blob for attachment {}: {}",
+                        result.source_id,
+                        e
+                    );
+                }
+            }
+        }
+    }
 
     log::info!(
         "[VFS::handlers] Attachment {}: source_id={}, hash={}, folder={:?}",
@@ -1364,6 +1510,11 @@ pub async fn vfs_upload_attachment(
             ocr_text: None,
             ocr_pages_json: None,
             blob_hash: result.attachment.blob_hash.clone(),
+            image_mime_type: if result.attachment.mime_type.starts_with("image/") {
+                Some(result.attachment.mime_type.clone())
+            } else {
+                None
+            },
             page_count: result.attachment.page_count,
             extracted_text: result.attachment.extracted_text.clone(),
             preview_json: result.attachment.preview_json.clone(),
@@ -1389,8 +1540,6 @@ pub async fn vfs_upload_attachment(
     // ★ 2026-02 修复：PDF/图片 上传后异步触发 Pipeline
     // PDF: Stage 1-2（文本提取、页面渲染）已在 upload_with_conn 中完成，从 OCR 阶段开始
     // 图片: 从压缩阶段开始
-    let is_image = params.mime_type.starts_with("image/");
-
     // ★ v2.1 新增：查询处理状态并填充返回值
     // 对于重用的附件，需要返回实际的处理状态
     let (mut processing_status, mut processing_percent, mut ready_modes, mut needs_processing) =
@@ -1416,7 +1565,7 @@ pub async fn vfs_upload_attachment(
                             .attachment
                             .extracted_text
                             .as_ref()
-                            .map(|t| !t.trim().is_empty())
+                            .map(|t| !t.trim().is_empty() && VfsChunker::is_text_quality_acceptable(t))
                             .unwrap_or(false);
                         let mut modes = Vec::new();
                         if text_ready {
@@ -1460,6 +1609,50 @@ pub async fn vfs_upload_attachment(
         needs_processing = true;
     }
 
+    if is_image && ocr_config.enabled && ocr_config.ocr_images {
+        let ocr_ready = ready_modes
+            .as_ref()
+            .map(|modes| modes.iter().any(|mode| mode == "ocr"))
+            .unwrap_or(false);
+        let has_usable_ocr_text = if let Some(ref resource_id) = result.attachment.resource_id {
+            if let Ok(conn) = vfs_db.get_conn_safe() {
+                conn.query_row(
+                    "SELECT ocr_text FROM resources WHERE id = ?1",
+                    rusqlite::params![resource_id],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .map(|text| {
+                    text.as_deref()
+                        .map(|text| {
+                            !text.trim().is_empty() && VfsChunker::is_text_quality_acceptable(text)
+                        })
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false)
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if has_usable_ocr_text {
+            let modes = ready_modes.get_or_insert_with(Vec::new);
+            if !modes.iter().any(|mode| mode == "ocr") {
+                modes.push("ocr".to_string());
+            }
+        } else if !ocr_ready && processing_status.as_deref() != Some("error") {
+            needs_processing = true;
+            if matches!(
+                processing_status.as_deref(),
+                Some("completed") | Some("completed_with_issues") | None
+            ) {
+                processing_status = Some("ocr_processing".to_string());
+                processing_percent = Some(40.0);
+            }
+        }
+    }
+
     if needs_compression
         && (processing_status.as_deref() == Some("completed") || processing_status.is_none())
     {
@@ -1469,7 +1662,7 @@ pub async fn vfs_upload_attachment(
                 .attachment
                 .extracted_text
                 .as_ref()
-                .map(|t| !t.trim().is_empty())
+                .map(|t| !t.trim().is_empty() && VfsChunker::is_text_quality_acceptable(t))
                 .unwrap_or(false)
             {
                 modes.push("text".to_string());
@@ -1506,6 +1699,28 @@ pub async fn vfs_upload_attachment(
                 );
             }
         });
+    }
+
+    if params
+        .folder_id
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("")
+        .is_empty()
+        && params
+            .group_id
+            .as_deref()
+            .map(|id| !id.trim().is_empty())
+            .unwrap_or(false)
+    {
+        let _ = app.emit(
+            "session_management_change",
+            serde_json::json!({
+                "type": "group_resource_scope_repaired",
+                "groupId": params.group_id,
+                "folderId": target_folder_id,
+            }),
+        );
     }
 
     // 返回包含处理状态的结果
@@ -2256,10 +2471,15 @@ pub async fn vfs_upload_file(
 
     // 判断是否需要触发 Pipeline OCR（用于状态返回）
     let needs_image_ocr = is_image && ocr_config.enabled && ocr_config.ocr_images;
+    let has_usable_extracted_text = extracted_text
+        .as_deref()
+        .map(|text| !text.trim().is_empty() && VfsChunker::is_text_quality_acceptable(text))
+        .unwrap_or(false);
     let needs_pdf_ocr = is_pdf
         && ocr_config.enabled
         && ocr_config.ocr_scanned_pdf
-        && extracted_text.as_ref().map(|t| t.len()).unwrap_or(0) < ocr_config.pdf_text_threshold;
+        && (extracted_text.as_ref().map(|t| t.len()).unwrap_or(0) < ocr_config.pdf_text_threshold
+            || !has_usable_extracted_text);
     let needs_ocr = needs_image_ocr || needs_pdf_ocr;
 
     log::debug!(
@@ -2286,6 +2506,11 @@ pub async fn vfs_upload_file(
             ocr_text: ocr_text.clone(),
             ocr_pages_json: ocr_pages_json.clone(),
             blob_hash: file.blob_hash.clone(),
+            image_mime_type: file
+                .mime_type
+                .as_ref()
+                .filter(|mime| mime.starts_with("image/"))
+                .cloned(),
             page_count: file.page_count,
             extracted_text: file.extracted_text.clone(),
             preview_json: file.preview_json.clone(),
@@ -3469,6 +3694,47 @@ fn requeue_embedding_dimension_config_failures(
     Ok(affected_resources + direct_resources + affected_units)
 }
 
+fn reconcile_completed_text_indexing_resources(
+    conn: &rusqlite::Connection,
+) -> rusqlite::Result<usize> {
+    let now = chrono::Utc::now().timestamp_millis();
+
+    conn.execute(
+        r#"
+        UPDATE resources
+        SET index_state = 'indexed',
+            index_hash = hash,
+            index_error = NULL,
+            indexed_at = ?1,
+            updated_at = ?1
+        WHERE index_state = 'indexing'
+          AND (
+            EXISTS (
+                SELECT 1
+                FROM vfs_index_segments s
+                JOIN vfs_index_units su ON su.id = s.unit_id
+                WHERE su.resource_id = resources.id
+            )
+            OR EXISTS (
+              SELECT 1
+              FROM vfs_index_units u
+              WHERE u.resource_id = resources.id
+                AND u.text_required = 1
+                AND u.text_state = 'indexed'
+            )
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM vfs_index_units u
+              WHERE u.resource_id = resources.id
+                AND u.text_required = 1
+                AND u.text_state IN ('pending', 'indexing', 'failed')
+          )
+        "#,
+        rusqlite::params![now],
+    )
+}
+
 /// 批量索引待处理资源（带进度事件）
 #[tauri::command]
 pub async fn vfs_batch_index_pending(
@@ -3491,6 +3757,21 @@ pub async fn vfs_batch_index_pending(
         .map_err(|e| e.to_string())?;
 
     if let Ok(conn) = vfs_db.get_conn_safe() {
+        match VfsFullIndexingService::recover_stale_indexing(&vfs_db, 10 * 60 * 1000) {
+            Ok(recovered) if recovered > 0 => {
+                log::info!(
+                    "[VFS::handlers] Recovered {} stale indexing records before batch indexing",
+                    recovered
+                );
+            }
+            Ok(_) => {}
+            Err(e) => {
+                log::warn!(
+                    "[VFS::handlers] Failed to recover stuck indexing records before batch: {}",
+                    e
+                );
+            }
+        }
         match requeue_embedding_dimension_config_failures(&conn) {
             Ok(updated) if updated > 0 => {
                 log::info!(
@@ -3506,44 +3787,23 @@ pub async fn vfs_batch_index_pending(
                 );
             }
         }
+        match reconcile_completed_text_indexing_resources(&conn) {
+            Ok(updated) if updated > 0 => {
+                log::info!(
+                    "[VFS::handlers] Reconciled {} completed resources stuck in text indexing state",
+                    updated
+                );
+            }
+            Ok(_) => {}
+            Err(e) => {
+                log::warn!(
+                    "[VFS::handlers] Failed to reconcile completed indexing resources: {}",
+                    e
+                );
+            }
+        }
     }
 
-    // ★ 2026-02 修复：使用 claim_pending_resources 原子抢占，避免并发重复索引
-    // 之前使用 get_pending_resources 仅查询不锁定，快速双击或多窗口操作会导致同批资源被重复处理
-    log::info!("[VFS::handlers] vfs_batch_index_pending: 原子抢占待处理资源...");
-    let pending =
-        VfsIndexStateRepo::claim_pending_resources(&vfs_db, batch_size, config.max_retries)
-            .map_err(|e| e.to_string())?;
-    log::info!(
-        "[VFS::handlers] vfs_batch_index_pending: 原子抢占 {} 个待处理资源",
-        pending.len()
-    );
-
-    if pending.is_empty() {
-        return Ok(BatchIndexResult {
-            success_count: 0,
-            fail_count: 0,
-            total: 0,
-        });
-    }
-
-    let total = pending.len();
-
-    // 发送批量索引开始事件
-    let _ = app_handle.emit(
-        "vfs-index-progress",
-        serde_json::json!({
-            "type": "batch_started",
-            "total": total,
-            "message": format!("开始批量索引 {} 个资源...", total)
-        }),
-    );
-
-    let mut success_count = 0usize;
-    let mut fail_count = 0usize;
-
-    // ★ 2026-02 修复：如果服务初始化失败，必须将已 claim 的资源回退为 pending
-    // 否则资源会永久卡在 indexing 状态，不再被后续批量处理拾取
     let full_indexing_service = match VfsFullIndexingService::new(
         Arc::clone(&vfs_db),
         Arc::clone(&llm_manager),
@@ -3556,95 +3816,192 @@ pub async fn vfs_batch_index_pending(
         }
         Err(e) => {
             log::error!(
-                "[VFS::handlers] vfs_batch_index_pending: IndexingService 初始化失败，回退 {} 个已 claim 的资源",
-                pending.len()
+                "[VFS::handlers] vfs_batch_index_pending: IndexingService 初始化失败: {}",
+                e
             );
-            for resource_id in &pending {
-                let _ = VfsIndexStateRepo::mark_pending(&vfs_db, resource_id);
-            }
             return Err(e.to_string());
         }
     };
 
-    for (index, resource_id) in pending.iter().enumerate() {
-        // ★ P1-2 修复: 将 "processing" 改为 "resource_started" 以匹配前端期望
-        let _ = app_handle.emit(
-            "vfs-index-progress",
-            serde_json::json!({
-                "type": "resource_started",
-                "resourceId": resource_id,
-                "current": index + 1,
-                "total": total,
-                "progress": ((index as f64 / total as f64) * 100.0) as u32,
-                "message": format!("正在索引资源 {}/{}", index + 1, total)
-            }),
-        );
+    let expected_total = batch_size.max(1) as usize;
+    let mut success_count = 0usize;
+    let mut fail_count = 0usize;
+    let mut total = 0usize;
+    let mut started = false;
 
-        // ★ 构造嵌入进度回调，按 embedding batch (每16块) 粒度上报细粒度进度
-        let cb_handle = app_handle.clone();
-        let cb_resource_id = resource_id.clone();
-        let cb_index = index;
-        let cb_total = total;
-        let progress_callback: Option<EmbeddingProgressCallback> =
-            Some(Box::new(move |chunks_done: usize, chunks_total: usize| {
-                // 整体进度 = 当前资源基准 + 当前资源内嵌入子进度
-                let base = cb_index as f64 / cb_total as f64;
-                let sub = if chunks_total > 0 {
-                    chunks_done as f64 / chunks_total as f64 / cb_total as f64
-                } else {
-                    0.0
-                };
-                let progress = ((base + sub) * 100.0).min(99.0) as u32;
-                let _ = cb_handle.emit(
-                    "vfs-index-progress",
-                    serde_json::json!({
-                        "type": "embedding_progress",
-                        "resourceId": cb_resource_id,
-                        "current": cb_index + 1,
-                        "total": cb_total,
-                        "chunksProcessed": chunks_done,
-                        "chunksTotal": chunks_total,
-                        "progress": progress,
-                        "message": format!("正在索引资源 {}/{} (嵌入 {}/{})",
-                            cb_index + 1, cb_total, chunks_done, chunks_total)
-                    }),
-                );
-            }));
-
-        match full_indexing_service
-            .index_resource(resource_id, None, progress_callback)
-            .await
-        {
-            Ok((chunk_count, _)) => {
-                success_count += 1;
-                // ★ 批判性检查修复: 添加 progress/current/total 字段，与前端期望一致
-                let _ = app_handle.emit(
-                    "vfs-index-progress",
-                    serde_json::json!({
-                        "type": "resource_completed",
-                        "resourceId": resource_id,
-                        "chunkCount": chunk_count,
-                        "current": index + 1,
-                        "total": total,
-                        "progress": (((index + 1) as f64 / total as f64) * 100.0) as u32,
-                        "message": format!("资源索引完成: {} 个块", chunk_count)
-                    }),
+    loop {
+        if let Ok(conn) = vfs_db.get_conn_safe() {
+            if let Err(e) = reconcile_completed_text_indexing_resources(&conn) {
+                log::warn!(
+                    "[VFS::handlers] Failed to reconcile completed indexing resources: {}",
+                    e
                 );
             }
+        }
+
+        // ★ 2026-02 修复：使用 claim_pending_resources 原子抢占，避免并发重复索引。
+        // 一键索引语义应 drain 队列；前端传入的 batch_size 是当次待处理总量，
+        // 旧实现只 claim 一批就返回，导致必须手动点很多次。
+        log::info!("[VFS::handlers] vfs_batch_index_pending: 原子抢占待处理资源...");
+        let pending =
+            VfsIndexStateRepo::claim_pending_resources(&vfs_db, batch_size, config.max_retries)
+                .map_err(|e| e.to_string())?;
+        log::info!(
+            "[VFS::handlers] vfs_batch_index_pending: 原子抢占 {} 个待处理资源",
+            pending.len()
+        );
+
+        if pending.is_empty() {
+            break;
+        }
+
+        if !started {
+            started = true;
+            let _ = app_handle.emit(
+                "vfs-index-progress",
+                serde_json::json!({
+                    "type": "batch_started",
+                    "total": expected_total,
+                    "message": format!("开始批量索引 {} 个资源...", expected_total)
+                }),
+            );
+        }
+
+        for (batch_index, resource_id) in pending.iter().enumerate() {
+            let current = total + batch_index + 1;
+            let event_total = expected_total.max(current);
+
+            // ★ P1-2 修复: 将 "processing" 改为 "resource_started" 以匹配前端期望
+            let _ = app_handle.emit(
+                "vfs-index-progress",
+                serde_json::json!({
+                    "type": "resource_started",
+                    "resourceId": resource_id,
+                    "current": current,
+                    "total": event_total,
+                    "progress": (((current - 1) as f64 / event_total as f64) * 100.0) as u32,
+                    "message": format!("正在索引资源 {}/{}", current, event_total)
+                }),
+            );
+
+            // ★ 构造嵌入进度回调，按 embedding batch (每16块) 粒度上报细粒度进度
+            let cb_handle = app_handle.clone();
+            let cb_resource_id = resource_id.clone();
+            let cb_current = current;
+            let cb_total = event_total;
+            let progress_callback: Option<EmbeddingProgressCallback> =
+                Some(Box::new(move |chunks_done: usize, chunks_total: usize| {
+                    // 整体进度 = 当前资源基准 + 当前资源内嵌入子进度
+                    let base = (cb_current - 1) as f64 / cb_total as f64;
+                    let sub = if chunks_total > 0 {
+                        chunks_done as f64 / chunks_total as f64 / cb_total as f64
+                    } else {
+                        0.0
+                    };
+                    let progress = ((base + sub) * 100.0).min(99.0) as u32;
+                    let _ = cb_handle.emit(
+                        "vfs-index-progress",
+                        serde_json::json!({
+                            "type": "embedding_progress",
+                            "resourceId": cb_resource_id,
+                            "current": cb_current,
+                            "total": cb_total,
+                            "chunksProcessed": chunks_done,
+                            "chunksTotal": chunks_total,
+                            "progress": progress,
+                            "message": format!("正在索引资源 {}/{} (嵌入 {}/{})",
+                                cb_current, cb_total, chunks_done, chunks_total)
+                        }),
+                    );
+                }));
+
+            let index_result = tokio::time::timeout(
+                std::time::Duration::from_secs(10 * 60),
+                full_indexing_service.index_resource(resource_id, None, progress_callback),
+            )
+            .await;
+
+            match index_result {
+                Ok(Ok((chunk_count, _))) => {
+                    success_count += 1;
+                    // ★ 批判性检查修复: 添加 progress/current/total 字段，与前端期望一致
+                    let _ = app_handle.emit(
+                        "vfs-index-progress",
+                        serde_json::json!({
+                            "type": "resource_completed",
+                            "resourceId": resource_id,
+                            "chunkCount": chunk_count,
+                            "current": current,
+                            "total": event_total,
+                            "progress": ((current as f64 / event_total as f64) * 100.0) as u32,
+                            "message": format!("资源索引完成: {} 个块", chunk_count)
+                        }),
+                    );
+                }
+                Ok(Err(e)) => {
+                    fail_count += 1;
+                    log::warn!("[VFS::handlers] Failed to index {}: {}", resource_id, e);
+                    let _ = app_handle.emit(
+                        "vfs-index-progress",
+                        serde_json::json!({
+                            "type": "resource_failed",
+                            "resourceId": resource_id,
+                            "error": e.to_string(),
+                            "current": current,
+                            "total": event_total,
+                            "progress": ((current as f64 / event_total as f64) * 100.0) as u32,
+                            "message": format!("索引失败 ({}/{}): {}", current, event_total, e)
+                        }),
+                    );
+                }
+                Err(_) => {
+                    fail_count += 1;
+                    let timeout_msg = "索引单个资源超时，请稍后重试或检查 OCR/嵌入模型连接";
+                    log::warn!(
+                        "[VFS::handlers] Timed out indexing {} after 600s",
+                        resource_id
+                    );
+                    if let Err(e) =
+                        VfsIndexStateRepo::mark_failed(&vfs_db, resource_id, timeout_msg)
+                    {
+                        log::warn!(
+                            "[VFS::handlers] Failed to mark timed-out resource {} as failed: {}",
+                            resource_id,
+                            e
+                        );
+                    }
+                    let _ = app_handle.emit(
+                        "vfs-index-progress",
+                        serde_json::json!({
+                            "type": "resource_failed",
+                            "resourceId": resource_id,
+                            "error": timeout_msg,
+                            "current": current,
+                            "total": event_total,
+                            "progress": ((current as f64 / event_total as f64) * 100.0) as u32,
+                            "message": format!("索引超时 ({}/{}): {}", current, event_total, timeout_msg)
+                        }),
+                    );
+                }
+            }
+        }
+
+        total += pending.len();
+    }
+
+    if let Ok(conn) = vfs_db.get_conn_safe() {
+        match reconcile_completed_text_indexing_resources(&conn) {
+            Ok(updated) if updated > 0 => {
+                log::info!(
+                    "[VFS::handlers] Reconciled {} completed resources after batch indexing",
+                    updated
+                );
+            }
+            Ok(_) => {}
             Err(e) => {
-                fail_count += 1;
-                log::warn!("[VFS::handlers] Failed to index {}: {}", resource_id, e);
-                let _ = app_handle.emit(
-                    "vfs-index-progress",
-                    serde_json::json!({
-                        "type": "resource_failed",
-                        "resourceId": resource_id,
-                        "error": e.to_string(),
-                        "current": index + 1,
-                        "total": total,
-                        "progress": (((index + 1) as f64 / total as f64) * 100.0) as u32,
-                        "message": format!("索引失败 ({}/{}): {}", index + 1, total, e)
-                    }),
+                log::warn!(
+                    "[VFS::handlers] Failed to reconcile completed indexing resources after batch: {}",
+                    e
                 );
             }
         }
@@ -4078,7 +4435,10 @@ pub async fn vfs_get_all_index_status(
                      AND r.index_hash != r.hash
                 THEN 1
                 ELSE 0
-            END as is_stale
+            END as is_stale,
+            COALESCE(fr.ocr_pages_json, fs.ocr_pages_json) as raw_ocr_pages_json,
+            COALESCE(fr.extracted_text, fs.extracted_text) as raw_extracted_text,
+            r.ocr_text as raw_resource_ocr_text
         FROM resources r
         -- 名称 JOIN（替代 6 个 COALESCE 关联子查询）
         LEFT JOIN note_names nn ON nn.resource_id = r.id
@@ -4138,7 +4498,8 @@ pub async fn vfs_get_all_index_status(
         // 6=index_state, 7=indexed_at, 8=index_error, 9=chunk_count, 10=native_chunk_count, 11=ocr_chunk_count,
         // 12=text_embedding_dim, 13=text_index_source,
         // 14=mm_index_state, 15=mm_indexed_pages, 16=mm_embedding_dim, 17=mm_indexing_mode, 18=mm_index_error,
-        // 19=modality, 20=updated_at, 21=is_stale
+        // 19=modality, 20=updated_at, 21=is_stale, 22=raw_ocr_pages_json,
+        // 23=raw_extracted_text, 24=raw_resource_ocr_text
 
         // updated_at 可能是 INTEGER 或 TEXT 格式，需要兼容处理
         let updated_at: i64 = match row.get::<_, i64>(20) {
@@ -4162,15 +4523,45 @@ pub async fn vfs_get_all_index_status(
         };
 
         let text_embedding_dim: Option<i32> = row.get(12)?;
+        let resource_type: String = row.get(2)?;
+        let raw_ocr_pages_json: Option<String> = row.get(22)?;
+        let raw_extracted_text: Option<String> = row.get(23)?;
+        let raw_resource_ocr_text: Option<String> = row.get(24)?;
+        let (ocr_pages_has_text, ocr_pages_char_count) =
+            ocr_pages_effective_text_stats(&raw_ocr_pages_json);
+        let extracted_text_len = raw_extracted_text
+            .as_deref()
+            .map(|text| text.trim().chars().count() as i32)
+            .unwrap_or(0);
+        let resource_ocr_usable = raw_resource_ocr_text
+            .as_deref()
+            .map(is_usable_ocr_text)
+            .unwrap_or(false);
+        let resource_ocr_len = raw_resource_ocr_text
+            .as_deref()
+            .filter(|text| is_usable_ocr_text(text))
+            .map(|text| text.trim().chars().count() as i32)
+            .unwrap_or(0);
+        let sql_has_ocr = row.get::<_, i32>(4).unwrap_or(0) == 1;
+        let sql_ocr_count = row.get(5).unwrap_or(0);
+        let (has_ocr, ocr_count) = match resource_type.as_str() {
+            "textbook" => (ocr_pages_has_text, ocr_pages_char_count),
+            "image" => (resource_ocr_usable, resource_ocr_len),
+            "file" => {
+                let count = extracted_text_len + resource_ocr_len + ocr_pages_char_count;
+                (count > 0, count)
+            }
+            _ => (sql_has_ocr, sql_ocr_count),
+        };
 
         Ok(ResourceIndexStatus {
             resource_id: row.get(0)?,
             source_id: row.get(1)?,
-            resource_type: row.get(2)?,
+            resource_type,
             name: row.get(3)?,
             // OCR 状态
-            has_ocr: row.get::<_, i32>(4).unwrap_or(0) == 1,
-            ocr_count: row.get(5).unwrap_or(0),
+            has_ocr,
+            ocr_count,
             // 文本索引状态
             text_index_state: row.get(6)?,
             text_indexed_at: row.get(7)?,
@@ -6883,6 +7274,7 @@ pub async fn vfs_download_paper(
             ocr_text: None,
             ocr_pages_json: None,
             blob_hash: Some(blob_hash.clone()),
+            image_mime_type: None,
             page_count: file.page_count,
             extracted_text: file.extracted_text.clone(),
             preview_json: file.preview_json.clone(),
@@ -6939,6 +7331,10 @@ pub struct OcrPageInfo {
     pub text: String,
     pub char_count: usize,
     pub is_failed: bool,
+}
+
+fn is_usable_ocr_text(text: &str) -> bool {
+    !text.trim().is_empty() && VfsChunker::is_text_quality_acceptable(text)
 }
 
 /// 获取资源的 OCR 文本和提取文本详情
@@ -7001,10 +7397,11 @@ pub async fn vfs_get_resource_ocr_info(
 
     let (extracted_text, ocr_pages_json) = file_info.unwrap_or((None, None));
 
+    let has_usable_resource_ocr = ocr_text.as_deref().map(is_usable_ocr_text).unwrap_or(false);
     let ocr_text_length = ocr_text.as_ref().map(|t| t.len()).unwrap_or(0);
     let extracted_text_length = extracted_text.as_ref().map(|t| t.len()).unwrap_or(0);
 
-    let active_source = if ocr_text_length > 0 {
+    let active_source = if has_usable_resource_ocr {
         "ocr".to_string()
     } else if extracted_text_length > 0 {
         "extracted".to_string()
@@ -7013,11 +7410,19 @@ pub async fn vfs_get_resource_ocr_info(
     };
 
     let ocr_pages = parse_ocr_pages_for_display(&ocr_pages_json);
+    let has_effective_ocr_pages = ocr_pages
+        .as_ref()
+        .map(|pages| {
+            pages
+                .iter()
+                .any(|page| !page.is_failed && !page.text.trim().is_empty())
+        })
+        .unwrap_or(false);
 
     Ok(ResourceOcrInfo {
         resource_id,
         resource_type,
-        has_ocr: ocr_text_length > 0 || ocr_pages.is_some(),
+        has_ocr: has_usable_resource_ocr || has_effective_ocr_pages,
         ocr_text,
         ocr_text_length,
         extracted_text,
@@ -7041,7 +7446,7 @@ fn parse_ocr_pages_for_display(ocr_pages_json: &Option<String>) -> Option<Vec<Oc
                 let (text, is_failed) = match text_opt {
                     Some(ref t) if t == "[OCR_FAILED]" => (String::new(), true),
                     Some(t) => {
-                        let failed = t.trim().is_empty();
+                        let failed = !is_usable_ocr_text(&t);
                         (t, failed)
                     }
                     None => (String::new(), true),
@@ -7091,7 +7496,7 @@ fn parse_ocr_pages_for_display(ocr_pages_json: &Option<String>) -> Option<Vec<Oc
                 OcrPageInfo {
                     page_index: page.page_index,
                     char_count: text.len(),
-                    is_failed: text.trim().is_empty(),
+                    is_failed: !is_usable_ocr_text(&text),
                     text,
                 }
             })
@@ -7100,6 +7505,20 @@ fn parse_ocr_pages_for_display(ocr_pages_json: &Option<String>) -> Option<Vec<Oc
     }
 
     None
+}
+
+fn ocr_pages_effective_text_stats(ocr_pages_json: &Option<String>) -> (bool, i32) {
+    let Some(pages) = parse_ocr_pages_for_display(ocr_pages_json) else {
+        return (false, 0);
+    };
+
+    let char_count = pages
+        .iter()
+        .filter(|page| !page.is_failed)
+        .map(|page| page.text.trim().chars().count() as i32)
+        .sum::<i32>();
+
+    (char_count > 0, char_count)
 }
 
 /// 清除资源的 OCR 数据（用于强制重新 OCR）
@@ -7160,11 +7579,117 @@ pub async fn vfs_clear_resource_ocr(
         );
     }
 
+    let source_id: Option<String> = conn
+        .query_row(
+            "SELECT source_id FROM resources WHERE id = ?1",
+            rusqlite::params![resource_id],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten();
+    let mut file_ids = Vec::new();
+    {
+        let mut stmt = conn
+            .prepare("SELECT id FROM files WHERE resource_id = ?1")
+            .map_err(|e| format!("Failed to query files for OCR reset: {}", e))?;
+        let rows = stmt
+            .query_map(rusqlite::params![resource_id], |row| {
+                row.get::<_, String>(0)
+            })
+            .map_err(|e| format!("Failed to read file ids for OCR reset: {}", e))?;
+        for row in rows {
+            let file_id =
+                row.map_err(|e| format!("Failed to decode file id for OCR reset: {}", e))?;
+            if !file_id.trim().is_empty() && !file_ids.iter().any(|id| id == &file_id) {
+                file_ids.push(file_id);
+            }
+        }
+    }
+    if let Some(sid) = source_id {
+        if !sid.trim().is_empty() && !file_ids.iter().any(|id| id == &sid) {
+            file_ids.push(sid);
+        }
+    }
+    for file_id in file_ids {
+        if let Err(e) = reset_file_ocr_processing_progress(&conn, &file_id) {
+            log::warn!(
+                "[VFS::handlers] Failed to reset OCR processing progress for {}: {}",
+                file_id,
+                e
+            );
+        }
+    }
+
     log::info!(
         "[VFS::handlers] Cleared OCR data for resource {} and marked as pending",
         resource_id
     );
     Ok(true)
+}
+
+fn reset_file_ocr_processing_progress(
+    conn: &rusqlite::Connection,
+    file_id: &str,
+) -> rusqlite::Result<()> {
+    let progress_json: Option<String> = conn
+        .query_row(
+            "SELECT processing_progress FROM files WHERE id = ?1",
+            rusqlite::params![file_id],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten();
+
+    let mut progress = progress_json
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+
+    if let Some(obj) = progress.as_object_mut() {
+        obj.insert(
+            "stage".to_string(),
+            serde_json::Value::String("ocr_processing".to_string()),
+        );
+        obj.insert(
+            "percent".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(40.0).unwrap_or_else(|| serde_json::Number::from(40)),
+            ),
+        );
+        obj.insert(
+            "message".to_string(),
+            serde_json::Value::String("OCR cleared; waiting to reprocess".to_string()),
+        );
+        if let Some(ready_modes) = obj.get_mut("ready_modes").and_then(|v| v.as_array_mut()) {
+            ready_modes.retain(|mode| mode.as_str() != Some("ocr"));
+        } else {
+            obj.insert(
+                "ready_modes".to_string(),
+                serde_json::Value::Array(Vec::new()),
+            );
+        }
+        if let Some(failed_stages) = obj.get_mut("failed_stages").and_then(|v| v.as_array_mut()) {
+            failed_stages.retain(|stage| {
+                stage
+                    .get("stage")
+                    .and_then(|v| v.as_str())
+                    .map(|s| !s.contains("ocr"))
+                    .unwrap_or(true)
+            });
+        }
+    }
+
+    let updated_progress = serde_json::to_string(&progress).unwrap_or_else(|_| "{}".to_string());
+    conn.execute(
+        "UPDATE files
+         SET processing_status = 'ocr_processing',
+             processing_progress = ?1,
+             processing_error = NULL,
+             updated_at = ?2
+         WHERE id = ?3",
+        rusqlite::params![updated_progress, chrono::Utc::now().to_rfc3339(), file_id],
+    )?;
+
+    Ok(())
 }
 
 /// 文本块信息（用于数据透视）

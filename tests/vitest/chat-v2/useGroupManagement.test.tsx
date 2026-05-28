@@ -38,20 +38,17 @@ describe('useGroupManagement', () => {
     setGroupsCacheMock.mockReset();
   });
 
-  it('archives groups through update_group instead of deleting or ungrouping sessions', async () => {
+  it('archives groups through the native archive command instead of updating or deleting sessions', async () => {
     invokeMock.mockImplementation((command: string) => {
       if (command === 'chat_v2_list_groups') {
         return Promise.resolve([activeGroup]);
       }
-      if (command === 'chat_v2_update_group') {
-        return Promise.resolve({
-          ...activeGroup,
-          persistStatus: 'archived',
-          updatedAt: '2026-04-07T00:00:00.000Z',
-        });
+      if (command === 'chat_v2_archive_group') {
+        return Promise.resolve(null);
       }
       return Promise.resolve(null);
     });
+    const eventSpy = vi.spyOn(window, 'dispatchEvent');
 
     const { result } = renderHook(() => useGroupManagement('workspace-1'));
 
@@ -65,15 +62,15 @@ describe('useGroupManagement', () => {
       await result.current.archiveGroup('group-1');
     });
 
-    expect(invokeMock).toHaveBeenCalledWith('chat_v2_update_group', {
+    expect(invokeMock).toHaveBeenCalledWith('chat_v2_archive_group', {
       groupId: 'group-1',
-      request: {
-        persistStatus: 'archived',
-        workspaceId: 'workspace-1',
-      },
     });
+    expect(invokeMock).not.toHaveBeenCalledWith('chat_v2_update_group', expect.anything());
     expect(invokeMock).not.toHaveBeenCalledWith('chat_v2_delete_group', expect.anything());
     expect(result.current.groups).toEqual([]);
     expect(setGroupsCacheMock).toHaveBeenLastCalledWith([]);
+    expect(eventSpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'chat-v2:groups-updated' }));
+
+    eventSpy.mockRestore();
   });
 });

@@ -58,11 +58,37 @@ use crate::models::PdfOcrTextBlock;
 use crate::vfs::database::VfsDatabase;
 use crate::vfs::error::{VfsError, VfsResult};
 use crate::vfs::index_service::VfsIndexService;
-use crate::vfs::indexing::VfsFullIndexingService;
+use crate::vfs::indexing::{VfsChunker, VfsFullIndexingService};
 use crate::vfs::lance_store::VfsLanceStore;
+use crate::vfs::ocr_utils::parse_ocr_pages_json;
 use crate::vfs::repos::{VfsBlobRepo, VfsFileRepo};
 use crate::vfs::types::PdfPreviewJson;
 use crate::vfs::unit_builder::UnitBuildInput;
+
+const IMAGE_OCR_TIMEOUT_SECS: u64 = 90;
+
+fn pdf_ocr_pages_are_usable(ocr_pages_json: Option<&str>, total_pages: usize) -> bool {
+    let Some(ocr_pages_json) = ocr_pages_json else {
+        return false;
+    };
+    let pages = parse_ocr_pages_json(ocr_pages_json);
+    if pages.is_empty() {
+        return false;
+    }
+
+    let denominator = total_pages.max(pages.len());
+    if denominator == 0 {
+        return false;
+    }
+
+    let usable_count = pages
+        .iter()
+        .filter_map(|page| page.as_deref())
+        .filter(|text| !text.trim().is_empty() && VfsChunker::is_text_quality_acceptable(text))
+        .count();
+
+    usable_count * 2 >= denominator
+}
 
 // ============================================================================
 // 处理状态枚举
@@ -327,6 +353,8 @@ pub struct MediaProcessingCompletedEvent {
     pub ready_modes: Vec<String>,
     pub stage: String,
     pub media_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failed_stages: Option<Vec<ProcessingIssue>>,
 }
 
 /// 错误事件（统一媒体处理事件）
@@ -715,30 +743,33 @@ impl PdfProcessingService {
     ) -> VfsResult<()> {
         // 获取文件信息
         let conn = self.db.get_conn_safe()?;
-        let (page_count, has_extracted_text, extracted_text_len, has_preview, has_ocr): (
-            Option<i32>,
-            bool,
-            i64,
-            bool,
-            bool,
-        ) = conn
+        let (
+            page_count,
+            extracted_text,
+            has_extracted_text,
+            extracted_text_len,
+            has_preview,
+            ocr_pages_json,
+        ): (Option<i32>, Option<String>, bool, i64, bool, Option<String>) = conn
             .query_row(
                 r#"
                 SELECT page_count,
+                       extracted_text,
                        extracted_text IS NOT NULL,
                        COALESCE(LENGTH(extracted_text), 0),
                        preview_json IS NOT NULL,
-                       ocr_pages_json IS NOT NULL
+                       ocr_pages_json
                 FROM files WHERE id = ?1
                 "#,
                 params![file_id],
                 |row| {
                     Ok((
                         row.get(0)?,
-                        row.get::<_, i32>(1)? != 0,
-                        row.get(2)?,
-                        row.get::<_, i32>(3)? != 0,
+                        row.get(1)?,
+                        row.get::<_, i32>(2)? != 0,
+                        row.get(3)?,
                         row.get::<_, i32>(4)? != 0,
+                        row.get(5)?,
                     ))
                 },
             )
@@ -746,6 +777,11 @@ impl PdfProcessingService {
 
         let total_pages = page_count.unwrap_or(0) as usize;
         let extracted_text_len = extracted_text_len.max(0) as usize;
+        let has_usable_extracted_text = extracted_text
+            .as_deref()
+            .map(|text| !text.trim().is_empty() && VfsChunker::is_text_quality_acceptable(text))
+            .unwrap_or(false);
+        let has_usable_ocr_pages = pdf_ocr_pages_are_usable(ocr_pages_json.as_deref(), total_pages);
         let ocr_config = self.load_ocr_config();
 
         // 确定初始就绪模式
@@ -753,11 +789,11 @@ impl PdfProcessingService {
         let mut ready_modes: Vec<String> = vec![];
         let _issues: Vec<ProcessingIssue> = Vec::new();
         let mut issues: Vec<ProcessingIssue> = Vec::new();
-        if has_extracted_text {
+        if has_extracted_text && has_usable_extracted_text {
             ready_modes.push("text".to_string());
         }
         // 注意：不再根据 has_preview 直接添加 image，需要检查压缩状态
-        if has_ocr {
+        if has_usable_ocr_pages {
             ready_modes.push("ocr".to_string());
         }
 
@@ -790,7 +826,7 @@ impl PdfProcessingService {
 
             if let Some(ref pj) = preview_json {
                 // 检查是否已经有压缩版本
-                let needs_compression = self.check_pdf_pages_need_compression(pj)?;
+                let needs_compression = self.check_pdf_pages_need_compression(pj, total_pages)?;
 
                 if needs_compression {
                     info!(
@@ -841,19 +877,31 @@ impl PdfProcessingService {
                         )
                         .await
                     {
-                        Ok(()) => {
+                        Ok((usable_page_count, failed_page_count)) => {
                             // ★ P0 改造：压缩完成后，image 模式才就绪
-                            if total_pages > 0 && !ready_modes.contains(&"image".to_string()) {
+                            if total_pages > 0
+                                && usable_page_count == total_pages
+                                && !ready_modes.contains(&"image".to_string())
+                            {
                                 ready_modes.push("image".to_string());
                             } else if total_pages == 0 {
                                 warn!(
                                     "[PdfProcessingService] Page compression completed but no pages for file: {}",
                                     file_id
                                 );
+                            } else {
+                                issues.push(ProcessingIssue {
+                                    stage: ProcessingStage::PageCompression.as_str().to_string(),
+                                    message: format!(
+                                        "PDF page images unavailable: {}/{} pages usable",
+                                        usable_page_count, total_pages
+                                    ),
+                                    retriable: failed_page_count > 0,
+                                });
                             }
                             info!(
-                                "[PdfProcessingService] Page compression completed for file: {}, ready_modes: {:?}",
-                                file_id, ready_modes
+                                "[PdfProcessingService] Page compression completed for file: {}, usable_pages={}, failed_pages={}, ready_modes: {:?}",
+                                file_id, usable_page_count, failed_page_count, ready_modes
                             );
                         }
                         Err(e) => {
@@ -861,19 +909,11 @@ impl PdfProcessingService {
                                 "[PdfProcessingService] Page compression failed for file {}: {}",
                                 file_id, e
                             );
-                            // ★ P0 修复：压缩失败时仍然标记 image 就绪（使用原图回退）
-                            if total_pages > 0 && !ready_modes.contains(&"image".to_string()) {
-                                ready_modes.push("image".to_string());
-                            } else if total_pages == 0 {
-                                warn!(
-                                    "[PdfProcessingService] Page compression failed and no pages for file: {}",
-                                    file_id
-                                );
-                            }
-                            warn!(
-                                "[PdfProcessingService] Using original pages as fallback for file: {}",
-                                file_id
-                            );
+                            issues.push(ProcessingIssue {
+                                stage: ProcessingStage::PageCompression.as_str().to_string(),
+                                message: e.to_string(),
+                                retriable: true,
+                            });
                         }
                     }
                 } else {
@@ -898,9 +938,9 @@ impl PdfProcessingService {
         let should_run_pdf_ocr = ocr_config.enabled
             && ocr_config.ocr_scanned_pdf
             && !ocr_config.skip_for_multimodal
-            && extracted_text_len < ocr_config.pdf_text_threshold;
+            && (extracted_text_len < ocr_config.pdf_text_threshold || !has_usable_extracted_text);
 
-        if start_stage <= ProcessingStage::OcrProcessing && !has_ocr && has_preview {
+        if start_stage <= ProcessingStage::OcrProcessing && !has_usable_ocr_pages && has_preview {
             if !should_run_pdf_ocr {
                 info!(
                     "[PdfProcessingService] OCR skipped for file {}: enabled={}, skip_for_multimodal={}, text_len={}, threshold={}",
@@ -910,6 +950,22 @@ impl PdfProcessingService {
                     extracted_text_len,
                     ocr_config.pdf_text_threshold
                 );
+                if !ocr_config.enabled
+                    || !ocr_config.ocr_scanned_pdf
+                    || ocr_config.skip_for_multimodal
+                {
+                    issues.push(ProcessingIssue {
+                        stage: ProcessingStage::OcrProcessing.as_str().to_string(),
+                        message: if !ocr_config.enabled {
+                            "OCR skipped: OCR is disabled".to_string()
+                        } else if !ocr_config.ocr_scanned_pdf {
+                            "OCR skipped: scanned PDF OCR is disabled".to_string()
+                        } else {
+                            "OCR skipped by current OCR settings".to_string()
+                        },
+                        retriable: false,
+                    });
+                }
             } else {
                 if cancel_token.is_cancelled() {
                     info!("[PdfProcessingService] Pipeline cancelled for {}", file_id);
@@ -982,6 +1038,14 @@ impl PdfProcessingService {
                                 "[PdfProcessingService] OCR processing completed for file: {}",
                                 file_id
                             );
+                            if !ready_modes.iter().any(|mode| mode == "ocr") {
+                                issues.push(ProcessingIssue {
+                                    stage: ProcessingStage::OcrProcessing.as_str().to_string(),
+                                    message: "OCR completed but did not produce enough usable text"
+                                        .to_string(),
+                                    retriable: true,
+                                });
+                            }
                         }
                         Err(e) => {
                             warn!(
@@ -1000,17 +1064,27 @@ impl PdfProcessingService {
                         "[PdfProcessingService] No preview_json available for OCR, skipping file: {}",
                         file_id
                     );
+                    issues.push(ProcessingIssue {
+                        stage: ProcessingStage::OcrProcessing.as_str().to_string(),
+                        message: "OCR skipped: rendered page preview is unavailable".to_string(),
+                        retriable: false,
+                    });
                 }
             }
-        } else if !has_ocr && !has_preview {
+        } else if !has_usable_ocr_pages && !has_preview {
             info!(
                 "[PdfProcessingService] OCR skipped: no preview available for file: {}",
                 file_id
             );
+            issues.push(ProcessingIssue {
+                stage: ProcessingStage::OcrProcessing.as_str().to_string(),
+                message: "OCR skipped: rendered page preview is unavailable".to_string(),
+                retriable: false,
+            });
         }
 
         // 如果已有 OCR，添加到就绪模式
-        if has_ocr && !ready_modes.contains(&"ocr".to_string()) {
+        if has_usable_ocr_pages && !ready_modes.contains(&"ocr".to_string()) {
             ready_modes.push("ocr".to_string());
         }
 
@@ -1103,6 +1177,7 @@ impl PdfProcessingService {
             },
             MediaType::Pdf,
             Some(generation),
+            progress.failed_stages.clone(),
         )
         .await;
 
@@ -1133,16 +1208,16 @@ impl PdfProcessingService {
 
         // 获取文件信息
         let conn = self.db.get_conn_safe()?;
-        let (blob_hash, resource_id, file_size, has_ocr, mime_type): (
+        let (blob_hash, resource_id, file_size, ocr_text, mime_type): (
             Option<String>,
             Option<String>,
             Option<i64>,
-            bool,
+            Option<String>,
             Option<String>,
         ) = conn
             .query_row(
                 r#"
-                SELECT f.blob_hash, f.resource_id, f.size, r.ocr_text IS NOT NULL, f.mime_type
+                SELECT f.blob_hash, f.resource_id, f.size, r.ocr_text, f.mime_type
                 FROM files f
                 LEFT JOIN resources r ON r.id = f.resource_id
                 WHERE f.id = ?1
@@ -1153,12 +1228,16 @@ impl PdfProcessingService {
                         row.get(0)?,
                         row.get(1)?,
                         row.get(2)?,
-                        row.get::<_, i32>(3)? != 0,
+                        row.get(3)?,
                         row.get(4)?,
                     ))
                 },
             )
             .map_err(|e| VfsError::Database(format!("Failed to get file info: {}", e)))?;
+        let has_usable_ocr = ocr_text
+            .as_deref()
+            .map(|text| !text.trim().is_empty() && VfsChunker::is_text_quality_acceptable(text))
+            .unwrap_or(false);
 
         let blobs_dir = self.db.blobs_dir();
 
@@ -1167,6 +1246,19 @@ impl PdfProcessingService {
         // 原因：发送时不再压缩，必须使用预处理的压缩结果
         let mut ready_modes: Vec<String> = vec![];
         let mut issues: Vec<ProcessingIssue> = Vec::new();
+        let has_original_blob = blob_hash
+            .as_deref()
+            .map(|h| {
+                !h.trim().is_empty()
+                    && VfsBlobRepo::get_blob_path_with_conn(&conn, &blobs_dir, h)
+                        .ok()
+                        .flatten()
+                        .is_some()
+            })
+            .unwrap_or(false);
+        let has_inline_content =
+            VfsFileRepo::get_content_with_conn(&conn, &blobs_dir, file_id)?.is_some();
+
         // 检查是否已有压缩版本（compressed_blob_hash 不为空且 blob 存在）
         let _has_compressed: bool = conn
             .query_row(
@@ -1186,20 +1278,30 @@ impl PdfProcessingService {
             })
             .unwrap_or(false);
 
-        // 图片上传后原图已存在 resources 表，image 模式立即就绪
-        // 压缩是优化（减小 base64 体积），不应阻塞用户发送
-        ready_modes.push("image".to_string());
-        if has_ocr {
+        let mut image_content_issue_recorded = false;
+        if !has_original_blob && !has_inline_content {
+            issues.push(ProcessingIssue {
+                stage: ProcessingStage::ImageCompression.as_str().to_string(),
+                message: "Image content is unavailable".to_string(),
+                retriable: false,
+            });
+            image_content_issue_recorded = true;
+        }
+
+        if has_usable_ocr {
             ready_modes.push("ocr".to_string());
         }
 
         let ocr_config = self.load_ocr_config();
-        let should_run_image_ocr =
-            ocr_config.enabled && ocr_config.ocr_images && !ocr_config.skip_for_multimodal;
+        // Image OCR is also the text-only fallback for chat attachments.  Even
+        // when the user asks to skip extra OCR for multimodal-capable flows,
+        // text-only models still need this OCR output after image mode is
+        // automatically removed.
+        let should_run_image_ocr = ocr_config.enabled && ocr_config.ocr_images;
 
         info!(
-            "[OCR_DIAG] Image pipeline OCR decision: file_id={}, has_ocr={}, should_run_image_ocr={}, ocr_config=(enabled={}, ocr_images={}, skip_for_multimodal={}), blob_hash={:?}, resource_id={:?}",
-            file_id, has_ocr, should_run_image_ocr,
+            "[OCR_DIAG] Image pipeline OCR decision: file_id={}, has_usable_ocr={}, should_run_image_ocr={}, ocr_config=(enabled={}, ocr_images={}, skip_for_multimodal={}), blob_hash={:?}, resource_id={:?}",
+            file_id, has_usable_ocr, should_run_image_ocr,
             ocr_config.enabled, ocr_config.ocr_images, ocr_config.skip_for_multimodal,
             blob_hash, resource_id
         );
@@ -1270,22 +1372,26 @@ impl PdfProcessingService {
                                 "[MediaProcessingService] Image compression failed for file {}: {}",
                                 file_id, e
                             );
-                            // ★ P0 修复：压缩失败时仍然标记 image 就绪（使用原图回退）
-                            // 否则用户将无法发送这个附件
-                            if !ready_modes.contains(&"image".to_string()) {
+                            if (has_original_blob || has_inline_content)
+                                && !ready_modes.contains(&"image".to_string())
+                            {
                                 ready_modes.push("image".to_string());
+                                warn!(
+                                    "[MediaProcessingService] Using original image as fallback for file: {}",
+                                    file_id
+                                );
+                            } else if !image_content_issue_recorded {
+                                issues.push(ProcessingIssue {
+                                    stage: ProcessingStage::ImageCompression.as_str().to_string(),
+                                    message: "Image content is unavailable".to_string(),
+                                    retriable: false,
+                                });
                             }
-                            warn!(
-                                "[MediaProcessingService] Using original image as fallback for file: {}",
-                                file_id
-                            );
                         }
                     }
                 } else {
                     // 没有 blob_hash，检查是否有 inline 内容
-                    let base64_content =
-                        VfsFileRepo::get_content_with_conn(&conn, &blobs_dir, file_id)?;
-                    if base64_content.is_some() {
+                    if has_inline_content {
                         if !ready_modes.contains(&"image".to_string()) {
                             ready_modes.push("image".to_string());
                         }
@@ -1294,15 +1400,18 @@ impl PdfProcessingService {
                             "[MediaProcessingService] Image compression skipped: no content for file {}",
                             file_id
                         );
+                        if !image_content_issue_recorded {
+                            issues.push(ProcessingIssue {
+                                stage: ProcessingStage::ImageCompression.as_str().to_string(),
+                                message: "Image content is unavailable".to_string(),
+                                retriable: false,
+                            });
+                        }
                     }
                 }
             } else {
                 // 压缩功能禁用，确保内容存在后标记 image 就绪
-                let has_content = if blob_hash.is_some() {
-                    true
-                } else {
-                    VfsFileRepo::get_content_with_conn(&conn, &blobs_dir, file_id)?.is_some()
-                };
+                let has_content = has_original_blob || has_inline_content;
                 if has_content && !ready_modes.contains(&"image".to_string()) {
                     ready_modes.push("image".to_string());
                 } else if !has_content {
@@ -1310,6 +1419,13 @@ impl PdfProcessingService {
                         "[MediaProcessingService] Image compression disabled but content missing for file {}",
                         file_id
                     );
+                    if !image_content_issue_recorded {
+                        issues.push(ProcessingIssue {
+                            stage: ProcessingStage::ImageCompression.as_str().to_string(),
+                            message: "Image content is unavailable".to_string(),
+                            retriable: false,
+                        });
+                    }
                 }
             }
 
@@ -1332,7 +1448,8 @@ impl PdfProcessingService {
         }
 
         // Stage 2: OCR 处理（如果需要）
-        if start_stage <= ProcessingStage::OcrProcessing && !has_ocr && should_run_image_ocr {
+        if start_stage <= ProcessingStage::OcrProcessing && !has_usable_ocr && should_run_image_ocr
+        {
             info!(
                 "[OCR_DIAG] Image OCR Stage 2 ENTERED: file_id={}, start_stage={:?}",
                 file_id, start_stage
@@ -1386,10 +1503,12 @@ impl PdfProcessingService {
                     .await
                 {
                     Ok(ocr_text) => {
-                        // ★ 2026-02-13 修复：仅当 OCR 文本非空时才标记 'ocr' 就绪
+                        // ★ 2026-02-13 修复：仅当 OCR 文本可用时才标记 'ocr' 就绪
                         // 原问题：空文本时 ready_modes 虚标 'ocr'，前端认为 OCR 就绪放行发送，
                         // 但后端 DB 中 ocr_text=NULL，导致模型只收到占位符
-                        if !ocr_text.trim().is_empty() {
+                        if !ocr_text.trim().is_empty()
+                            && VfsChunker::is_text_quality_acceptable(&ocr_text)
+                        {
                             info!(
                                 "[MediaProcessingService] Image OCR completed for file: {} ({} chars)",
                                 file_id,
@@ -1398,9 +1517,14 @@ impl PdfProcessingService {
                             ready_modes.push("ocr".to_string());
                         } else {
                             warn!(
-                                "[MediaProcessingService] Image OCR returned empty text for file: {}, NOT marking 'ocr' as ready",
+                            "[MediaProcessingService] Image OCR returned unusable text for file: {}, NOT marking 'ocr' as ready",
                                 file_id
                             );
+                            issues.push(ProcessingIssue {
+                                stage: ProcessingStage::OcrProcessing.as_str().to_string(),
+                                message: "OCR returned unusable text".to_string(),
+                                retriable: true,
+                            });
                         }
                     }
                     Err(e) => {
@@ -1425,8 +1549,10 @@ impl PdfProcessingService {
                         .await
                     {
                         Ok(ocr_text) => {
-                            // ★ 2026-02-13 修复：同上，仅非空时标记就绪
-                            if !ocr_text.trim().is_empty() {
+                            // ★ 2026-02-13 修复：同上，仅可用文本才标记就绪
+                            if !ocr_text.trim().is_empty()
+                                && VfsChunker::is_text_quality_acceptable(&ocr_text)
+                            {
                                 info!(
                                     "[MediaProcessingService] Image OCR completed for file: {} ({} chars)",
                                     file_id,
@@ -1435,9 +1561,14 @@ impl PdfProcessingService {
                                 ready_modes.push("ocr".to_string());
                             } else {
                                 warn!(
-                                    "[MediaProcessingService] Image OCR returned empty text for file: {}, NOT marking 'ocr' as ready",
+                                    "[MediaProcessingService] Image OCR returned unusable text for file: {}, NOT marking 'ocr' as ready",
                                     file_id
                                 );
+                                issues.push(ProcessingIssue {
+                                    stage: ProcessingStage::OcrProcessing.as_str().to_string(),
+                                    message: "OCR returned unusable text".to_string(),
+                                    retriable: true,
+                                });
                             }
                         }
                         Err(e) => {
@@ -1457,6 +1588,11 @@ impl PdfProcessingService {
                         "[MediaProcessingService] Image OCR skipped: no content for file {}",
                         file_id
                     );
+                    issues.push(ProcessingIssue {
+                        stage: ProcessingStage::OcrProcessing.as_str().to_string(),
+                        message: "OCR skipped: image content is unavailable".to_string(),
+                        retriable: false,
+                    });
                 }
             }
 
@@ -1470,19 +1606,35 @@ impl PdfProcessingService {
                     percent: 60.0,
                     ready_modes: ready_modes.clone(),
                     media_type: Some("image".to_string()),
-                    failed_stages: None,
+                    failed_stages: if issues.is_empty() {
+                        None
+                    } else {
+                        Some(issues.clone())
+                    },
                 },
                 MediaType::Image,
                 Some(generation),
             )
             .await;
-        } else if !has_ocr && !should_run_image_ocr {
+        } else if !has_usable_ocr && !should_run_image_ocr {
             info!(
-                "[MediaProcessingService] Image OCR skipped for file {}: enabled={}, skip_for_multimodal={}",
+                "[MediaProcessingService] Image OCR skipped for file {}: enabled={}, ocr_images={}, skip_for_multimodal={}",
                 file_id,
                 ocr_config.enabled,
+                ocr_config.ocr_images,
                 ocr_config.skip_for_multimodal
             );
+            issues.push(ProcessingIssue {
+                stage: ProcessingStage::OcrProcessing.as_str().to_string(),
+                message: if !ocr_config.enabled {
+                    "OCR skipped: OCR is disabled".to_string()
+                } else if !ocr_config.ocr_images {
+                    "OCR skipped: image OCR is disabled".to_string()
+                } else {
+                    "OCR skipped by current OCR settings".to_string()
+                },
+                retriable: false,
+            });
         }
 
         // Stage 3: 向量索引
@@ -1573,6 +1725,7 @@ impl PdfProcessingService {
             },
             MediaType::Image,
             Some(generation),
+            progress.failed_stages.clone(),
         )
         .await;
 
@@ -1603,12 +1756,14 @@ impl PdfProcessingService {
         let blobs_dir = self.db.blobs_dir();
         let has_text: bool = conn
             .query_row(
-                "SELECT extracted_text IS NOT NULL FROM files WHERE id = ?1",
+                "SELECT extracted_text FROM files WHERE id = ?1",
                 params![file_id],
-                |row| row.get::<_, i32>(0),
+                |row| row.get::<_, Option<String>>(0),
             )
-            .unwrap_or(0)
-            != 0;
+            .ok()
+            .flatten()
+            .map(|text| !text.trim().is_empty() && VfsChunker::is_text_quality_acceptable(&text))
+            .unwrap_or(false);
         let mut ready_modes = Vec::new();
         if has_text {
             ready_modes.push("text".to_string());
@@ -1693,12 +1848,19 @@ impl PdfProcessingService {
     /// 检查 PDF 页面是否需要压缩
     ///
     /// 通过检查 preview_json 中是否已存在 compressed_blob_hash 字段来判断
-    fn check_pdf_pages_need_compression(&self, preview_json: &str) -> VfsResult<bool> {
+    fn check_pdf_pages_need_compression(
+        &self,
+        preview_json: &str,
+        total_pages: usize,
+    ) -> VfsResult<bool> {
         let preview: PdfPreviewJson = serde_json::from_str(preview_json)
             .map_err(|e| VfsError::Serialization(format!("Failed to parse preview_json: {}", e)))?;
 
-        if preview.pages.is_empty() {
+        if total_pages == 0 && preview.pages.is_empty() {
             return Ok(false);
+        }
+        if preview.pages.len() != total_pages {
+            return Ok(true);
         }
 
         let conn = self.db.get_conn_safe()?;
@@ -1731,7 +1893,7 @@ impl PdfProcessingService {
         total_pages: usize,
         cancel_token: &CancellationToken,
         generation: u64,
-    ) -> VfsResult<()> {
+    ) -> VfsResult<(usize, usize)> {
         use base64::Engine;
         use sha2::{Digest, Sha256};
 
@@ -1743,12 +1905,14 @@ impl PdfProcessingService {
         let app_handle = self.get_app_handle().await;
         let has_text: bool = conn
             .query_row(
-                "SELECT extracted_text IS NOT NULL FROM files WHERE id = ?1",
+                "SELECT extracted_text FROM files WHERE id = ?1",
                 params![file_id],
-                |row| row.get::<_, i32>(0),
+                |row| row.get::<_, Option<String>>(0),
             )
-            .unwrap_or(0)
-            != 0;
+            .ok()
+            .flatten()
+            .map(|text| !text.trim().is_empty() && VfsChunker::is_text_quality_acceptable(&text))
+            .unwrap_or(false);
         let mut ready_modes = Vec::new();
         if has_text {
             ready_modes.push("text".to_string());
@@ -1756,6 +1920,8 @@ impl PdfProcessingService {
 
         let mut compressed_count = 0usize;
         let mut skipped_count = 0usize;
+        let mut usable_page_count = 0usize;
+        let mut failed_page_count = total_pages.saturating_sub(preview.pages.len());
 
         for (index, page) in preview.pages.iter_mut().enumerate() {
             if cancel_token.is_cancelled() {
@@ -1766,10 +1932,16 @@ impl PdfProcessingService {
                 break;
             }
 
-            // 跳过已经有压缩版本的页面
-            if page.compressed_blob_hash.is_some() {
-                skipped_count += 1;
-                continue;
+            // 跳过已经有可读取压缩版本的页面；压缩 blob 丢失时继续尝试原图。
+            if let Some(compressed_hash) = page.compressed_blob_hash.as_ref() {
+                if !compressed_hash.trim().is_empty()
+                    && VfsBlobRepo::get_blob_path_with_conn(&conn, blobs_dir, compressed_hash)?
+                        .is_some()
+                {
+                    skipped_count += 1;
+                    usable_page_count += 1;
+                    continue;
+                }
             }
 
             // 获取原始页面图片
@@ -1781,6 +1953,7 @@ impl PdfProcessingService {
                             "[PdfProcessingService] Blob not found for page {}: {}",
                             index, page.blob_hash
                         );
+                        failed_page_count += 1;
                         continue;
                     }
                 };
@@ -1793,6 +1966,7 @@ impl PdfProcessingService {
                         "[PdfProcessingService] Failed to read page {} blob: {}",
                         index, e
                     );
+                    failed_page_count += 1;
                     continue;
                 }
             };
@@ -1812,6 +1986,7 @@ impl PdfProcessingService {
                 // 压缩效果不明显，使用原始 hash
                 page.compressed_blob_hash = Some(page.blob_hash.clone());
                 skipped_count += 1;
+                usable_page_count += 1;
                 debug!(
                     "[PdfProcessingService] Page {} compression not effective, using original",
                     index
@@ -1847,6 +2022,7 @@ impl PdfProcessingService {
 
                 page.compressed_blob_hash = Some(compressed_hash.clone());
                 compressed_count += 1;
+                usable_page_count += 1;
 
                 debug!(
                     "[PdfProcessingService] Page {} compressed: {} -> {} bytes ({:.1}% reduction)",
@@ -1889,11 +2065,11 @@ impl PdfProcessingService {
         )?;
 
         info!(
-            "[PdfProcessingService] Page compression completed for file {}: {} compressed, {} skipped",
-            file_id, compressed_count, skipped_count
+            "[PdfProcessingService] Page compression completed for file {}: {} compressed, {} skipped, {} usable, {} failed",
+            file_id, compressed_count, skipped_count, usable_page_count, failed_page_count
         );
 
-        Ok(())
+        Ok((usable_page_count, failed_page_count))
     }
 
     /// Stage 2: 图片 OCR
@@ -1903,7 +2079,7 @@ impl PdfProcessingService {
         &self,
         file_id: &str,
         blob_hash: &str,
-        mime_type: &str,
+        _mime_type: &str,
         cancel_token: &CancellationToken,
         generation: u64,
     ) -> VfsResult<String> {
@@ -1916,11 +2092,55 @@ impl PdfProcessingService {
                 id: blob_hash.to_string(),
             })?;
 
-        // 读取图片并转为 base64
-        let image_data = tokio::fs::read(&blob_path).await?;
-        let base64_data = base64::engine::general_purpose::STANDARD.encode(&image_data);
-        self.stage_image_ocr_with_base64(file_id, base64_data, mime_type, cancel_token, generation)
-            .await
+        let image_path = blob_path.to_string_lossy().to_string();
+        info!(
+            "[OCR_DIAG] stage_image_ocr START: file_id={}, blob_path={}",
+            file_id, image_path
+        );
+
+        let ocr_text = tokio::time::timeout(
+            Duration::from_secs(IMAGE_OCR_TIMEOUT_SECS),
+            self.llm_manager
+                .call_ocr_free_text_with_fallback(&image_path),
+        )
+        .await
+        .map_err(|_| {
+            warn!(
+                "[OCR_DIAG] OCR fallback chain TIMED OUT for file_id={} after {}s",
+                file_id, IMAGE_OCR_TIMEOUT_SECS
+            );
+            VfsError::Other(format!(
+                "OCR fallback chain timed out after {}s",
+                IMAGE_OCR_TIMEOUT_SECS
+            ))
+        })?
+        .map_err(|e| {
+            warn!(
+                "[OCR_DIAG] OCR fallback chain FAILED for file_id={}: {}",
+                file_id, e
+            );
+            VfsError::Other(format!("OCR fallback chain failed: {}", e))
+        })?;
+
+        if cancel_token.is_cancelled()
+            || self.skip_stale_task_side_effects(
+                file_id,
+                Some(generation),
+                "stage_image_ocr:after_fallback",
+            )
+        {
+            return Ok(String::new());
+        }
+
+        info!(
+            "[OCR_DIAG] OCR fallback chain returned for file_id={}: text_len={}, preview=\"{}\"",
+            file_id,
+            ocr_text.len(),
+            ocr_text.chars().take(100).collect::<String>()
+        );
+
+        self.persist_image_ocr_text(&conn, file_id, &ocr_text)?;
+        Ok(ocr_text)
     }
 
     /// 使用 base64 直接执行图片 OCR（支持 inline 图片）
@@ -1961,25 +2181,58 @@ impl PdfProcessingService {
             file_id, resource_id_check
         );
 
-        // 调用 OCR API
-        use crate::llm_manager::ImagePayload;
         let adapter = self.llm_manager.get_ocr_adapter().await;
         info!(
             "[OCR_DIAG] OCR adapter obtained, calling OCR model for file_id={}",
             file_id
         );
-        // 使用适配器官方 prompt（DeepSeek-OCR → "Free OCR.", PaddleOCR-VL → "OCR:" 等）
-        // 注意：不要追加自定义中文指令，专用 OCR 模型只接受其官方 prompt 格式
-        let prompt = adapter.build_prompt(crate::ocr_adapters::OcrMode::FreeOcr);
-        let image_payload = ImagePayload {
-            mime: mime_type.to_string(),
-            base64: base64_data,
-        };
 
-        let result = self
-            .llm_manager
-            .call_ocr_model_raw_prompt(&prompt, Some(vec![image_payload]))
+        let ocr_text = if adapter.engine_type().is_native_ocr() {
+            use base64::Engine;
+            let image_bytes = base64::engine::general_purpose::STANDARD
+                .decode(&base64_data)
+                .map_err(|e| {
+                    VfsError::Other(format!("Failed to decode image for system OCR: {}", e))
+                })?;
+            tokio::time::timeout(
+                Duration::from_secs(IMAGE_OCR_TIMEOUT_SECS),
+                crate::ocr_adapters::system_ocr::perform_system_ocr(&image_bytes),
+            )
             .await
+            .map_err(|_| {
+                VfsError::Other(format!(
+                    "System OCR timed out after {}s",
+                    IMAGE_OCR_TIMEOUT_SECS
+                ))
+            })?
+            .map_err(|e| VfsError::Other(format!("System OCR failed: {}", e)))?
+        } else {
+            // 调用 OCR API
+            use crate::llm_manager::ImagePayload;
+            // 使用适配器官方 prompt（DeepSeek-OCR → "Free OCR.", PaddleOCR-VL → "OCR:" 等）
+            // 注意：不要追加自定义中文指令，专用 OCR 模型只接受其官方 prompt 格式
+            let prompt = adapter.build_prompt(crate::ocr_adapters::OcrMode::FreeOcr);
+            let image_payload = ImagePayload {
+                mime: mime_type.to_string(),
+                base64: base64_data,
+            };
+
+            let result = tokio::time::timeout(
+                Duration::from_secs(IMAGE_OCR_TIMEOUT_SECS),
+                self.llm_manager
+                    .call_ocr_model_raw_prompt(&prompt, Some(vec![image_payload])),
+            )
+            .await
+            .map_err(|_| {
+                warn!(
+                    "[OCR_DIAG] OCR API call TIMED OUT for file_id={} after {}s",
+                    file_id, IMAGE_OCR_TIMEOUT_SECS
+                );
+                VfsError::Other(format!(
+                    "OCR API call timed out after {}s",
+                    IMAGE_OCR_TIMEOUT_SECS
+                ))
+            })?
             .map_err(|e| {
                 warn!(
                     "[OCR_DIAG] OCR API call FAILED for file_id={}: {}",
@@ -1987,6 +2240,8 @@ impl PdfProcessingService {
                 );
                 VfsError::Other(format!("OCR API call failed: {}", e))
             })?;
+            result.assistant_message
+        };
 
         if cancel_token.is_cancelled()
             || self.skip_stale_task_side_effects(
@@ -1998,7 +2253,6 @@ impl PdfProcessingService {
             return Ok(String::new());
         }
 
-        let ocr_text = result.assistant_message;
         info!(
             "[OCR_DIAG] OCR API returned for file_id={}: text_len={}, preview=\"{}\"",
             file_id,
@@ -2006,18 +2260,25 @@ impl PdfProcessingService {
             ocr_text.chars().take(100).collect::<String>()
         );
 
-        // ★ 2026-02 修复：OCR 返回空文本时不写入数据库
-        // 空字符串会导致 has_ocr_text=true 但 ocr_text_len=0，
-        // 后续 get_image_ocr_text 读取时会判定为 EMPTY 并返回 None，
-        // 最终导致用户选择 OCR 模式但拿不到任何内容。
-        // 不写入空值，让 ocr_text 保持 NULL，后续重试时可以重新触发 OCR。
-        if ocr_text.trim().is_empty() {
+        self.persist_image_ocr_text(&conn, file_id, &ocr_text)?;
+        Ok(ocr_text)
+    }
+
+    fn persist_image_ocr_text(
+        &self,
+        conn: &rusqlite::Connection,
+        file_id: &str,
+        ocr_text: &str,
+    ) -> VfsResult<()> {
+        // OCR 返回空文本时不写入数据库。空字符串会导致 has_ocr_text=true
+        // 但 get_image_ocr_text 读不到可用内容，最终让输入框选择 OCR 模式却拿不到文本。
+        if ocr_text.trim().is_empty() || !VfsChunker::is_text_quality_acceptable(ocr_text) {
             warn!(
-                "[OCR_DIAG] OCR API returned EMPTY text for file_id={}, NOT writing to DB (keeping ocr_text as NULL so retry is possible). \
-                 Possible causes: (1) OCR model does not support vision, (2) API returned empty response, (3) image has no recognizable text",
+                "[OCR_DIAG] OCR returned unusable text for file_id={}, NOT writing to DB (keeping ocr_text as NULL so retry is possible). \
+                 Possible causes: (1) OCR model does not support vision, (2) API returned empty/low-quality response, (3) image has no recognizable text",
                 file_id
             );
-            return Ok(ocr_text);
+            return Ok(());
         }
 
         // 存储 OCR 结果到关联的 resource.ocr_text
@@ -2029,8 +2290,8 @@ impl PdfProcessingService {
             params![ocr_text, file_id],
         )?;
 
-        // ★ 2026-02-13 修复：rows_affected=0 说明 resource_id 映射失败，OCR 文本未持久化
-        // 此时若返回 Ok，调用方会将 'ocr' 加入 ready_modes，但后端查询时找不到数据
+        // rows_affected=0 说明 resource_id 映射失败，OCR 文本未持久化。
+        // 此时必须返回错误，避免调用方把 'ocr' 虚假加入 ready_modes。
         if rows_affected == 0 {
             warn!(
                 "[OCR_DIAG] OCR text NOT persisted: file_id={}, rows_affected=0. \
@@ -2072,7 +2333,7 @@ impl PdfProcessingService {
             }
         }
 
-        Ok(ocr_text)
+        Ok(())
     }
 
     /// 更新数据库中的处理状态（支持媒体类型）
@@ -2290,10 +2551,46 @@ impl PdfProcessingService {
         match result {
             Some((status, progress_json, error, started_at, completed_at)) => {
                 let stage = status.as_deref().unwrap_or("pending");
-                let progress: ProcessingProgress = progress_json
+                let mut progress: ProcessingProgress = progress_json
                     .as_deref()
                     .and_then(|s| serde_json::from_str(s).ok())
                     .unwrap_or_default();
+
+                let has_usable_ocr_text = conn
+                    .query_row(
+                        r#"
+                        SELECT r.ocr_text
+                        FROM files f
+                        LEFT JOIN resources r ON r.id = f.resource_id
+                        WHERE f.id = ?1
+                        "#,
+                        params![file_id],
+                        |row| row.get::<_, Option<String>>(0),
+                    )
+                    .map(|text| {
+                        text.as_deref()
+                            .map(|text| {
+                                !text.trim().is_empty()
+                                    && VfsChunker::is_text_quality_acceptable(text)
+                            })
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(false);
+
+                if has_usable_ocr_text && !progress.ready_modes.contains(&"ocr".to_string()) {
+                    progress.ready_modes.push("ocr".to_string());
+                    if let Ok(progress_json) = serde_json::to_string(&progress) {
+                        if let Err(e) = conn.execute(
+                            "UPDATE files SET processing_progress = ?1, updated_at = datetime('now') WHERE id = ?2",
+                            params![progress_json, file_id],
+                        ) {
+                            warn!(
+                                "[MediaProcessingService] Failed to reconcile OCR ready mode for {}: {}",
+                                file_id, e
+                            );
+                        }
+                    }
+                }
 
                 Ok(Some(ProcessingStatus {
                     file_id: file_id.to_string(),
@@ -2343,11 +2640,25 @@ impl PdfProcessingService {
                     MediaType::Pdf => ProcessingStage::OcrProcessing,
                     MediaType::Image => ProcessingStage::ImageCompression,
                 };
+                let should_force_ocr = s
+                    .progress
+                    .failed_stages
+                    .as_ref()
+                    .map(|issues| {
+                        issues
+                            .iter()
+                            .any(|issue| issue.stage == ProcessingStage::OcrProcessing.as_str())
+                    })
+                    .unwrap_or(false);
 
                 info!(
-                    "[MediaProcessingService] Retrying file {} from stage {:?} (media_type={:?})",
-                    file_id, start_stage, media_type
+                    "[MediaProcessingService] Retrying file {} from stage {:?} (media_type={:?}, force_ocr={})",
+                    file_id, start_stage, media_type, should_force_ocr
                 );
+
+                if should_force_ocr {
+                    self.clear_ocr_for_retry(file_id)?;
+                }
 
                 // 重置状态并重新开始
                 self.update_processing_status(file_id, ProcessingStage::Pending, None, None, None)
@@ -2366,6 +2677,39 @@ impl PdfProcessingService {
                 id: file_id.to_string(),
             }),
         }
+    }
+
+    fn clear_ocr_for_retry(&self, file_id: &str) -> VfsResult<()> {
+        let conn = self.db.get_conn_safe()?;
+        let resource_id: Option<String> = conn
+            .query_row(
+                "SELECT resource_id FROM files WHERE id = ?1",
+                params![file_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| VfsError::Database(format!("Failed to read file resource_id: {}", e)))?
+            .flatten();
+
+        let now = chrono::Utc::now().timestamp_millis();
+
+        conn.execute(
+            "UPDATE files SET ocr_pages_json = NULL, updated_at = ?1 WHERE id = ?2",
+            params![now, file_id],
+        )
+        .map_err(|e| VfsError::Database(format!("Failed to clear file OCR cache: {}", e)))?;
+
+        if let Some(resource_id) = resource_id {
+            conn.execute(
+                "UPDATE resources SET ocr_text = NULL, updated_at = ?1 WHERE id = ?2",
+                params![now, resource_id],
+            )
+            .map_err(|e| {
+                VfsError::Database(format!("Failed to clear resource OCR cache: {}", e))
+            })?;
+        }
+
+        Ok(())
     }
 
     /// 检查是否有运行中的任务
@@ -2516,6 +2860,7 @@ impl PdfProcessingService {
         stage: ProcessingStage,
         media_type: MediaType,
         generation: Option<u64>,
+        failed_stages: Option<Vec<ProcessingIssue>>,
     ) {
         if self.skip_stale_task_side_effects(file_id, generation, "emit_completed") {
             return;
@@ -2527,6 +2872,7 @@ impl PdfProcessingService {
                 ready_modes: ready_modes.clone(),
                 stage: stage.as_str().to_string(),
                 media_type: media_type.as_str().to_string(),
+                failed_stages,
             };
 
             // 发送新统一事件
@@ -2745,13 +3091,26 @@ impl PdfProcessingService {
             .filter(|t| !t.trim().is_empty())
         };
 
+        let blob_hash_for_unit = if media_type == MediaType::Image {
+            let conn = self.db.get_conn_safe()?;
+            VfsFileRepo::ensure_image_blob_with_conn(&conn, self.db.blobs_dir(), file_id)?
+                .or_else(|| file.blob_hash.clone())
+        } else {
+            file.blob_hash.clone()
+        };
+
         let unit_input = UnitBuildInput {
             resource_id: resource_id.clone(),
             resource_type,
             data: None,
             ocr_text: ocr_text_for_unit,
             ocr_pages_json: file.ocr_pages_json.clone(),
-            blob_hash: file.blob_hash.clone(),
+            blob_hash: blob_hash_for_unit,
+            image_mime_type: if media_type == MediaType::Image {
+                file.mime_type.clone()
+            } else {
+                None
+            },
             page_count: file.page_count,
             extracted_text: file.extracted_text.clone(),
             preview_json: file.preview_json.clone(),
@@ -2799,8 +3158,7 @@ impl PdfProcessingService {
                     "[PdfProcessingService] Failed to create LanceStore for file {}: {}",
                     file_id, e
                 );
-                // LanceStore 创建失败，跳过向量索引但不中断流水线
-                return Ok(());
+                return Err(e);
             }
         };
 
@@ -2815,7 +3173,7 @@ impl PdfProcessingService {
                     "[PdfProcessingService] Failed to create VfsFullIndexingService for file {}: {}",
                     file_id, e
                 );
-                return Ok(());
+                return Err(e);
             }
         };
 
@@ -2842,7 +3200,7 @@ impl PdfProcessingService {
                     "[PdfProcessingService] Vector indexing failed for file {}: {}",
                     file_id, e
                 );
-                // 索引失败不中断流水线，文件仍可使用
+                return Err(e);
             }
         }
 
@@ -3049,6 +3407,21 @@ impl PdfProcessingService {
 
                     match ocr_result {
                         Ok(blocks) => {
+                            let page_text = blocks
+                                .iter()
+                                .map(|block| block.text.as_str())
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            if page_text.trim().is_empty()
+                                || !VfsChunker::is_text_quality_acceptable(&page_text)
+                            {
+                                failed_pages.lock().await.push((
+                                    page_index,
+                                    "OCR returned unusable text".to_string(),
+                                ));
+                                return;
+                            }
+
                             let completed = completed_counter.fetch_add(1, Ordering::SeqCst) + 1;
                             all_results.lock().await.push(OcrPageResult {
                                 page_index,

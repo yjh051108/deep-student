@@ -65,4 +65,68 @@ describe('vfsPdfProcessingApi normalization', () => {
       readyModes: ['text', 'image'],
     });
   });
+
+  it('normalizes snake_case progress fields from the backend', async () => {
+    invokeMock.mockResolvedValueOnce({
+      statuses: {
+        att_3: {
+          stage: 'ocr_processing',
+          progress: {
+            stage: 'ocr_processing',
+            current_page: 3,
+            total_pages: 8,
+            percent: 62,
+            ready_modes: ['text'],
+            media_type: 'pdf',
+          },
+        },
+      },
+    });
+
+    const result = await getBatchPdfProcessingStatus(['att_3']);
+
+    expect(result.statuses.att_3).toEqual({
+      stage: 'ocr_processing',
+      currentPage: 3,
+      totalPages: 8,
+      percent: 62,
+      readyModes: ['text'],
+      mediaType: 'pdf',
+    });
+  });
+
+  it('preserves completed_with_issues with failed stages and usable modes', async () => {
+    invokeMock.mockResolvedValueOnce({
+      fileId: 'att_4',
+      stage: 'completed_with_issues',
+      progress: {
+        stage: 'completed_with_issues',
+        percent: 100,
+        ready_modes: ['text'],
+        failed_stages: [
+          {
+            stage: 'vector_indexing',
+            message: 'embedding failed',
+            retriable: true,
+          },
+        ],
+      },
+      error: null,
+    });
+
+    const result = await getPdfProcessingStatus('att_4');
+
+    expect(result).toEqual({
+      stage: 'completed_with_issues',
+      percent: 100,
+      readyModes: ['text'],
+      failedStages: [
+        {
+          stage: 'vector_indexing',
+          message: 'embedding failed',
+          retriable: true,
+        },
+      ],
+    });
+  });
 });

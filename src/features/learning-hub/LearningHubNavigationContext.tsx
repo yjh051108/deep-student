@@ -26,6 +26,38 @@ interface GlobalNavigationState {
 }
 
 const globalNavigationRef: { current: GlobalNavigationState | null } = { current: null };
+const finderNavigationRef: { current: GlobalNavigationState | null } = { current: null };
+const localBackRef: { current: Pick<GlobalNavigationState, 'canGoBack' | 'goBack'> | null } = { current: null };
+
+function publishGlobalLearningHubNavigation() {
+  const finderState = finderNavigationRef.current;
+  if (!finderState) {
+    globalNavigationRef.current = null;
+    window.dispatchEvent(new CustomEvent(LEARNING_HUB_NAV_STATE_CHANGED, { detail: null }));
+    return;
+  }
+
+  const localBack = localBackRef.current;
+  const state: GlobalNavigationState = localBack?.canGoBack
+    ? { ...finderState, canGoBack: true, goBack: localBack.goBack }
+    : finderState;
+
+  globalNavigationRef.current = state;
+  window.dispatchEvent(new CustomEvent(LEARNING_HUB_NAV_STATE_CHANGED, { detail: state }));
+}
+
+export function setLearningHubLocalBackHandler(
+  state: Pick<GlobalNavigationState, 'canGoBack' | 'goBack'> | null
+): () => void {
+  localBackRef.current = state;
+  publishGlobalLearningHubNavigation();
+  return () => {
+    if (localBackRef.current === state) {
+      localBackRef.current = null;
+      publishGlobalLearningHubNavigation();
+    }
+  };
+}
 
 /**
  * 获取全局导航状态（供 App.tsx 使用）
@@ -140,10 +172,8 @@ export const LearningHubNavigationProvider: React.FC<{ children: React.ReactNode
       goBack,
       goForward,
     };
-    globalNavigationRef.current = state;
-
-    // 触发自定义事件通知 App.tsx
-    window.dispatchEvent(new CustomEvent(LEARNING_HUB_NAV_STATE_CHANGED, { detail: state }));
+    finderNavigationRef.current = state;
+    publishGlobalLearningHubNavigation();
   }, [canGoBack, canGoForward, goBack, goForward]);
 
   const value = useMemo<LearningHubNavigationContextValue>(() => ({

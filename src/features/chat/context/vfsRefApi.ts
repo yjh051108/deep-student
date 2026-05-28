@@ -596,6 +596,8 @@ export interface UploadAttachmentParams {
   base64Content: string;
   type?: 'image' | 'file';
   folderId?: string;
+  sessionId?: string;
+  groupId?: string | null;
 }
 
 /**
@@ -652,6 +654,8 @@ export async function uploadAttachment(
       base64Content: params.base64Content,
       attachmentType: params.type,  // ★ 后端字段名是 attachment_type -> camelCase 为 attachmentType
       folderId: params.folderId,
+      sessionId: params.sessionId,
+      groupId: params.groupId || undefined,
     },
   });
 

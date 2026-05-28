@@ -83,6 +83,7 @@ impl ChatV2Pipeline {
         let session_id = request.session_id.clone();
         let user_content = request.content.clone();
         let mut options = request.options.clone().unwrap_or_default();
+        self.enrich_group_scope_for_options(&session_id, &mut options)?;
 
         // === 0. 智能 vision_quality 计算（与单变体路径保持一致）===
         // 如果用户没有显式指定，根据图片数量和来源自动选择压缩策略
@@ -1615,10 +1616,10 @@ impl ChatV2Pipeline {
             options.group_id.as_deref(),
             options.group_name.as_deref(),
         );
-        let mut scope_paths = vec![crate::memory::GLOBAL_MEMORY_FOLDER.to_string()];
-        if let Some(path) = &topic_root {
-            scope_paths.push(path.clone());
-        }
+        let scope_paths = crate::memory::visible_scope_roots(
+            options.group_id.as_deref(),
+            options.group_name.as_deref(),
+        );
 
         let cat_mgr = MemoryCategoryManager::new(vfs_db.clone(), self.llm_manager.clone());
         let categories = cat_mgr
@@ -1634,8 +1635,15 @@ impl ChatV2Pipeline {
                 crate::memory::GLOBAL_MEMORY_FOLDER,
             ) {
                 global_sections.push(section);
-            } else if let Some(topic_root) = &topic_root {
-                if crate::memory::is_folder_path_within_scope(&cat_name, topic_root) {
+            } else {
+                let topic_roots = crate::memory::topic_memory_roots(
+                    options.group_id.as_deref(),
+                    options.group_name.as_deref(),
+                );
+                if topic_roots
+                    .iter()
+                    .any(|root| crate::memory::is_folder_path_within_scope(&cat_name, root))
+                {
                     topic_sections.push(section);
                 }
             }
@@ -2280,7 +2288,7 @@ impl ChatV2Pipeline {
         user_content: String,
         user_attachments: Vec<AttachmentInput>,
         shared_context: SharedContext,
-        options: SendOptions,
+        mut options: SendOptions,
         cancel_token: CancellationToken,
         chat_v2_state: Option<Arc<super::super::state::ChatV2State>>,
     ) -> ChatV2Result<()> {
@@ -2293,6 +2301,8 @@ impl ChatV2Pipeline {
             message_id,
             variants.len()
         );
+
+        self.enrich_group_scope_for_options(&session_id, &mut options)?;
 
         if variants.is_empty() {
             return Err(ChatV2Error::Validation(
@@ -2476,7 +2486,7 @@ impl ChatV2Pipeline {
         user_content: String,
         user_attachments: Vec<AttachmentInput>,
         shared_context: SharedContext,
-        options: SendOptions,
+        mut options: SendOptions,
         cancel_token: CancellationToken,
     ) -> ChatV2Result<()> {
         log::info!(
@@ -2486,6 +2496,8 @@ impl ChatV2Pipeline {
             variant_id,
             model_id
         );
+
+        self.enrich_group_scope_for_options(&session_id, &mut options)?;
 
         // 创建事件发射器
         let emitter = Arc::new(super::super::events::ChatV2EventEmitter::new(

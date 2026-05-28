@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tracing::{debug, error, info, warn};
 
-use crate::llm_manager::LLMManager;
+use crate::llm_manager::{ImagePayload, LLMManager};
 use crate::models::PdfOcrTextBlock;
 use crate::vfs::database::VfsDatabase;
 use crate::vfs::embedding_service::{
@@ -19,8 +19,8 @@ use crate::vfs::ocr_utils::{join_ocr_pages_text, parse_ocr_pages_json, OCR_FAILE
 use crate::vfs::pdf_processing_service::{OcrPageResult, OcrPagesJson};
 use crate::vfs::repos::{
     embedding_dim_repo, index_segment_repo, index_unit_repo, VfsBlobRepo, VfsEmbedding,
-    VfsIndexStateRepo, VfsIndexingConfigRepo, VfsNoteRepo, VfsResourceRepo, INDEX_STATE_INDEXED,
-    INDEX_STATE_INDEXING, MODALITY_MULTIMODAL, MODALITY_TEXT,
+    VfsFileRepo, VfsIndexStateRepo, VfsIndexingConfigRepo, VfsNoteRepo, VfsResourceRepo,
+    INDEX_STATE_INDEXED, INDEX_STATE_INDEXING, MODALITY_MULTIMODAL, MODALITY_TEXT,
 };
 use crate::vfs::types::{PdfPreviewJson, VfsResource, VfsResourceType};
 use crate::vfs::unit_builder::UnitBuildInput;
@@ -1834,26 +1834,26 @@ impl VfsFullIndexingService {
         self.app_handle = Some(app_handle);
     }
 
-    /// 恢复崩溃导致卡在 indexing 状态的记录。
-    ///
-    /// 应用重启后，数据库中可能存在处于 `indexing` 中间状态的记录：
-    /// - `vfs_index_units.text_state = 'indexing'`
-    /// - `vfs_index_units.mm_state = 'indexing'`
-    /// - `resources.index_state = 'indexing'`
-    ///
-    /// 这些记录不会被 pending 队列重新拾取。此方法将它们重置为 pending。
-    pub fn recover_stuck_indexing(db: &VfsDatabase) -> VfsResult<usize> {
+    fn recover_stuck_indexing_impl(
+        db: &VfsDatabase,
+        stale_after_ms: Option<i64>,
+    ) -> VfsResult<usize> {
         let conn = db.get_conn_safe()?;
         let now = chrono::Utc::now().timestamp_millis();
+        let cutoff = stale_after_ms.map(|ms| now - ms);
+        let stale_filter = " AND (?2 IS NULL OR updated_at IS NULL OR updated_at < ?2)";
 
         let text_units = conn
             .execute(
-                r#"UPDATE vfs_index_units
+                &format!(
+                    r#"UPDATE vfs_index_units
                    SET text_state = 'pending',
                        text_error = 'recovered: interrupted by crash',
                        updated_at = ?1
-                   WHERE text_state = 'indexing'"#,
-                rusqlite::params![now],
+                   WHERE text_state = 'indexing'{}"#,
+                    stale_filter
+                ),
+                rusqlite::params![now, cutoff],
             )
             .unwrap_or_else(|e| {
                 log::warn!(
@@ -1865,12 +1865,15 @@ impl VfsFullIndexingService {
 
         let mm_units = conn
             .execute(
-                r#"UPDATE vfs_index_units
+                &format!(
+                    r#"UPDATE vfs_index_units
                    SET mm_state = 'pending',
                        mm_error = 'recovered: interrupted by crash',
                        updated_at = ?1
-                   WHERE mm_state = 'indexing'"#,
-                rusqlite::params![now],
+                   WHERE mm_state = 'indexing'{}"#,
+                    stale_filter
+                ),
+                rusqlite::params![now, cutoff],
             )
             .unwrap_or_else(|e| {
                 log::warn!(
@@ -1882,12 +1885,15 @@ impl VfsFullIndexingService {
 
         let resources = conn
             .execute(
-                r#"UPDATE resources
+                &format!(
+                    r#"UPDATE resources
                    SET index_state = 'pending',
                        index_error = 'recovered: interrupted by crash',
                        updated_at = ?1
-                   WHERE index_state = 'indexing'"#,
-                rusqlite::params![now],
+                   WHERE index_state = 'indexing'{}"#,
+                    stale_filter
+                ),
+                rusqlite::params![now, cutoff],
             )
             .unwrap_or_else(|e| {
                 log::warn!(
@@ -1912,6 +1918,22 @@ impl VfsFullIndexingService {
         Ok(total)
     }
 
+    /// 恢复崩溃导致卡在 indexing 状态的记录。
+    ///
+    /// 应用重启后，数据库中可能存在处于 `indexing` 中间状态的记录：
+    /// - `vfs_index_units.text_state = 'indexing'`
+    /// - `vfs_index_units.mm_state = 'indexing'`
+    /// - `resources.index_state = 'indexing'`
+    ///
+    /// 这些记录不会被 pending 队列重新拾取。此方法将它们重置为 pending。
+    pub fn recover_stuck_indexing(db: &VfsDatabase) -> VfsResult<usize> {
+        Self::recover_stuck_indexing_impl(db, None)
+    }
+
+    pub fn recover_stale_indexing(db: &VfsDatabase, stale_after_ms: i64) -> VfsResult<usize> {
+        Self::recover_stuck_indexing_impl(db, Some(stale_after_ms))
+    }
+
     /// 同步资源到 vfs_index_units 表（VFS 统一索引架构）
     ///
     /// 此方法在索引资源前调用，确保 Unit 记录存在
@@ -1927,15 +1949,30 @@ impl VfsFullIndexingService {
         let input = match resource.resource_type {
             VfsResourceType::File | VfsResourceType::Image => {
                 let conn = self.db.get_conn_safe()?;
-                let (blob_hash, page_count, extracted_text, preview_json, ocr_pages_json): (
+                let (
+                    mut blob_hash,
+                    page_count,
+                    extracted_text,
+                    preview_json,
+                    ocr_pages_json,
+                    image_mime_type,
+                ): (
                     Option<String>,
                     Option<i32>,
                     Option<String>,
                     Option<String>,
                     Option<String>,
+                    Option<String>,
                 ) = conn
                     .query_row(
-                        "SELECT blob_hash, page_count, extracted_text, preview_json, ocr_pages_json FROM files WHERE resource_id = ?1",
+                        r#"
+                        SELECT f.blob_hash, f.page_count, f.extracted_text, f.preview_json, f.ocr_pages_json, f.mime_type
+                        FROM files f
+                        LEFT JOIN resources r ON r.id = ?1
+                        WHERE f.resource_id = ?1 OR (r.source_id IS NOT NULL AND f.id = r.source_id)
+                        ORDER BY CASE WHEN f.resource_id = ?1 THEN 0 ELSE 1 END, f.updated_at DESC
+                        LIMIT 1
+                        "#,
                         rusqlite::params![resource_id],
                         |row| {
                             Ok((
@@ -1944,11 +1981,29 @@ impl VfsFullIndexingService {
                                 row.get(2)?,
                                 row.get(3)?,
                                 row.get(4)?,
+                                row.get(5)?,
                             ))
                         },
                     )
                     .optional()?
-                    .unwrap_or((None, None, None, None, None));
+                    .unwrap_or((None, None, None, None, None, None));
+
+                if resource.resource_type == VfsResourceType::Image
+                    || image_mime_type
+                        .as_deref()
+                        .map(|mime| mime.starts_with("image/"))
+                        .unwrap_or(false)
+                {
+                    if let Some(repaired_hash) =
+                        VfsFileRepo::ensure_image_blob_for_resource_with_conn(
+                            &conn,
+                            self.db.blobs_dir(),
+                            resource_id,
+                        )?
+                    {
+                        blob_hash = Some(repaired_hash);
+                    }
+                }
 
                 let ocr_text: Option<String> = conn
                     .query_row(
@@ -1967,6 +2022,7 @@ impl VfsFullIndexingService {
                     ocr_text,
                     ocr_pages_json,
                     blob_hash,
+                    image_mime_type,
                     page_count,
                     extracted_text,
                     preview_json,
@@ -1979,6 +2035,7 @@ impl VfsFullIndexingService {
                 ocr_text: None,      // OCR 文本需要从其他来源获取
                 ocr_pages_json: None,
                 blob_hash: Some(resource.hash),
+                image_mime_type: None,
                 page_count: None,
                 extracted_text: None,
                 preview_json: None,
@@ -2698,91 +2755,25 @@ impl VfsFullIndexingService {
     /// - `Ok(None)`: 无法进行 OCR（如无图片数据、无预渲染页面）
     /// - `Err`: OCR 调用失败
     async fn try_auto_ocr(&self, resource: &VfsResource) -> VfsResult<Option<String>> {
-        use crate::llm_manager::ImagePayload;
-
         match resource.resource_type {
             VfsResourceType::Image => {
-                // 图片 OCR：从 attachments 或 blobs 获取图片数据
-                let conn = self.db.get_conn_safe()?;
-
-                // 尝试从 source_id 获取 attachment
-                let image_data: Option<(String, String)> = if let Some(source_id) =
-                    resource.source_id.as_deref()
-                {
-                    if source_id.starts_with("att_") {
+                let file_id = resource
+                    .source_id
+                    .as_deref()
+                    .filter(|id| id.starts_with("att_") || id.starts_with("file_"))
+                    .map(str::to_string)
+                    .or_else(|| {
+                        let conn = self.db.get_conn_safe().ok()?;
                         conn.query_row(
-                            "SELECT blob_hash, mime_type FROM files WHERE id = ?1",
-                            rusqlite::params![source_id],
-                            |row| {
-                                Ok((
-                                    row.get::<_, Option<String>>(0)?,
-                                    row.get::<_, Option<String>>(1)?,
-                                ))
-                            },
+                            "SELECT id FROM files WHERE resource_id = ?1",
+                            rusqlite::params![resource.id],
+                            |row| row.get::<_, String>(0),
                         )
                         .ok()
-                        .and_then(|(hash, mime)| match (hash, mime) {
-                            (Some(h), Some(m)) => Some((h, m)),
-                            _ => None,
-                        })
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
+                    });
 
-                if let Some((blob_hash, mime_type)) = image_data {
-                    // 从 blobs 表读取图片数据
-                    let blob_data: Option<Vec<u8>> = conn
-                        .query_row(
-                            "SELECT data FROM blobs WHERE hash = ?1",
-                            rusqlite::params![blob_hash],
-                            |row| row.get(0),
-                        )
-                        .ok();
-
-                    if let Some(data) = blob_data {
-                        let base64 = base64::Engine::encode(
-                            &base64::engine::general_purpose::STANDARD,
-                            &data,
-                        );
-                        let image_payload = ImagePayload {
-                            mime: mime_type.clone(),
-                            base64,
-                        };
-
-                        info!(
-                            "[try_auto_ocr] Calling OCR for image {} ({})",
-                            resource.id, mime_type
-                        );
-
-                        let result = self
-                            .llm_manager
-                            .call_ocr_model_raw_prompt(
-                                "Convert the document to markdown.",
-                                Some(vec![image_payload]),
-                            )
-                            .await
-                            .map_err(|e| VfsError::Other(format!("OCR 调用失败: {}", e)))?;
-
-                        let ocr_text = result.assistant_message.trim().to_string();
-
-                        if !ocr_text.is_empty() {
-                            // 缓存到 resources.ocr_text
-                            if let Err(e) = conn.execute(
-                                "UPDATE resources SET ocr_text = ?1 WHERE id = ?2",
-                                rusqlite::params![ocr_text, resource.id],
-                            ) {
-                                log::warn!(
-                                    "[VfsIndexing] Failed to cache ocr_text for resource {}: {}",
-                                    resource.id,
-                                    e
-                                );
-                            }
-                            return Ok(Some(ocr_text));
-                        }
-                    }
+                if let Some(file_id) = file_id {
+                    return self.try_auto_ocr_single_image(resource, &file_id).await;
                 }
 
                 Ok(None)
@@ -3194,6 +3185,56 @@ impl VfsFullIndexingService {
         }
     }
 
+    fn load_single_image_payload(
+        &self,
+        file_id: &str,
+    ) -> VfsResult<Option<(String, ImagePayload)>> {
+        let conn = self.db.get_conn_safe()?;
+        let blobs_dir = self.db.blobs_dir();
+        let blob_hash = VfsFileRepo::ensure_image_blob_with_conn(&conn, blobs_dir, file_id)?;
+
+        let Some(blob_hash) = blob_hash else {
+            return Ok(None);
+        };
+
+        let mime_type: String = conn
+            .query_row(
+                "SELECT mime_type FROM files WHERE id = ?1",
+                rusqlite::params![file_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten()
+            .unwrap_or_else(|| "image/png".to_string());
+
+        let blob_path = match VfsBlobRepo::get_blob_path_with_conn(&conn, blobs_dir, &blob_hash)? {
+            Some(path) => path,
+            None => {
+                warn!(
+                    "[VfsFullIndexingService] Blob path not found for image {}: {}",
+                    file_id, blob_hash
+                );
+                return Ok(None);
+            }
+        };
+
+        let data = std::fs::read(&blob_path).map_err(|e| {
+            VfsError::Io(format!(
+                "Failed to read image blob file {:?}: {}",
+                blob_path, e
+            ))
+        })?;
+        let base64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &data);
+
+        Ok(Some((
+            mime_type.clone(),
+            ImagePayload {
+                mime: mime_type,
+                base64,
+            },
+        )))
+    }
+
     /// File 类型的单图 OCR（非 PDF 图片文件）
     ///
     /// 从 files 表获取 blob_hash → 读取 blob 数据 → 调用 OCR 模型
@@ -3206,54 +3247,8 @@ impl VfsFullIndexingService {
         resource: &VfsResource,
         file_id: &str,
     ) -> VfsResult<Option<String>> {
-        use crate::llm_manager::ImagePayload;
-
         // 在 .await 之前完成所有 DB 读取，然后 drop conn
-        let ocr_input: Option<(String, ImagePayload)> = {
-            let conn = self.db.get_conn_safe()?;
-            let file_data: Option<(String, String)> = conn
-                .query_row(
-                    "SELECT blob_hash, mime_type FROM files WHERE id = ?1",
-                    rusqlite::params![file_id],
-                    |row| {
-                        Ok((
-                            row.get::<_, Option<String>>(0)?,
-                            row.get::<_, Option<String>>(1)?,
-                        ))
-                    },
-                )
-                .ok()
-                .and_then(|(hash, mime)| match (hash, mime) {
-                    (Some(h), Some(m)) => Some((h, m)),
-                    _ => None,
-                });
-
-            if let Some((blob_hash, mime_type)) = file_data {
-                let blob_data: Option<Vec<u8>> = conn
-                    .query_row(
-                        "SELECT data FROM blobs WHERE hash = ?1",
-                        rusqlite::params![blob_hash],
-                        |row| row.get(0),
-                    )
-                    .ok();
-
-                if let Some(data) = blob_data {
-                    let base64 =
-                        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &data);
-                    Some((
-                        mime_type.clone(),
-                        ImagePayload {
-                            mime: mime_type,
-                            base64,
-                        },
-                    ))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        }; // conn dropped here, before .await
+        let ocr_input = self.load_single_image_payload(file_id)?;
 
         if let Some((mime_type, image_payload)) = ocr_input {
             info!(
@@ -3683,19 +3678,41 @@ impl VfsFullIndexingService {
                 let success = Arc::clone(&success_count);
                 let fail = Arc::clone(&fail_count);
                 async move {
-                    match self.index_resource(&resource_id, None, None).await {
-                        Ok((count, _)) => {
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(10 * 60),
+                        self.index_resource(&resource_id, None, None),
+                    )
+                    .await
+                    {
+                        Ok(Ok((count, _))) => {
                             success.fetch_add(1, Ordering::Relaxed);
                             info!(
                                 "[VfsFullIndexingService] Indexed {} ({} chunks)",
                                 resource_id, count
                             );
                         }
-                        Err(e) => {
+                        Ok(Err(e)) => {
                             warn!(
                                 "[VfsFullIndexingService] Failed to index {}: {}",
                                 resource_id, e
                             );
+                            fail.fetch_add(1, Ordering::Relaxed);
+                        }
+                        Err(_) => {
+                            let timeout_msg =
+                                "索引单个资源超时，请稍后重试或检查 OCR/嵌入模型连接";
+                            warn!(
+                                "[VfsFullIndexingService] Timed out indexing {} after 600s",
+                                resource_id
+                            );
+                            if let Err(e) =
+                                VfsIndexStateRepo::mark_failed(&self.db, &resource_id, timeout_msg)
+                            {
+                                warn!(
+                                    "[VfsFullIndexingService] Failed to mark timed-out resource {} as failed: {}",
+                                    resource_id, e
+                                );
+                            }
                             fail.fetch_add(1, Ordering::Relaxed);
                         }
                     }

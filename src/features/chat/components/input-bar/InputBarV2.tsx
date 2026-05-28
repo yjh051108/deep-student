@@ -27,11 +27,13 @@ import { QUEUE_HARD_CAP } from '../../core/types/queue';
 import { usePdfPageRefs } from './usePdfPageRefs';
 import { useDialogControl } from '@/contexts/DialogControlContext';
 import { isBuiltinServer } from '@/mcp/builtinMcpServer';
+import { getErrorMessage } from '@/utils/errorUtils';
 import type { ModelInfo } from '../../utils/parseModelMentions';
 import { isMultiModelSelectEnabled } from '@/config/featureFlags';
 import { inferCapabilities, inferInputContextBudget } from '@/utils/modelCapabilities';
 import { deriveContextWindowUsage } from './contextWindowUsage';
-import { groupCache } from '../../core/store/groupCache';
+import { groupCache, setGroupCache } from '../../core/store/groupCache';
+import type { SessionGroup } from '../../types/group';
 import {
   deepSeekV32EffortToBudget,
   normalizeDeepSeekV4Effort,
@@ -625,13 +627,37 @@ export const InputBarV2: React.FC<InputBarV2Props> = memo(
       () => getModelProviderLabel(activeRuntimeModelInfo),
       [activeRuntimeModelInfo]
     );
+    const [groupScopeVersion, setGroupScopeVersion] = useState(0);
+    useEffect(() => {
+      const refreshTargetGroup = async () => {
+        if (!groupId) return;
+        try {
+          const group = await invoke<SessionGroup | null>('chat_v2_get_group', { groupId });
+          if (group) {
+            setGroupCache(group);
+            setGroupScopeVersion((version) => version + 1);
+          }
+        } catch (error) {
+          console.warn('[InputBarV2] Failed to refresh group resource scope:', getErrorMessage(error));
+        }
+      };
+
+      void refreshTargetGroup();
+      const onGroupsUpdated = () => {
+        setGroupScopeVersion((version) => version + 1);
+        void refreshTargetGroup();
+      };
+      window.addEventListener('chat-v2:groups-updated', onGroupsUpdated);
+      return () => window.removeEventListener('chat-v2:groups-updated', onGroupsUpdated);
+    }, [groupId]);
+
     const targetFolderId = useMemo(() => {
       if (!groupId) return undefined;
       return groupCache
         .get(groupId)
         ?.pinnedResourceIds
         ?.find((id) => typeof id === 'string' && id.startsWith('fld_'));
-    }, [groupId]);
+    }, [groupId, groupScopeVersion]);
     const runtimeModelIconId = useMemo(() => {
       return (
         activeRuntimeModelInfo?.model ||
@@ -1026,6 +1052,7 @@ export const InputBarV2: React.FC<InputBarV2Props> = memo(
         onClearAttachments={clearAttachments}
         onFilesUpload={onFilesUpload}
         targetFolderId={targetFolderId}
+        groupId={groupId}
         onSetPanelState={setPanelState}
         // UI 配置
         placeholder={placeholder}

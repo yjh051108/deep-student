@@ -49,12 +49,13 @@ const FLOWTOKEN_SUPPORTED_BLOCK_TYPES = new Set<MarkdownBlock['type']>([
 function shouldUseFullFlowTokenEffect(
   block: MarkdownBlock,
   isStreamingBlock: boolean,
+  hasExtendedMarkdownFeatures: boolean,
 ): boolean {
   if (!isStreamingBlock || !FLOWTOKEN_SUPPORTED_BLOCK_TYPES.has(block.type)) {
     return false;
   }
 
-  return true;
+  return canUseDirectFlowTokenMarkdown(block.raw, hasExtendedMarkdownFeatures);
 }
 
 // ─── MemoizedBlock ───────────────────────────────────────────────────────────
@@ -76,9 +77,15 @@ const MemoizedBlock = memo<MemoizedBlockProps>(({
   blockId,
   messageId,
 }) => {
+  const hasExtendedMarkdownFeatures = Boolean(
+    onCitationClick ||
+    resolveCitationImage ||
+    (extraRemarkPlugins && extraRemarkPlugins.length > 0),
+  );
   const shouldUseFlowToken = shouldUseFullFlowTokenEffect(
     block,
     isActive && isStreaming,
+    hasExtendedMarkdownFeatures,
   );
   const motionLayer = isActive && isStreaming ? 'inline' : 'block';
 
@@ -220,7 +227,6 @@ export const StreamingBlockRenderer: React.FC<StreamingBlockRendererProps> = mem
     resolveCitationImage ||
     (extraRemarkPlugins && extraRemarkPlugins.length > 0),
   );
-
   const allRemarkPlugins = useMemo(() => {
     const highlightPlugins = (!isStreaming && Array.isArray(stableHighlightSpans) && stableHighlightSpans.length > 0)
       ? [makeUncertaintyHighlightPlugin(mainContent, stableHighlightSpans, t('renderer.uncertain'))]

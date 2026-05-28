@@ -132,7 +132,12 @@ impl UnitBuilder for ImageBuilder {
                 resource_id: input.resource_id.clone(),
                 unit_index: 0,
                 image_blob_hash: input.blob_hash.clone(),
-                image_mime_type: Some("image/png".to_string()),
+                image_mime_type: Some(
+                    input
+                        .image_mime_type
+                        .clone()
+                        .unwrap_or_else(|| "image/png".to_string()),
+                ),
                 text_content,
                 text_source,
             }],
@@ -317,7 +322,7 @@ impl UnitBuilder for FileBuilder {
                 resource_id: input.resource_id.clone(),
                 unit_index: 0,
                 image_blob_hash: input.blob_hash.clone(),
-                image_mime_type: None,
+                image_mime_type: input.image_mime_type.clone(),
                 text_content: input.extracted_text.clone(),
                 text_source: Some("native".to_string()),
             });
@@ -334,7 +339,7 @@ impl UnitBuilder for FileBuilder {
                 resource_id: input.resource_id.clone(),
                 unit_index: 0,
                 image_blob_hash: input.blob_hash.clone(),
-                image_mime_type: None,
+                image_mime_type: input.image_mime_type.clone(),
                 text_content: input.extracted_text.clone(),
                 text_source: Some("native".to_string()),
             });
@@ -343,7 +348,7 @@ impl UnitBuilder for FileBuilder {
                 resource_id: input.resource_id.clone(),
                 unit_index: 0,
                 image_blob_hash: input.blob_hash.clone(),
-                image_mime_type: None,
+                image_mime_type: input.image_mime_type.clone(),
                 text_content: input.ocr_text.clone(),
                 text_source: Some("ocr".to_string()),
             });
@@ -353,7 +358,7 @@ impl UnitBuilder for FileBuilder {
                 resource_id: input.resource_id.clone(),
                 unit_index: 0,
                 image_blob_hash: input.blob_hash.clone(),
-                image_mime_type: None,
+                image_mime_type: input.image_mime_type.clone(),
                 text_content: None,
                 text_source: None,
             });
@@ -396,7 +401,7 @@ impl UnitBuilder for AttachmentBuilder {
                     resource_id: input.resource_id.clone(),
                     unit_index: 0,
                     image_blob_hash: input.blob_hash.clone(),
-                    image_mime_type: None,
+                    image_mime_type: input.image_mime_type.clone(),
                     text_content: input.extracted_text.clone(),
                     text_source: Some("native".to_string()),
                 });
@@ -413,7 +418,7 @@ impl UnitBuilder for AttachmentBuilder {
                     resource_id: input.resource_id.clone(),
                     unit_index: 0,
                     image_blob_hash: input.blob_hash.clone(),
-                    image_mime_type: None,
+                    image_mime_type: input.image_mime_type.clone(),
                     text_content: input.extracted_text.clone(),
                     text_source: Some("native".to_string()),
                 });
@@ -422,7 +427,7 @@ impl UnitBuilder for AttachmentBuilder {
                     resource_id: input.resource_id.clone(),
                     unit_index: 0,
                     image_blob_hash: input.blob_hash.clone(),
-                    image_mime_type: None,
+                    image_mime_type: input.image_mime_type.clone(),
                     text_content: input.ocr_text.clone(),
                     text_source: Some("ocr".to_string()),
                 });
@@ -431,7 +436,7 @@ impl UnitBuilder for AttachmentBuilder {
                     resource_id: input.resource_id.clone(),
                     unit_index: 0,
                     image_blob_hash: input.blob_hash.clone(),
-                    image_mime_type: None,
+                    image_mime_type: input.image_mime_type.clone(),
                     text_content: None,
                     text_source: None,
                 });
@@ -565,6 +570,7 @@ mod tests {
             ocr_text: None,
             ocr_pages_json: None,
             blob_hash: None,
+            image_mime_type: None,
             page_count: None,
             extracted_text: None,
             preview_json: None,
@@ -589,6 +595,7 @@ mod tests {
             ocr_text: None,
             ocr_pages_json: Some(r#"["Page 1 text", null, "Page 3 text"]"#.to_string()),
             blob_hash: None,
+            image_mime_type: None,
             page_count: Some(3),
             extracted_text: None,
             preview_json: None,
