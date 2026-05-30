@@ -862,6 +862,13 @@ export const IndexStatusView: React.FC = () => {
     disabled: groupedResources.disabled?.length ?? 0,
     stale: summary?.resources.filter(resource => resource.isStale).length ?? 0,
   }), [summary, groupedResources]);
+  const imageIndexStats = useMemo(() => {
+    const resources = summary?.resources.filter(resource => MULTIMODAL_RESOURCE_TYPES.has(resource.resourceType)) ?? [];
+    return {
+      total: resources.length,
+      indexed: resources.filter(resource => normalizeIndexState(resource.mmIndexState) === 'indexed').length,
+    };
+  }, [summary]);
 
   // ========== 计算进度百分比 ==========
   const progressPercentage = useMemo(() => {
@@ -891,7 +898,7 @@ export const IndexStatusView: React.FC = () => {
       )}>
         <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <span className={cn("shrink-0 font-medium leading-none", compact ? "text-sm" : "text-sm")}>{t('indexStatus.progress.textIndexProgress')}</span>
-        {renderCount(summary.indexedCount, summary.totalResources)}
+        {renderCount(displayIndexStats.indexed, displayIndexStats.total)}
 
         {imageIndexReady ? (
           <Image className="h-3.5 w-3.5 shrink-0 text-foreground" />
@@ -900,7 +907,7 @@ export const IndexStatusView: React.FC = () => {
         )}
         <span className={cn("shrink-0 text-xs leading-none", imageIndexReady ? "font-medium text-foreground" : "text-muted-foreground/55")}>{t('indexStatus.progress.imageIndexProgress')}</span>
         {imageIndexReady
-          ? renderCount(summary.mmIndexedCount, summary.mmTotalResources)
+          ? renderCount(imageIndexStats.indexed, imageIndexStats.total)
           : (
             <span className="min-w-0 truncate text-xs leading-none text-muted-foreground/55">
               {imageIndexMessage}
@@ -1463,10 +1470,10 @@ export const IndexStatusView: React.FC = () => {
 
           {/* 第二行：状态徽章独占一行 */}
           <div className="flex flex-wrap gap-1.5">
-            {renderStatBadge('indexed', summary.indexedCount, selectedState === 'indexed', () => setSelectedState(s => s === 'indexed' ? 'all' : 'indexed'))}
-            {summary.pendingCount > 0 && renderStatBadge('pending', summary.pendingCount, selectedState === 'pending', () => setSelectedState(s => s === 'pending' ? 'all' : 'pending'))}
-            {summary.failedCount > 0 && renderStatBadge('failed', summary.failedCount, selectedState === 'failed', () => setSelectedState(s => s === 'failed' ? 'all' : 'failed'))}
-            {summary.disabledCount > 0 && renderStatBadge('disabled', summary.disabledCount, selectedState === 'disabled', () => setSelectedState(s => s === 'disabled' ? 'all' : 'disabled'))}
+            {renderStatBadge('indexed', displayIndexStats.indexed, selectedState === 'indexed', () => setSelectedState(s => s === 'indexed' ? 'all' : 'indexed'))}
+            {displayIndexStats.pending > 0 && renderStatBadge('pending', displayIndexStats.pending, selectedState === 'pending', () => setSelectedState(s => s === 'pending' ? 'all' : 'pending'))}
+            {displayIndexStats.failed > 0 && renderStatBadge('failed', displayIndexStats.failed, selectedState === 'failed', () => setSelectedState(s => s === 'failed' ? 'all' : 'failed'))}
+            {displayIndexStats.disabled > 0 && renderStatBadge('disabled', displayIndexStats.disabled, selectedState === 'disabled', () => setSelectedState(s => s === 'disabled' ? 'all' : 'disabled'))}
           </div>
 
           {/* 第三行：操作按钮独占一行 */}
@@ -1613,11 +1620,11 @@ export const IndexStatusView: React.FC = () => {
 
             {/* 状态过滤徽章 - 紧凑排列 */}
             <div className="flex flex-wrap gap-2">
-              {renderStatBadge('indexed', summary.indexedCount, selectedState === 'indexed', () => setSelectedState(s => s === 'indexed' ? 'all' : 'indexed'))}
-              {summary.pendingCount > 0 && renderStatBadge('pending', summary.pendingCount, selectedState === 'pending', () => setSelectedState(s => s === 'pending' ? 'all' : 'pending'))}
-              {summary.indexingCount > 0 && renderStatBadge('indexing', summary.indexingCount, selectedState === 'indexing', () => setSelectedState(s => s === 'indexing' ? 'all' : 'indexing'))}
-              {summary.failedCount > 0 && renderStatBadge('failed', summary.failedCount, selectedState === 'failed', () => setSelectedState(s => s === 'failed' ? 'all' : 'failed'))}
-              {summary.disabledCount > 0 && renderStatBadge('disabled', summary.disabledCount, selectedState === 'disabled', () => setSelectedState(s => s === 'disabled' ? 'all' : 'disabled'))}
+              {renderStatBadge('indexed', displayIndexStats.indexed, selectedState === 'indexed', () => setSelectedState(s => s === 'indexed' ? 'all' : 'indexed'))}
+              {displayIndexStats.pending > 0 && renderStatBadge('pending', displayIndexStats.pending, selectedState === 'pending', () => setSelectedState(s => s === 'pending' ? 'all' : 'pending'))}
+              {displayIndexStats.indexing > 0 && renderStatBadge('indexing', displayIndexStats.indexing, selectedState === 'indexing', () => setSelectedState(s => s === 'indexing' ? 'all' : 'indexing'))}
+              {displayIndexStats.failed > 0 && renderStatBadge('failed', displayIndexStats.failed, selectedState === 'failed', () => setSelectedState(s => s === 'failed' ? 'all' : 'failed'))}
+              {displayIndexStats.disabled > 0 && renderStatBadge('disabled', displayIndexStats.disabled, selectedState === 'disabled', () => setSelectedState(s => s === 'disabled' ? 'all' : 'disabled'))}
             </div>
 
             {/* 动态提示与进度 */}
