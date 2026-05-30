@@ -59,6 +59,7 @@ pub mod paper_save_executor; // 🆕 论文保存+引用格式化工具执行器
 pub mod pptx_executor; // 🆕 PPTX 演示文稿读写工具执行器（ppt-rs）
 pub mod qbank_executor; // 🆕 智能题目集工具执行器
 pub mod registry;
+pub mod resource_scope;
 pub mod session_executor; // 🆕 会话管理工具执行器（AI 自主管理会话/分组/标签）
 pub mod skills_executor; // 🆕 Skills 工具执行器（渐进披露架构）
 pub mod sleep_executor;

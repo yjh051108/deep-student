@@ -33,7 +33,6 @@ use tokio::sync::oneshot;
 use super::canvas_tool_names;
 use super::executor::{ExecutionContext, ToolExecutor, ToolSensitivity};
 use super::{is_canvas_tool, strip_canvas_builtin_prefix};
-use crate::chat_v2::events::event_types;
 use crate::chat_v2::types::{ToolCall, ToolResultInfo};
 
 // ============================================================================

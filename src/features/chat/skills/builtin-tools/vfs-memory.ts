@@ -25,6 +25,18 @@ export const vfsMemorySkill: SkillDefinition = {
 
 你拥有持久记忆能力，可以跨对话记住用户信息。**主动使用记忆**是提供优质个性化服务的关键。
 
+## 课题隔离规则
+
+你始终工作在当前课题上下文中。默认只能访问两类记忆：
+- 当前课题记忆：只属于当前课程/项目/论文/实验/资料/bug/学习进度
+- 全局记忆：跨课题长期有效的用户偏好、身份背景、稳定交流习惯、长期目标
+
+不得主动搜索、枚举、读取或引用其它课题的记忆。写入记忆时必须选择 \`scope\`：
+- \`scope: "global"\`：用户长期偏好、身份背景、稳定交流习惯、长期目标，例如“以后都用中文回答”“用户偏好表格总结”
+- \`scope: "topic"\`：当前课题相关信息，例如“微机原理卡在中断章节”“tinymyo 项目正在调试蓝牙”
+
+如果不确定，默认使用 \`scope: "topic"\`。
+
 ## 三种记忆类型
 
 ### 1. 原子事实（fact，默认）
@@ -132,6 +144,7 @@ export const vfsMemorySkill: SkillDefinition = {
         type: 'object',
         properties: {
           note_id: { type: 'string', description: '可选：指定 note_id 则按 ID 更新/追加该记忆' },
+          scope: { type: 'string', enum: ['topic', 'global'], description: '记忆作用域。topic=当前课题记忆（默认）；global=跨课题长期记忆。' },
           folder: { type: 'string', description: '记忆分类文件夹路径，如 "偏好"、"偏好/个人背景"、"经历"、"经历/时间节点"、"经历/学科状态"。留空表示存储在记忆根目录。' },
           title: { type: 'string', description: '【必填】记忆标题（事实的关键词概括，如"数学弱项"、"高考日期"、"格式偏好-表格"）' },
           content: { type: 'string', description: '【必填】一个关于用户的简短陈述句，≤50字。示例："高三理科生" / "数学是弱项科目" / "偏好表格形式的总结"。禁止写入学科知识、解题过程、知识点总结。' },
@@ -151,10 +164,6 @@ export const vfsMemorySkill: SkillDefinition = {
           content: { type: 'string', description: '可选：新的记忆内容（Markdown 格式）' },
         },
         required: ['note_id'],
-        anyOf: [
-          { required: ['title'] },
-          { required: ['content'] },
-        ],
       },
     },
     {
@@ -175,6 +184,7 @@ export const vfsMemorySkill: SkillDefinition = {
         type: 'object',
         properties: {
           folder: { type: 'string', description: '记忆分类文件夹路径。fact: "偏好/..."、"经历/..."；study: "知识/..."；note: "经验/..."。留空表示存储在记忆根目录。' },
+          scope: { type: 'string', enum: ['topic', 'global'], description: '记忆作用域。topic=当前课题记忆（默认）；global=跨课题长期记忆，仅用于用户偏好/身份/稳定习惯/长期目标。' },
           title: { type: 'string', description: '【必填】记忆标题（fact: 事实关键词；study: 知识点/词汇名；note: 方法论概括）' },
           content: { type: 'string', description: '【必填】记忆内容。fact：关于用户的简短陈述句。study：用户要求保存的学习内容。note：用户要求保存的经验、方法论、技巧。' },
           memory_type: { type: 'string', enum: ['fact', 'study', 'note'], description: '记忆类型。fact（默认）：关于用户的原子事实。study：用户明确要求保存的学习内容（词汇/知识点/错题要点）。note：用户明确要求保存的经验笔记/方法论/学习技巧。' },
@@ -191,6 +201,7 @@ export const vfsMemorySkill: SkillDefinition = {
         type: 'object',
         properties: {
           folder: { type: 'string', description: '默认文件夹路径，单条 item 未指定时使用。' },
+          scope: { type: 'string', enum: ['topic', 'global'], description: '默认作用域。topic=当前课题记忆（默认）；global=跨课题长期记忆。' },
           memory_type: { type: 'string', enum: ['fact', 'study', 'note'], description: '默认记忆类型；批量保存学习内容时建议用 study。', default: 'study' },
           memory_purpose: { type: 'string', enum: ['internalized', 'memorized', 'supplementary', 'systemic'], description: '默认记忆目的。' },
           items: {
@@ -202,6 +213,7 @@ export const vfsMemorySkill: SkillDefinition = {
                 title: { type: 'string' },
                 content: { type: 'string' },
                 folder: { type: 'string' },
+                scope: { type: 'string', enum: ['topic', 'global'] },
                 memory_type: { type: 'string', enum: ['fact', 'study', 'note'] },
                 memory_purpose: { type: 'string', enum: ['internalized', 'memorized', 'supplementary', 'systemic'] },
               },
@@ -219,6 +231,7 @@ export const vfsMemorySkill: SkillDefinition = {
         type: 'object',
         properties: {
           folder: { type: 'string', description: '相对于记忆根目录的文件夹路径，留空表示根目录' },
+          scope: { type: 'string', enum: ['topic', 'global'], description: '筛选作用域。留空时返回当前课题 + 全局；topic 只返回当前课题；global 只返回全局。' },
           limit: { type: 'integer', description: '返回数量限制，默认100条', default: 100, minimum: 1, maximum: 500 },
           offset: { type: 'integer', description: '分页偏移量，默认0', default: 0, minimum: 0 },
         },

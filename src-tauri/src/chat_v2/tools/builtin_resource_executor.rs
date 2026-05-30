@@ -9,7 +9,7 @@
 //! 该执行器通过 VfsDatabase 直接访问 DSTU 数据层，
 //! 为 LLM 提供主动读取用户学习资源的能力。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -19,6 +19,7 @@ use serde_json::{json, Value};
 
 use super::arg_utils::get_json_array_arg;
 use super::executor::{ExecutionContext, ToolExecutor, ToolSensitivity};
+use super::resource_scope;
 use super::strip_tool_namespace;
 use crate::chat_v2::events::event_types;
 use crate::chat_v2::types::{ToolCall, ToolResultInfo};
@@ -33,8 +34,8 @@ use crate::utils::text::safe_truncate_chars;
 use crate::vfs::repos::embedding_repo::VfsIndexStateRepo;
 use crate::vfs::{
     VfsBlobRepo, VfsCreateMindMapParams, VfsDatabase, VfsEssayRepo, VfsExamRepo, VfsFileRepo,
-    VfsMindMapRepo, VfsNoteRepo, VfsResourceRepo, VfsTextbookRepo, VfsTranslationRepo,
-    VfsUpdateMindMapParams,
+    VfsFolderRepo, VfsMindMapRepo, VfsNoteRepo, VfsResourceRepo, VfsTextbookRepo,
+    VfsTranslationRepo, VfsUpdateMindMapParams,
 };
 
 // ============================================================================
@@ -138,6 +139,59 @@ impl BuiltinResourceExecutor {
         } else {
             None
         }
+    }
+
+    fn item_ids_in_topic_scope(
+        ctx: &ExecutionContext,
+        vfs_db: &Arc<VfsDatabase>,
+    ) -> Result<HashSet<String>, String> {
+        let mut allowed = HashSet::new();
+        for root in resource_scope::current_topic_folder_roots(ctx) {
+            let folder_ids = VfsFolderRepo::get_folder_ids_recursive(vfs_db, &root)
+                .map_err(|e| format!("Failed to resolve topic folder scope: {}", e))?;
+            for folder_id in folder_ids {
+                let items = VfsFolderRepo::list_items_by_folder(vfs_db, Some(&folder_id))
+                    .map_err(|e| format!("Failed to list topic folder items: {}", e))?;
+                allowed.extend(items.into_iter().map(|item| item.item_id));
+            }
+        }
+        Ok(allowed)
+    }
+
+    fn pinned_resource_matches(
+        vfs_db: &Arc<VfsDatabase>,
+        pinned_id: &str,
+        requested_id: &str,
+        read_id: &str,
+    ) -> bool {
+        let pinned_id = pinned_id.trim();
+        if pinned_id.is_empty() || pinned_id.starts_with("fld_") {
+            return false;
+        }
+        if pinned_id == requested_id || pinned_id == read_id {
+            return true;
+        }
+        if pinned_id.starts_with("res_") {
+            if let Ok(Some(resource)) = VfsResourceRepo::get_resource(vfs_db, pinned_id) {
+                if resource.id == requested_id || resource.id == read_id {
+                    return true;
+                }
+                if resource.source_id.as_deref().map_or(false, |source_id| {
+                    source_id == requested_id || source_id == read_id
+                }) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn ensure_read_target_in_scope(
+        ctx: &ExecutionContext,
+        vfs_db: &Arc<VfsDatabase>,
+        target: &ResolvedReadTarget,
+    ) -> Result<(), String> {
+        resource_scope::ensure_item_in_scope(ctx, vfs_db, &target.requested_id, &target.read_id)
     }
 
     fn is_supported_read_id(id: &str) -> bool {
@@ -576,11 +630,9 @@ impl BuiltinResourceExecutor {
             .get("type")
             .and_then(|v| v.as_str())
             .unwrap_or("all");
-        let folder_id = call
-            .arguments
-            .get("folder_id")
-            .and_then(|v| v.as_str())
-            .map(String::from);
+        let folder_id = resource_scope::normalize_folder_arg(call.arguments.get("folder_id"));
+        let scoped_folder_id =
+            resource_scope::resolve_scoped_folder_id(ctx, vfs_db, folder_id, "resource_list")?;
         let search = call
             .arguments
             .get("search")
@@ -601,14 +653,14 @@ impl BuiltinResourceExecutor {
 
         log::debug!(
             "[BuiltinResourceExecutor] resource_list: type={}, folder_id={:?}, search={:?}, limit={}, favorites_only={}",
-            type_filter, folder_id, search, limit, favorites_only
+            type_filter, scoped_folder_id, search, limit, favorites_only
         );
 
         let start_time = Instant::now();
 
         // 构建列表选项
         let options = DstuListOptions {
-            folder_id: folder_id.or_else(|| Some("root".to_string())),
+            folder_id: scoped_folder_id.clone(),
             types: if type_filter == "all" {
                 None
             } else {
@@ -668,6 +720,8 @@ impl BuiltinResourceExecutor {
             "items": items,
             "count": items.len(),
             "durationMs": duration,
+            "scope": if resource_scope::is_topic_scoped(ctx) { "topic" } else { "all" },
+            "folderId": scoped_folder_id,
         });
 
         // ★ 2026-02-09: 如果有子查询错误，在返回中标记部分成功
@@ -1087,6 +1141,7 @@ impl BuiltinResourceExecutor {
         let (raw_resource_id, id_arg_source) = Self::pick_resource_read_id(&call.arguments)
             .ok_or("Missing resource identifier. 请传入 resource_id/readResourceId/sourceId/resourceId，并可先调用 resource_list 或 unified_search 获取可用 ID。")?;
         let resolved = Self::resolve_read_target(vfs_db, &raw_resource_id)?;
+        Self::ensure_read_target_in_scope(ctx, vfs_db, &resolved)?;
         let include_metadata = call
             .arguments
             .get("include_metadata")
@@ -1509,11 +1564,9 @@ impl BuiltinResourceExecutor {
                     .filter_map(|v| v.as_str().map(String::from))
                     .collect()
             });
-        let folder_id = call
-            .arguments
-            .get("folder_id")
-            .and_then(|v| v.as_str())
-            .map(String::from);
+        let folder_id = resource_scope::normalize_folder_arg(call.arguments.get("folder_id"));
+        let scoped_folder_id =
+            resource_scope::resolve_scoped_folder_id(ctx, vfs_db, folder_id, "resource_search")?;
         // ★ L-028: 后端 clamp，防止 LLM/前端传入过大或非法值
         let top_k = call
             .arguments
@@ -1524,14 +1577,14 @@ impl BuiltinResourceExecutor {
 
         log::debug!(
             "[BuiltinResourceExecutor] resource_search: query={}, types={:?}, folder_id={:?}, top_k={}",
-            query, types, folder_id, top_k
+            query, types, scoped_folder_id, top_k
         );
 
         let start_time = Instant::now();
 
         // 构建搜索选项
         let options = DstuListOptions {
-            folder_id,
+            folder_id: scoped_folder_id.clone(),
             types: types.as_ref().and_then(|ts| {
                 let parsed: Vec<DstuNodeType> = ts
                     .iter()
@@ -1593,6 +1646,8 @@ impl BuiltinResourceExecutor {
             "items": items,
             "count": items.len(),
             "durationMs": duration,
+            "scope": if resource_scope::is_topic_scoped(ctx) { "topic" } else { "all" },
+            "folderId": scoped_folder_id,
         }))
     }
 
@@ -1684,18 +1739,9 @@ impl BuiltinResourceExecutor {
         let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
 
         // 解析参数
-        let parent_id = call
-            .arguments
-            .get("parent_id")
-            .and_then(|v| v.as_str())
-            .map(|s| {
-                if s == "root" || s.is_empty() {
-                    None
-                } else {
-                    Some(s.to_string())
-                }
-            })
-            .unwrap_or(None);
+        let parent_id = resource_scope::normalize_folder_arg(call.arguments.get("parent_id"));
+        let scoped_parent_id =
+            resource_scope::resolve_scoped_folder_id(ctx, vfs_db, parent_id, "folder_list")?;
         let include_count = call
             .arguments
             .get("include_count")
@@ -1709,7 +1755,7 @@ impl BuiltinResourceExecutor {
 
         log::debug!(
             "[BuiltinResourceExecutor] folder_list: parent_id={:?}, include_count={}, recursive={}",
-            parent_id,
+            scoped_parent_id,
             include_count,
             recursive
         );
@@ -1721,11 +1767,12 @@ impl BuiltinResourceExecutor {
 
         let folders = if recursive {
             // 递归获取所有子文件夹
-            self.get_folders_recursive(vfs_db, parent_id.as_deref(), include_count)?
+            self.get_folders_recursive(vfs_db, scoped_parent_id.as_deref(), include_count)?
         } else {
             // 只获取直接子文件夹
-            let folder_list = VfsFolderRepo::list_folders_by_parent(vfs_db, parent_id.as_deref())
-                .map_err(|e| format!("Failed to list folders: {}", e))?;
+            let folder_list =
+                VfsFolderRepo::list_folders_by_parent(vfs_db, scoped_parent_id.as_deref())
+                    .map_err(|e| format!("Failed to list folders: {}", e))?;
 
             folder_list
                 .into_iter()
@@ -1759,11 +1806,14 @@ impl BuiltinResourceExecutor {
 
         Ok(json!({
             "success": true,
-            "parent_id": parent_id.unwrap_or_else(|| "root".to_string()),
+            "parent_id": scoped_parent_id
+                .clone()
+                .unwrap_or_else(|| "root".to_string()),
             "folders": folders,
             "count": folders.len(),
             "recursive": recursive,
             "durationMs": duration,
+            "scope": if resource_scope::is_topic_scoped(ctx) { "topic" } else { "all" },
         }))
     }
 
@@ -1998,11 +2048,14 @@ impl BuiltinResourceExecutor {
         // 🔧 修复：将 LLM 可能使用的错误字段名（name/label/title）映射到 text
         let content = Self::fix_mindmap_content(&raw_content);
 
-        let folder_id = call
-            .arguments
-            .get("folder_id")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty() && *s != "root"); // "root" 归一化为 None（根目录 folder_id 实际是 NULL）
+        let explicit_folder_id =
+            resource_scope::normalize_folder_arg(call.arguments.get("folder_id"));
+        let scoped_folder_id = resource_scope::resolve_scoped_folder_id_for_write(
+            ctx,
+            vfs_db,
+            explicit_folder_id,
+            "mindmap_create",
+        )?;
         let default_view = call
             .arguments
             .get("default_view")
@@ -2017,7 +2070,7 @@ impl BuiltinResourceExecutor {
 
         log::info!(
             "[BuiltinResourceExecutor] mindmap_create: title={}, folder_id={:?}, raw_len={}, fixed_len={}",
-            title, folder_id, raw_content.len(), content.len()
+            title, scoped_folder_id, raw_content.len(), content.len()
         );
         let raw_preview = if raw_content.chars().count() > 500 {
             format!("{}...", safe_truncate_chars(&raw_content, 500))
@@ -2050,8 +2103,9 @@ impl BuiltinResourceExecutor {
         };
 
         // 创建知识导图
-        let mindmap = VfsMindMapRepo::create_mindmap_in_folder(vfs_db, params, folder_id)
-            .map_err(|e| format!("Failed to create mindmap: {}", e))?;
+        let mindmap =
+            VfsMindMapRepo::create_mindmap_in_folder(vfs_db, params, scoped_folder_id.as_deref())
+                .map_err(|e| format!("Failed to create mindmap: {}", e))?;
 
         let duration = start_time.elapsed().as_millis() as u64;
 
@@ -2108,6 +2162,8 @@ impl BuiltinResourceExecutor {
                 "updatedAt": mindmap.updated_at,
             },
             "durationMs": duration,
+            "scope": if resource_scope::is_topic_scoped(ctx) { "topic" } else { "all" },
+            "folderId": scoped_folder_id,
         });
 
         if let Some(ref vid) = version_id {
@@ -2427,7 +2483,10 @@ impl BuiltinResourceExecutor {
         // ★ 2026-02 修复：发射 DSTU watch 事件，通知 Learning Hub 自动刷新列表
         {
             let path = format!("/mindmaps/{}", mindmap_id);
-            emit_watch_event(&ctx.window, DstuWatchEvent::deleted(&path));
+            emit_watch_event(
+                &ctx.window,
+                DstuWatchEvent::deleted(&path).with_resource(mindmap_id, "mindmap"),
+            );
         }
 
         let mut result = json!({

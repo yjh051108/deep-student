@@ -118,6 +118,14 @@ pub struct ExecutionContext {
     pub rag_top_k: Option<u32>,
     /// 🆕 RAG 启用重排序设置（从 UI chatParams 传递）
     pub rag_enable_reranking: Option<bool>,
+    /// 当前会话分组/课题 ID，用于工具默认作用域隔离
+    pub group_id: Option<String>,
+    /// 当前会话分组/课题名称，用于工具默认作用域生成用户可读路径
+    pub group_name: Option<String>,
+    /// 当前课题绑定资源 ID 列表（可为 DSTU sourceId 或 VFS resourceId）
+    pub group_pinned_resource_ids: Vec<String>,
+    /// 当前多 Agent 工作区 ID，用于 workspace_* 工具默认作用域
+    pub workspace_id: Option<String>,
     /// 🆕 PDF 处理服务（用于论文保存后触发 OCR/压缩 Pipeline）
     pub pdf_processing_service: Option<Arc<PdfProcessingService>>,
 }
@@ -157,6 +165,10 @@ impl ExecutionContext {
             cancellation_token: None,
             rag_top_k: None,
             rag_enable_reranking: None,
+            group_id: None,
+            group_name: None,
+            group_pinned_resource_ids: Vec::new(),
+            workspace_id: None,
             pdf_processing_service: None,
         }
     }
@@ -405,6 +417,55 @@ impl ExecutionContext {
     pub fn with_rag_config(mut self, top_k: Option<u32>, enable_reranking: Option<bool>) -> Self {
         self.rag_top_k = top_k;
         self.rag_enable_reranking = enable_reranking;
+        self
+    }
+
+    pub fn with_group_scope(
+        mut self,
+        group_id: Option<String>,
+        group_name: Option<String>,
+        pinned_resource_ids: Option<Vec<String>>,
+    ) -> Self {
+        self.group_id = group_id.and_then(|id| {
+            let trimmed = id.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+        self.group_name = group_name.and_then(|name| {
+            let trimmed = name.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+        self.group_pinned_resource_ids = pinned_resource_ids
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|id| {
+                let trimmed = id.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            })
+            .collect();
+        self
+    }
+
+    pub fn with_workspace_id(mut self, workspace_id: Option<String>) -> Self {
+        self.workspace_id = workspace_id.and_then(|id| {
+            let trimmed = id.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
         self
     }
 

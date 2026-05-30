@@ -6,8 +6,8 @@ use std::sync::LazyLock;
 use tokio::sync::Mutex;
 
 use super::executor::{ExecutionContext, ToolExecutor, ToolSensitivity};
+use super::resource_scope;
 use super::strip_tool_namespace;
-use crate::chat_v2::events::event_types;
 use crate::chat_v2::types::{ToolCall, ToolResultInfo};
 use crate::models::{
     Difficulty as ModelsDifficulty, ExamCardPreview, ExamSheetPreviewPage, ExamSheetPreviewResult,
@@ -19,6 +19,7 @@ use crate::vfs::repos::{
     QuestionStatus, SourceType as RepoSourceType, UpdateQuestionParams, VfsExamRepo,
     VfsQuestionRepo,
 };
+use crate::vfs::types::VfsExamSheet;
 
 static QBANK_WRITE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
@@ -118,6 +119,62 @@ impl QBankExecutor {
         Ok(all)
     }
 
+    fn ensure_exam_in_scope(
+        ctx: &ExecutionContext,
+        vfs_db: &std::sync::Arc<crate::vfs::database::VfsDatabase>,
+        exam: &VfsExamSheet,
+    ) -> Result<(), String> {
+        let requested_id = exam.resource_id.as_deref().unwrap_or(&exam.id);
+        resource_scope::ensure_item_in_scope(ctx, vfs_db, requested_id, &exam.id)
+    }
+
+    fn ensure_exam_id_in_scope(
+        ctx: &ExecutionContext,
+        vfs_db: &std::sync::Arc<crate::vfs::database::VfsDatabase>,
+        session_id: &str,
+    ) -> Result<(), String> {
+        let exam = VfsExamRepo::get_exam_sheet(vfs_db, session_id)
+            .map_err(|e| format!("Failed to get exam sheet: {}", e))?
+            .ok_or("Exam sheet not found")?;
+        Self::ensure_exam_in_scope(ctx, vfs_db, &exam)
+    }
+
+    fn list_visible_exams(
+        ctx: &ExecutionContext,
+        vfs_db: &std::sync::Arc<crate::vfs::database::VfsDatabase>,
+        search: Option<&str>,
+    ) -> Result<Vec<VfsExamSheet>, String> {
+        let total = VfsExamRepo::count_exam_sheets(vfs_db, search)
+            .map_err(|e| format!("Failed to count exam sheets: {}", e))?;
+        if total == 0 {
+            return Ok(Vec::new());
+        }
+
+        let exams = VfsExamRepo::list_exam_sheets(vfs_db, search, total, 0)
+            .map_err(|e| format!("Failed to list exam sheets: {}", e))?;
+        if !resource_scope::is_topic_scoped(ctx) {
+            return Ok(exams);
+        }
+
+        let allowed_item_ids = resource_scope::item_ids_in_topic_scope(ctx, vfs_db)?;
+        let pinned_resource_ids = resource_scope::current_topic_pinned_resource_ids(ctx);
+        Ok(exams
+            .into_iter()
+            .filter(|exam| {
+                let requested_id = exam.resource_id.as_deref().unwrap_or(&exam.id);
+                allowed_item_ids.contains(&exam.id)
+                    || pinned_resource_ids.iter().any(|pinned_id| {
+                        resource_scope::pinned_resource_matches(
+                            vfs_db,
+                            pinned_id,
+                            requested_id,
+                            &exam.id,
+                        )
+                    })
+            })
+            .collect())
+    }
+
     /// 列出所有题目集（不需要 session_id）
     async fn execute_list(&self, call: &ToolCall, ctx: &ExecutionContext) -> Result<Value, String> {
         let limit = Self::read_bounded_u32(&call.arguments, "limit", 20, 1, 500);
@@ -130,10 +187,13 @@ impl QBankExecutor {
             .unwrap_or(true);
 
         let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
-        let total = VfsExamRepo::count_exam_sheets(vfs_db, search)
-            .map_err(|e| format!("Failed to count exam sheets: {}", e))?;
-        let exams = VfsExamRepo::list_exam_sheets(vfs_db, search, limit, offset)
-            .map_err(|e| format!("Failed to list exam sheets: {}", e))?;
+        let visible_exams = Self::list_visible_exams(ctx, vfs_db, search)?;
+        let total = visible_exams.len() as u32;
+        let exams: Vec<VfsExamSheet> = visible_exams
+            .into_iter()
+            .skip(offset as usize)
+            .take(limit as usize)
+            .collect();
 
         let question_banks: Vec<Value> = exams
             .iter()
@@ -234,6 +294,7 @@ impl QBankExecutor {
             "question_banks": question_banks,
             "limit": limit,
             "offset": offset,
+            "scope": if resource_scope::is_topic_scoped(ctx) { "topic" } else { "all" },
         }))
     }
 
@@ -262,6 +323,8 @@ impl QBankExecutor {
             });
         let page = Self::read_bounded_u32(&call.arguments, "page", 1, 1, u32::MAX);
         let page_size = Self::read_bounded_u32(&call.arguments, "page_size", 20, 1, 500);
+        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
+        Self::ensure_exam_id_in_scope(ctx, vfs_db, session_id)?;
 
         // 🆕 优先使用 QuestionBankService
         if let Some(service) = &ctx.question_bank_service {
@@ -322,7 +385,6 @@ impl QBankExecutor {
         }
 
         // 回退：解析 preview_json
-        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
         let exam = VfsExamRepo::get_exam_sheet(vfs_db, session_id)
             .map_err(|e| format!("Failed to get exam sheet: {}", e))?
             .ok_or("Exam sheet not found")?;
@@ -407,6 +469,8 @@ impl QBankExecutor {
             .get("card_id")
             .and_then(|v| v.as_str())
             .ok_or("Missing 'card_id' parameter")?;
+        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
+        Self::ensure_exam_id_in_scope(ctx, vfs_db, session_id)?;
 
         // 🆕 优先使用 QuestionBankService
         if let Some(service) = &ctx.question_bank_service {
@@ -449,7 +513,6 @@ impl QBankExecutor {
         }
 
         // 回退：解析 preview_json
-        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
         let exam = VfsExamRepo::get_exam_sheet(vfs_db, session_id)
             .map_err(|e| format!("Failed to get exam sheet: {}", e))?
             .ok_or("Exam sheet not found")?;
@@ -512,6 +575,8 @@ impl QBankExecutor {
             return Err("答案内容过长（上限 50000 字符）".to_string());
         }
         let is_correct_override = call.arguments.get("is_correct").and_then(|v| v.as_bool());
+        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
+        Self::ensure_exam_id_in_scope(ctx, vfs_db, session_id)?;
 
         // 🆕 优先使用 QuestionBankService
         if let Some(service) = &ctx.question_bank_service {
@@ -539,7 +604,6 @@ impl QBankExecutor {
         }
 
         // 回退：使用 preview_json
-        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
         let exam = VfsExamRepo::get_exam_sheet(vfs_db, session_id)
             .map_err(|e| format!("Failed to get exam sheet: {}", e))?
             .ok_or("Exam sheet not found")?;
@@ -652,6 +716,8 @@ impl QBankExecutor {
             .get("card_id")
             .and_then(|v| v.as_str())
             .ok_or("Missing 'card_id' parameter")?;
+        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
+        Self::ensure_exam_id_in_scope(ctx, vfs_db, session_id)?;
 
         // 优先使用 QuestionBankService
         if let Some(service) = &ctx.question_bank_service {
@@ -725,7 +791,6 @@ impl QBankExecutor {
             }
         }
 
-        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
         let exam = VfsExamRepo::get_exam_sheet(vfs_db, session_id)
             .map_err(|e| format!("Failed to get exam sheet: {}", e))?
             .ok_or("Exam sheet not found")?;
@@ -808,6 +873,8 @@ impl QBankExecutor {
             .get("session_id")
             .and_then(|v| v.as_str())
             .ok_or("Missing 'session_id' parameter")?;
+        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
+        Self::ensure_exam_id_in_scope(ctx, vfs_db, session_id)?;
 
         // 优先使用 QuestionBankService
         if let Some(service) = &ctx.question_bank_service {
@@ -839,7 +906,6 @@ impl QBankExecutor {
             }
         }
 
-        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
         let exam = VfsExamRepo::get_exam_sheet(vfs_db, session_id)
             .map_err(|e| format!("Failed to get exam sheet: {}", e))?
             .ok_or("Exam sheet not found")?;
@@ -903,6 +969,8 @@ impl QBankExecutor {
             .arguments
             .get("current_card_id")
             .and_then(|v| v.as_str());
+        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
+        Self::ensure_exam_id_in_scope(ctx, vfs_db, session_id)?;
 
         // 优先使用 QuestionBankService
         if let Some(service) = &ctx.question_bank_service {
@@ -972,7 +1040,6 @@ impl QBankExecutor {
             };
         }
 
-        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
         let exam = VfsExamRepo::get_exam_sheet(vfs_db, session_id)
             .map_err(|e| format!("Failed to get exam sheet: {}", e))?
             .ok_or("Exam sheet not found")?;
@@ -1066,6 +1133,8 @@ impl QBankExecutor {
             .get("card_ids")
             .and_then(|v| v.as_array())
             .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect());
+        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
+        Self::ensure_exam_id_in_scope(ctx, vfs_db, session_id)?;
 
         // 优先使用 QuestionBankService
         if let Some(service) = &ctx.question_bank_service {
@@ -1098,7 +1167,6 @@ impl QBankExecutor {
             }
         }
 
-        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
         let exam = VfsExamRepo::get_exam_sheet(vfs_db, session_id)
             .map_err(|e| format!("Failed to get exam sheet: {}", e))?
             .ok_or("Exam sheet not found")?;
@@ -1162,18 +1230,16 @@ impl QBankExecutor {
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
         let filter_status = call.arguments.get("filter_status").and_then(|v| v.as_str());
+        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
+        Self::ensure_exam_id_in_scope(ctx, vfs_db, session_id)?;
 
         // 优先使用 QuestionBankService
         if let Some(service) = &ctx.question_bank_service {
-            let exam_name = if let Some(vfs_db) = &ctx.vfs_db {
-                VfsExamRepo::get_exam_sheet(vfs_db, session_id)
-                    .ok()
-                    .flatten()
-                    .and_then(|exam| exam.exam_name)
-                    .unwrap_or_else(|| "题目集".to_string())
-            } else {
-                "题目集".to_string()
-            };
+            let exam_name = VfsExamRepo::get_exam_sheet(vfs_db, session_id)
+                .ok()
+                .flatten()
+                .and_then(|exam| exam.exam_name)
+                .unwrap_or_else(|| "题目集".to_string());
             let status_enum: Option<Vec<QuestionStatus>> = filter_status
                 .and_then(|s| serde_json::from_value(serde_json::json!(s)).ok())
                 .map(|v| vec![v]);
@@ -1300,7 +1366,6 @@ impl QBankExecutor {
             return Ok(result);
         }
 
-        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
         let exam = VfsExamRepo::get_exam_sheet(vfs_db, session_id)
             .map_err(|e| format!("Failed to get exam sheet: {}", e))?
             .ok_or("Exam sheet not found")?;
@@ -1402,6 +1467,8 @@ impl QBankExecutor {
             .get("variant_type")
             .and_then(|v| v.as_str())
             .unwrap_or("similar");
+        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
+        Self::ensure_exam_id_in_scope(ctx, vfs_db, session_id)?;
 
         // 优先使用 QuestionBankService
         if let Some(service) = &ctx.question_bank_service {
@@ -1441,7 +1508,6 @@ impl QBankExecutor {
             }
         }
 
-        let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
         let exam = VfsExamRepo::get_exam_sheet(vfs_db, session_id)
             .map_err(|e| format!("Failed to get exam sheet: {}", e))?
             .ok_or("Exam sheet not found")?;
@@ -1514,13 +1580,24 @@ impl QBankExecutor {
             .unwrap_or("txt");
         let name = call.arguments.get("name").and_then(|v| v.as_str());
         let session_id = call.arguments.get("session_id").and_then(|v| v.as_str());
-        let folder_id = call.arguments.get("folder_id").and_then(|v| v.as_str());
 
         let llm_manager = ctx
             .llm_manager
             .as_ref()
             .ok_or("LLM Manager not available")?;
         let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
+        let scoped_folder_id = if let Some(existing_session_id) = session_id {
+            Self::ensure_exam_id_in_scope(ctx, vfs_db, existing_session_id)?;
+            None
+        } else {
+            let folder_id = resource_scope::normalize_folder_arg(call.arguments.get("folder_id"));
+            resource_scope::resolve_scoped_folder_id_for_write(
+                ctx,
+                vfs_db,
+                folder_id,
+                "qbank_import_document",
+            )?
+        };
 
         // 使用统一的 QuestionImportService
         let import_service = QuestionImportService::new_without_file_manager(llm_manager.clone());
@@ -1530,7 +1607,7 @@ impl QBankExecutor {
             format: format.to_string(),
             name: name.map(String::from),
             session_id: session_id.map(String::from),
-            folder_id: folder_id.map(String::from),
+            folder_id: scoped_folder_id.clone(),
             model_config_id: None,
             pdf_prefer_ocr: None,
         };
@@ -1546,6 +1623,8 @@ impl QBankExecutor {
             "name": result.name,
             "imported_count": result.imported_count,
             "total_questions": result.total_questions,
+            "scope": if resource_scope::is_topic_scoped(ctx) { "topic" } else { "all" },
+            "folderId": scoped_folder_id,
             "message": format!("成功导入 {} 道题目", result.imported_count)
         }))
     }
@@ -1589,11 +1668,23 @@ impl QBankExecutor {
             .and_then(|v| v.as_str());
 
         let vfs_db = ctx.vfs_db.as_ref().ok_or("VFS database not available")?;
+        let scoped_folder_id = if session_id.is_none() {
+            let folder_id = resource_scope::normalize_folder_arg(call.arguments.get("folder_id"));
+            resource_scope::resolve_scoped_folder_id_for_write(
+                ctx,
+                vfs_db,
+                folder_id,
+                "qbank_batch_import",
+            )?
+        } else {
+            None
+        };
         let mut is_new_session = false;
         let (mut session_id, exam_name, mut preview) = if let Some(sid) = session_id {
             let exam = VfsExamRepo::get_exam_sheet(vfs_db, &sid)
                 .map_err(|e| format!("Failed to get exam sheet: {}", e))?
                 .ok_or("Exam sheet not found")?;
+            Self::ensure_exam_in_scope(ctx, vfs_db, &exam)?;
             let preview: ExamSheetPreviewResult = serde_json::from_value(exam.preview_json)
                 .map_err(|e| format!("Failed to parse preview: {}", e))?;
             (
@@ -1797,7 +1888,7 @@ impl QBankExecutor {
                         metadata_json: json!({}),
                         preview_json,
                         status: "completed".to_string(),
-                        folder_id: None,
+                        folder_id: scoped_folder_id.clone(),
                     };
                     let created_exam = VfsExamRepo::create_exam_sheet_with_conn(&conn, params)
                         .map_err(|e| format!("Failed to create exam sheet: {}", e))?;

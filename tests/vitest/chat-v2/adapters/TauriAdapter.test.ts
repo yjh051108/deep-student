@@ -398,6 +398,17 @@ describe('ChatV2TauriAdapter', () => {
       });
     });
 
+    it('should include current group scope in send options', async () => {
+      await adapter.setup();
+
+      (mockStore as any).groupId = 'group-math';
+
+      const options = (adapter as any).buildSendOptions();
+
+      expect(options.groupId).toBe('group-math');
+      expect(options.groupPinnedResourceIds).toEqual([]);
+    });
+
     it('should pass DeepSeek V4 runtime reasoning effort without mutating model defaults', async () => {
       await adapter.setup();
 
@@ -493,6 +504,25 @@ describe('ChatV2TauriAdapter', () => {
       const isMultimodal = await (adapter as any).shouldResolveContextAsMultimodal({
         modelId: 'text-model',
         model2OverrideId: 'vision-model',
+      });
+
+      expect(isMultimodal).toBe(true);
+    });
+
+    it('should recognize snake_case multimodal capability from backend configs', async () => {
+      vi.mocked(invoke).mockResolvedValue([
+        {
+          id: 'vision-model',
+          name: 'Vision Model',
+          model: 'provider/vision-model',
+          enabled: true,
+          is_multimodal: true,
+        },
+      ]);
+      await adapter.setup();
+
+      const isMultimodal = await (adapter as any).shouldResolveContextAsMultimodal({
+        modelId: 'vision-model',
       });
 
       expect(isMultimodal).toBe(true);
