@@ -106,7 +106,14 @@ vi.mock('@/features/chat/components/ui/ThreadEmptyStateShell', () => ({
 import { MessageList } from '@/features/chat/components/MessageList';
 
 function renderMessageList() {
-  const store = {} as StoreApi<ChatStore>;
+  const store = {
+    getState: () => ({
+      getMessage: (messageId: string) => ({
+        id: messageId,
+        role: messageId.includes('user') ? 'user' : 'assistant',
+      }),
+    }),
+  } as unknown as StoreApi<ChatStore>;
   return render(<MessageList store={store} />);
 }
 
@@ -216,5 +223,36 @@ describe('MessageList scroll-to-bottom control', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { hidden: true, name: 'Scroll to bottom' })).toHaveAttribute('tabindex', '-1');
     });
+  });
+
+  it('releases streaming auto-scroll as soon as the user wheels upward', async () => {
+    const rafQueue: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      rafQueue.push(callback);
+      return rafQueue.length;
+    });
+
+    mockSessionStatus = 'streaming';
+    mockMessageOrder = ['message-user', 'message-assistant'];
+
+    renderMessageList();
+
+    const viewport = requireViewport();
+    const { getScrollTop } = configureViewportMetrics(viewport, {
+      scrollHeight: 1000,
+      clientHeight: 400,
+      scrollTop: 580,
+    });
+
+    fireEvent.wheel(viewport, { deltaY: -1 });
+
+    const button = await screen.findByRole('button', { name: 'Scroll to bottom' });
+    expect(button.parentElement).toHaveAttribute('data-open', 'true');
+
+    const queuedFrame = rafQueue.shift();
+    expect(queuedFrame).toBeTypeOf('function');
+    queuedFrame?.(0);
+
+    expect(getScrollTop()).toBe(580);
   });
 });

@@ -292,6 +292,12 @@ const MessageListInner: React.FC<MessageListProps> = ({
     scrollToBottom('smooth');
   }, [scrollToBottom]);
 
+  const releaseAutoScrollForUserIntent = useCallback(() => {
+    if (!isAutoScrollingRef.current) return;
+    userHasScrolledRef.current = true;
+    setShowScrollToBottom(true);
+  }, []);
+
   // 基于真实滚动位置同步吸底状态与按钮可见性
   useEffect(() => {
     if (!viewportElement) return;
@@ -320,14 +326,43 @@ const MessageListInner: React.FC<MessageListProps> = ({
     };
   }, []);
 
+  useEffect(() => {
+    if (!viewportElement) return;
+
+    let lastTouchY: number | null = null;
+
+    const handleWheelIntent = (event: WheelEvent) => {
+      if (event.deltaY < 0) {
+        releaseAutoScrollForUserIntent();
+      }
+    };
+
+    const handleTouchStart = (event: TouchEvent) => {
+      lastTouchY = event.touches[0]?.clientY ?? null;
+    };
+
+    const handleTouchMove = (event: TouchEvent) => {
+      const nextY = event.touches[0]?.clientY ?? null;
+      if (lastTouchY !== null && nextY !== null && nextY > lastTouchY) {
+        releaseAutoScrollForUserIntent();
+      }
+      lastTouchY = nextY;
+    };
+
+    viewportElement.addEventListener('wheel', handleWheelIntent, { passive: true, capture: true });
+    viewportElement.addEventListener('touchstart', handleTouchStart, { passive: true });
+    viewportElement.addEventListener('touchmove', handleTouchMove, { passive: true });
+
+    return () => {
+      viewportElement.removeEventListener('wheel', handleWheelIntent, { capture: true });
+      viewportElement.removeEventListener('touchstart', handleTouchStart);
+      viewportElement.removeEventListener('touchmove', handleTouchMove);
+    };
+  }, [viewportElement, releaseAutoScrollForUserIntent]);
+
   // 🖱️ 平滑滚轮惯性 + 第一时间检测向上滚动意图（ChatGPT/Claude 同级手感）
   useSmoothWheel(containerRef.current, {
-    onUserScrollUp: () => {
-      if (isAutoScrollingRef.current) {
-        userHasScrolledRef.current = true;
-        setShowScrollToBottom(true);
-      }
-    },
+    onUserScrollUp: releaseAutoScrollForUserIntent,
   });
 
   // 🚀 P1优化：流式生成时使用 rAF 自动滚动（替代 setInterval）
