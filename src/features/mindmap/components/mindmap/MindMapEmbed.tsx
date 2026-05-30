@@ -44,6 +44,8 @@ export interface MindMapEmbedProps {
   versionId?: string;
   /** 容器高度（默认 300px） */
   height?: number;
+  /** 是否允许大图按节点数扩高；聊天气泡内应保持固定高度以避免流式布局跳动 */
+  autoExpandLargeMap?: boolean;
   /** 自定义类名 */
   className?: string;
   /** 点击打开回调 */
@@ -318,6 +320,7 @@ export const MindMapEmbed: React.FC<MindMapEmbedProps> = ({
   mindmapId,
   versionId,
   height = 280,
+  autoExpandLargeMap = true,
   className,
   onOpen,
   showOpenButton = true,
@@ -345,8 +348,8 @@ export const MindMapEmbed: React.FC<MindMapEmbedProps> = ({
     if (!state.document?.root) return height;
     const nodeCount = countNodes(state.document.root);
     // 节点数超过阈值时使用 2 倍高度
-    return nodeCount > LARGE_MAP_NODE_THRESHOLD ? height * 2 : height;
-  }, [state.document, height]);
+    return autoExpandLargeMap && nodeCount > LARGE_MAP_NODE_THRESHOLD ? height * 2 : height;
+  }, [autoExpandLargeMap, state.document, height]);
 
   // 加载思维导图数据
   useEffect(() => {

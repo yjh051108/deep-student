@@ -56,6 +56,7 @@ export const MindmapCitationCard: React.FC<MindmapCitationCardProps> = ({
         mindmapId={mindmapId}
         versionId={versionId}
         height={embedHeight}
+        autoExpandLargeMap={false}
         // ★ 2026-02-13 修复：版本引用也显示打开按钮
         // MindMapEmbed 内部会自动从版本元数据获取父导图 ID 进行导航
         showOpenButton
