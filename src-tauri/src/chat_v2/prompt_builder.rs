@@ -205,24 +205,30 @@ impl MemoryPromptContext {
 
     pub fn to_prompt_blocks(self) -> Vec<String> {
         let mut blocks = Vec::new();
-        let topic_name = self.topic_name.as_deref().unwrap_or("未绑定课题");
+        let has_topic = self.topic_memory_path.is_some();
+        let topic_name = self.topic_name.as_deref().unwrap_or("通用无课题会话");
         let topic_path = self
             .topic_memory_path
             .as_deref()
-            .unwrap_or("无当前课题记忆区");
+            .unwrap_or("无课题记忆区");
+        let visibility = if has_topic {
+            "你当前只能使用当前课题记忆和全局记忆。不得主动搜索、枚举、读取或引用其它课题的记忆。\n全局记忆用于用户长期偏好、身份背景、稳定交流习惯和长期目标；当前课题记忆用于课程、项目、论文、实验、资料、bug、学习进度和课题内方法。\n写入记忆时，跨课题长期有效的信息写入 global，当前课题内的信息写入 topic。"
+        } else {
+            "你当前处于通用无课题临时会话。默认只能使用全局记忆。\n不得主动搜索、枚举、读取或引用任何课题记忆；只有用户明确要求跨课题回顾、整理或迁移时，才说明需要进入相应课题或使用专门的跨课题管理入口。\n不得伪造当前课题，也不得把新记忆写入 topic；需要保存长期偏好、身份背景、稳定交流习惯或长期目标时写入 global。"
+        };
         blocks.push(format!(
             r#"<current_topic>
 <topic_name>{}</topic_name>
 <topic_memory_path>{}</topic_memory_path>
 <global_memory_path>{}</global_memory_path>
 <memory_visibility>
-你当前只能使用当前课题记忆和全局记忆。不得主动搜索、枚举、读取或引用其它课题的记忆。
-全局记忆用于用户长期偏好、身份背景、稳定交流习惯和长期目标；当前课题记忆用于课程、项目、论文、实验、资料、bug、学习进度和课题内方法。
+{}
 </memory_visibility>
 </current_topic>"#,
             escape_xml_content(topic_name),
             escape_xml_content(topic_path),
-            escape_xml_content(&self.global_memory_path)
+            escape_xml_content(&self.global_memory_path),
+            escape_xml_content(visibility)
         ));
 
         if let Some(profile) = self.global_profile {
@@ -892,6 +898,42 @@ mod tests {
         assert!(prompt.contains("<user_preferences>"));
         assert!(prompt.contains("请用英文回答"));
         assert!(prompt.contains("</user_preferences>"));
+    }
+
+    #[test]
+    fn memory_context_marks_general_session_without_topic_write() {
+        let prompt = MemoryPromptContext::new(
+            None,
+            None,
+            "全局".to_string(),
+            Some("### 偏好\n偏好简洁回答".to_string()),
+            None,
+        )
+        .to_prompt_blocks()
+        .join("\n");
+
+        assert!(prompt.contains("通用无课题会话"));
+        assert!(prompt.contains("不得伪造当前课题"));
+        assert!(prompt.contains("不得把新记忆写入 topic"));
+        assert!(prompt.contains("<global_memory_profile>"));
+    }
+
+    #[test]
+    fn memory_context_marks_topic_session_scope() {
+        let prompt = MemoryPromptContext::new(
+            Some("微机原理".to_string()),
+            Some("课题/微机原理".to_string()),
+            "全局".to_string(),
+            None,
+            Some("### 经历\n正在复习中断".to_string()),
+        )
+        .to_prompt_blocks()
+        .join("\n");
+
+        assert!(prompt.contains("<topic_name>微机原理</topic_name>"));
+        assert!(prompt.contains("当前课题记忆和全局记忆"));
+        assert!(prompt.contains("其它课题"));
+        assert!(prompt.contains("<topic_memory_profile>"));
     }
 
     #[test]
