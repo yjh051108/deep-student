@@ -2886,6 +2886,7 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
                       ? attachment.processingStatus
                       : mediaProgress;
                     const readyModes = getEffectiveReadyModes(statusForModes, mediaType, attachment);
+                    const hasReadySelectedMode = hasAnyReadyMode(selectedModes, readyModes);
                     const missingModes = getMissingModes(selectedModes, readyModes);
                     const missingModesLabel = missingModes.length > 0 ? formatModeList(missingModes) : '';
                     const displayPercent = getDisplayPercent(mediaProgress, isPdf);
@@ -2900,10 +2901,11 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
                       : `${displayPercent}%`;
 
                     const isUploading = attachment.status === 'uploading' || attachment.status === 'pending';
+                    const shouldShowMediaProgress = isMediaProcessing && !hasReadySelectedMode;
                     const statusIcon =
                       attachment.status === 'ready' && missingModes.length > 0
                         ? <Warning size={12} weight="bold" className="text-amber-600" />
-                        : attachment.status === 'ready' ? <CheckCircle size={12} weight="fill" className="text-green-600" />
+                        : attachment.status === 'ready' || (isMediaProcessing && hasReadySelectedMode) ? <CheckCircle size={12} weight="fill" className="text-green-600" />
                           : attachment.status === 'error' ? <XCircle size={12} weight="fill" className="text-red-600" />
                             : (isMediaProcessing || isUploading) ? <CircleNotch size={12} weight="bold" className="text-blue-500 animate-spin" />
                               : <Clock size={12} weight="bold" className="text-muted-foreground" />;
@@ -2912,7 +2914,7 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
                       : attachment.status === 'error' ? 'border-red-200/70 bg-red-50/70 dark:border-red-800/50 dark:bg-red-900/20'
                         : attachment.status === 'ready' && missingModes.length > 0
                           ? 'border-amber-200/60 bg-amber-50/70 dark:border-amber-800/50 dark:bg-amber-900/20'
-                          : attachment.status === 'ready' ? 'border-emerald-200/60 bg-emerald-50/70 dark:border-emerald-800/50 dark:bg-emerald-900/20'
+                          : attachment.status === 'ready' || (isMediaProcessing && hasReadySelectedMode) ? 'border-emerald-200/60 bg-emerald-50/70 dark:border-emerald-800/50 dark:bg-emerald-900/20'
                             : (isMediaProcessing || isUploading) ? 'border-blue-200/60 bg-blue-50/70 dark:border-blue-800/50 dark:bg-blue-900/20'
                               : 'border-slate-200/70 bg-card/90 dark:border-slate-700/50';
 
@@ -2936,7 +2938,7 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
                                 // 上传阶段：直接使用 uploadProgress (0-50%)
                                 unifiedPercent = attachment.uploadProgress;
                                 unifiedLabel = t(`chatV2:inputBar.uploadStage.${attachment.uploadStage || 'reading'}`);
-                              } else if (isMediaProcessing && mediaProgress) {
+                              } else if (shouldShowMediaProgress && mediaProgress) {
                                 // 处理阶段：后端 0-100% 映射到 50-100%
                                 unifiedPercent = 50 + Math.round(displayPercent * 0.5);
                                 unifiedLabel = stageLabel || '';

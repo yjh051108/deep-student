@@ -29,6 +29,7 @@ interface ModelConfig {
   providerScope?: string;
   baseUrl?: string;
   isMultimodal?: boolean;
+  is_multimodal?: boolean;
   /** 是否为推理模型（支持 thinking/reasoning） */
   isReasoning?: boolean;
   /** 是否支持工具调用 */
@@ -117,7 +118,7 @@ async function fetchAvailableModelInfos(): Promise<ModelInfo[]> {
       config.model?.toLowerCase(),
     ].filter((s): s is string => !!s && s.length > 0),
     // 🔧 新增：模型能力字段，便于 UI 根据能力显示不同状态
-    isMultimodal: config.isMultimodal,
+    isMultimodal: config.isMultimodal ?? config.is_multimodal,
     isReasoning: config.isReasoning,
     supportsTools: config.supportsTools,
     enabled: config.enabled,
