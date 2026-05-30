@@ -87,4 +87,16 @@ describe('learning hub memory entry scope contract', () => {
     expect(pipelinePrompt).not.toContain('admin_all');
     expect(pipelinePrompt).not.toContain('adminAll');
   });
+
+  it('keeps topicless MemoryView default reads to global scope only', () => {
+    const memoryView = readFileSync(
+      resolve(process.cwd(), 'src/features/learning-hub/views/MemoryView.tsx'),
+      'utf-8'
+    );
+
+    expect(memoryView).toContain(': [GLOBAL_MEMORY_ROOT];');
+    expect(memoryView).toContain(": t('memory.scope_global', '全局');");
+    expect(memoryView).not.toContain(': [GLOBAL_MEMORY_ROOT, TOPIC_MEMORY_ROOT];');
+    expect(memoryView).not.toContain("t('memory.scope_all_topics_global', '全局 + 所有课题')");
+  });
 });

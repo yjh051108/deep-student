@@ -222,7 +222,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({
     const topicRoots = topicMemoryRoots(topicGroupId, topicGroupName);
     return topicRoots.length > 0
       ? [GLOBAL_MEMORY_ROOT, ...topicRoots]
-      : [GLOBAL_MEMORY_ROOT, TOPIC_MEMORY_ROOT];
+      : [GLOBAL_MEMORY_ROOT];
   }, [memoryScopeFilter, topicGroupId, topicGroupName]);
   const memoryScopeContext = useMemo(() => ({
     groupId: topicGroupId,
@@ -233,7 +233,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({
   const hasTopicMemoryScope = topicMemoryRoots(topicGroupId, topicGroupName).length > 0;
   const primaryScopeLabel = hasTopicMemoryScope
     ? t('memory.scope_topic_global', '当前课题 + 全局')
-    : t('memory.scope_all_topics_global', '全局 + 所有课题');
+    : t('memory.scope_global', '全局');
   const effectiveNewMemoryScope: MemoryScopeValue = hasTopicMemoryScope ? newMemoryScope : 'global';
   const effectiveBatchImportScope: MemoryScopeValue = hasTopicMemoryScope ? batchImportScope : 'global';
 
