@@ -24,9 +24,9 @@ describe('learning hub delete state contract', () => {
     expect(sidebarSource).toContain('pruneFinderResource(resource.id, visiblePath)');
   });
 
-  it('deletes resources by stable id instead of display path', () => {
+  it('deletes resources by canonical path before falling back to stable id', () => {
     expect(sidebarSource).toContain('const resourcePath = resource.path ?? items.find');
-    expect(sidebarSource).toContain('const deletePath = `/${resource.id}`');
+    expect(sidebarSource).toContain('const deletePath = resourcePath ?? `/${resource.id}`');
     expect(sidebarSource).toContain('const deleteResult = await dstu.delete(deletePath)');
     expect(sidebarSource).not.toContain('let deletePath = resource.path');
   });

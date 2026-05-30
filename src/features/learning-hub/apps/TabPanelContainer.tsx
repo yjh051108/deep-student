@@ -83,54 +83,59 @@ export const TabPanelContainer: React.FC<TabPanelContainerProps> = ({
   if (splitView) {
     const rightTab = tabs.find(t => t.tabId === splitView.rightTabId);
     const leftTab = tabs.find(t => t.tabId === activeTabId && t.tabId !== splitView.rightTabId);
+    const visibleTabIds = new Set([leftTab?.tabId, rightTab?.tabId].filter(Boolean));
+    const hiddenTabs = tabs.filter(tab => !visibleTabIds.has(tab.tabId));
 
     return (
-      <PanelGroup
-        direction="horizontal"
-        autoSaveId="learning-hub-split-view"
-        className={cn('h-full', className)}
-      >
-        {/* 左侧面板：当前活跃 tab */}
-        <Panel defaultSize={50} minSize={25} id="split-left" order={1}>
-          <div className="h-full min-w-0 overflow-hidden">
-            {leftTab ? renderUnifiedPanel(leftTab, true) : (
-              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                {t('noContent', '无内容')}
-              </div>
-            )}
-          </div>
-        </Panel>
-
-        {/* 分隔条 */}
-        <PanelResizeHandle className="w-1.5 bg-border/50 hover:bg-primary/30 active:bg-primary/50 transition-colors flex items-center justify-center group">
-          <DotsSixVertical size={12} className="text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
-        </PanelResizeHandle>
-
-        {/* 右侧面板：分屏 tab */}
-        <Panel defaultSize={50} minSize={25} id="split-right" order={2}>
-          <div className="relative h-full min-w-0 overflow-hidden">
-            {/* 右侧面板顶部关闭按钮 */}
-            <div className="absolute top-2 right-4 z-10 flex items-center gap-2">
-              <div className="bg-background/80 backdrop-blur-sm shadow-sm border border-border rounded-md px-2 py-1 text-xs text-muted-foreground font-medium flex items-center gap-1.5">
-                <SidebarSimple size={14} />
-                {t('learningHub:splitView.title', '分屏视图')}
-              </div>
-              <button
-                onClick={onCloseSplitView}
-                className="p-1.5 rounded-md bg-background/80 backdrop-blur-sm border border-border hover:bg-[var(--interactive-hover)] text-muted-foreground hover:text-foreground transition-all shadow-sm"
-                title={t('actions.close', '关闭分屏')}
-              >
-                <X size={14} />
-              </button>
+      <div className={cn('relative h-full', className)}>
+        <PanelGroup
+          direction="horizontal"
+          autoSaveId="learning-hub-split-view"
+          className="h-full"
+        >
+          {/* 左侧面板：当前活跃 tab */}
+          <Panel defaultSize={50} minSize={25} id="split-left" order={1}>
+            <div className="h-full min-w-0 overflow-hidden">
+              {leftTab ? renderUnifiedPanel(leftTab, true) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                  {t('noContent', '无内容')}
+                </div>
+              )}
             </div>
-            {rightTab ? renderUnifiedPanel(rightTab, true) : (
-              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                {t('noContent', '无内容')}
+          </Panel>
+
+          {/* 分隔条 */}
+          <PanelResizeHandle className="w-1.5 bg-border/50 hover:bg-primary/30 active:bg-primary/50 transition-colors flex items-center justify-center group">
+            <DotsSixVertical size={12} className="text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
+          </PanelResizeHandle>
+
+          {/* 右侧面板：分屏 tab */}
+          <Panel defaultSize={50} minSize={25} id="split-right" order={2}>
+            <div className="relative h-full min-w-0 overflow-hidden">
+              {/* 右侧面板顶部关闭按钮 */}
+              <div className="absolute top-2 right-4 z-10 flex items-center gap-2">
+                <div className="bg-background/80 backdrop-blur-sm shadow-sm border border-border rounded-md px-2 py-1 text-xs text-muted-foreground font-medium flex items-center gap-1.5">
+                  <SidebarSimple size={14} />
+                  {t('learningHub:splitView.title', '分屏视图')}
+                </div>
+                <button
+                  onClick={onCloseSplitView}
+                  className="p-1.5 rounded-md bg-background/80 backdrop-blur-sm border border-border hover:bg-[var(--interactive-hover)] text-muted-foreground hover:text-foreground transition-all shadow-sm"
+                  title={t('actions.close', '关闭分屏')}
+                >
+                  <X size={14} />
+                </button>
               </div>
-            )}
-          </div>
-        </Panel>
-      </PanelGroup>
+              {rightTab ? renderUnifiedPanel(rightTab, true) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                  {t('noContent', '无内容')}
+                </div>
+              )}
+            </div>
+          </Panel>
+        </PanelGroup>
+        {hiddenTabs.map(tab => renderTabPanel(tab, false))}
+      </div>
     );
   }
 

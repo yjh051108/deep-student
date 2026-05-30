@@ -938,7 +938,7 @@ export const IndexStatusView: React.FC = () => {
 
   // ========== 渲染资源行 ==========
   const renderResourceRow = (resource: ResourceIndexStatus) => {
-    const state = resource.textIndexState as IndexState;
+    const state = resolveResourceDisplayState(resource, imageIndexCapability === 'ready');
     const stateConfig = STATE_CONFIG[state] || STATE_CONFIG.pending;
     const StateIcon = stateConfig.icon;
     const typeConfig = RESOURCE_TYPE_CONFIG[resource.resourceType] || RESOURCE_TYPE_CONFIG.file;
@@ -1853,7 +1853,7 @@ export const IndexStatusView: React.FC = () => {
         ) : (
           // 单状态筛选模式
           <div className="divide-y divide-border/30">
-            {summary.resources.map(renderResourceRow)}
+            {displayedResources.map(renderResourceRow)}
           </div>
         )}
       </CustomScrollArea>
