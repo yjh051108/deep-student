@@ -1998,8 +1998,9 @@ impl MemoryService {
 
         let mut items = Vec::new();
         let mut seen = HashSet::new();
+        let per_root_limit = offset.saturating_add(limit);
         for folder_path in folder_paths {
-            for item in self.list(Some(folder_path.as_str()), limit, 0)? {
+            for item in self.list(Some(folder_path.as_str()), per_root_limit, 0)? {
                 if seen.insert(item.id.clone()) {
                     items.push(item);
                 }
@@ -3299,6 +3300,38 @@ impl MemoryService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::Database;
+    use crate::file_manager::FileManager;
+    use crate::llm_manager::LLMManager;
+    use crate::vfs::lance_store::VfsLanceStore;
+    use tempfile::TempDir;
+
+    fn setup_memory_service() -> (TempDir, MemoryService) {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let vfs_db = Arc::new(VfsDatabase::new(temp_dir.path()).expect("create vfs db"));
+        let lance_store = Arc::new(VfsLanceStore::new(vfs_db.clone()).expect("create lance store"));
+        let main_db_path = temp_dir.path().join("main.sqlite");
+        let main_db = Arc::new(Database::new(&main_db_path).expect("create main db"));
+        let file_manager =
+            Arc::new(FileManager::new(temp_dir.path().join("files")).expect("create file manager"));
+        let llm_manager = Arc::new(LLMManager::new(main_db, file_manager).expect("create llm"));
+        (
+            temp_dir,
+            MemoryService::new(vfs_db, lance_store, llm_manager),
+        )
+    }
+
+    fn set_note_updated_at(service: &MemoryService, note_id: &str, updated_at: &str) {
+        let conn = service
+            .vfs_db_ref()
+            .get_conn_safe()
+            .expect("get vfs connection");
+        conn.execute(
+            "UPDATE notes SET updated_at = ?1 WHERE id = ?2",
+            params![updated_at, note_id],
+        )
+        .expect("set updated_at");
+    }
 
     #[test]
     fn test_write_mode_from_str() {
@@ -3322,5 +3355,35 @@ mod tests {
         assert!(!should_downgrade_smart_mutation(&MemoryEvent::DELETE, 0.8));
         assert!(!should_downgrade_smart_mutation(&MemoryEvent::ADD, 0.1));
         assert!(!should_downgrade_smart_mutation(&MemoryEvent::NONE, 0.1));
+    }
+
+    #[test]
+    fn list_folder_paths_paginates_after_global_merge() {
+        let (_temp_dir, service) = setup_memory_service();
+
+        let a1 = service
+            .write(Some("TopicA"), "A1", "memory a1", WriteMode::Create)
+            .expect("write a1");
+        let a2 = service
+            .write(Some("TopicA"), "A2", "memory a2", WriteMode::Create)
+            .expect("write a2");
+        let a3 = service
+            .write(Some("TopicA"), "A3", "memory a3", WriteMode::Create)
+            .expect("write a3");
+        let b1 = service
+            .write(Some("TopicB"), "B1", "memory b1", WriteMode::Create)
+            .expect("write b1");
+
+        set_note_updated_at(&service, &a1.note_id, "2026-01-04T00:00:00Z");
+        set_note_updated_at(&service, &a2.note_id, "2026-01-03T00:00:00Z");
+        set_note_updated_at(&service, &a3.note_id, "2026-01-02T00:00:00Z");
+        set_note_updated_at(&service, &b1.note_id, "2026-01-01T00:00:00Z");
+
+        let page = service
+            .list_folder_paths(&["TopicA".to_string(), "TopicB".to_string()], 2, 2)
+            .expect("list paged memories");
+        let titles: Vec<String> = page.into_iter().map(|item| item.title).collect();
+
+        assert_eq!(titles, vec!["A3".to_string(), "B1".to_string()]);
     }
 }
