@@ -132,6 +132,12 @@ export interface LearningHubSidebarProps {
   hasOpenApp?: boolean;
   /** ★ 关闭应用面板回调 */
   onCloseApp?: () => void;
+  /** 当前课题绑定的资源根文件夹；Chat 内嵌模式下新建/导入默认落到这里 */
+  topicRootFolderId?: string | null;
+  /** 当前课题 ID；用于课题记忆分区 */
+  topicGroupId?: string | null;
+  /** 当前课题名称；用于生成用户可见的课题记忆分区 */
+  topicGroupName?: string | null;
   /** ★ 隐藏顶部工具栏和导航栏（移动端聊天内嵌模式使用，由外部容器提供面包屑） */
   hideToolbarAndNav?: boolean;
   /** ★ 桌面端将快捷入口渲染到外层 Shell 侧栏 */

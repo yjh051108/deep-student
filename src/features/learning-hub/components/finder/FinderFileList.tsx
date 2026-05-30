@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useMemo, useState, useEffect, useLayoutEffect } from 'react';
+import React, { useRef, useCallback, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { CircleNotch, FolderOpen, Plus, FileText, ArrowClockwise } from '@phosphor-icons/react';
@@ -22,6 +22,7 @@ import {
   verticalListSortingStrategy,
   rectSortingStrategy,
 } from '@dnd-kit/sortable';
+import { snapCenterToCursor } from '@dnd-kit/modifiers';
 import type { DstuNode } from '@/dstu/types';
 import type { ViewMode } from '../../stores/finderStore';
 import { FinderFileItem, SortableFinderFileItem } from './FinderFileItem';
@@ -34,10 +35,7 @@ import { debugLog } from '@/debug-panel/debugMasterSwitch';
 const LIST_ITEM_HEIGHT = 40;
 
 // 网格模式虚拟滚动常量
-const GRID_ITEM_MIN_WIDTH = 88;  // minmax(88px, 1fr)
-const GRID_GAP = 8;              // gap-2 = 0.5rem = 8px
-const GRID_ROW_HEIGHT = 120;     // 网格行高度（包含内容）
-const GRID_PADDING = 12;         // p-3 = 0.75rem = 12px
+const GRID_ITEM_MIN_WIDTH = 104;
 
 /**
  * 选择框覆盖层组件 - 使用 Portal 渲染到 body 下避免父元素 transform 影响
@@ -152,60 +150,7 @@ export function FinderFileList({
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const gridContainerRef = useRef<HTMLDivElement>(null);
   const [activeId, setActiveId] = React.useState<UniqueIdentifier | null>(null);
-  
-  // ★ 网格模式虚拟滚动：容器宽度状态
-  const [gridContainerWidth, setGridContainerWidth] = useState(0);
-  
-  // ★ 计算网格列数
-  const gridColumns = useMemo(() => {
-    // 计算可容纳的列数：(containerWidth + gap) / (minItemWidth + gap)
-    // 这与 CSS grid auto-fill 的行为一致
-    let availableWidth = gridContainerWidth;
-    
-    // ★ Fallback：如果容器宽度尚未测量，使用窗口宽度的估算值
-    // 假设左侧边栏约 260px，减去 padding 后的主内容区域宽度
-    if (availableWidth === 0 && typeof window !== 'undefined') {
-      availableWidth = Math.max(window.innerWidth - 300, 400);
-    }
-    
-    const cols = Math.floor((availableWidth + GRID_GAP) / (GRID_ITEM_MIN_WIDTH + GRID_GAP));
-    return Math.max(1, cols);
-  }, [gridContainerWidth]);
-  
-  // ★ 网格模式虚拟滚动：使用 useLayoutEffect 在绘制前获取初始宽度
-  // 这比 useEffect 更早执行，可以避免首次渲染时显示单列布局
-  useLayoutEffect(() => {
-    if (viewMode !== 'grid') return;
-    
-    const container = gridContainerRef.current;
-    if (!container) return;
-    
-    // 立即同步获取容器宽度（gridContainerRef 在 viewport 内部，已排除 padding）
-    const initialWidth = container.getBoundingClientRect().width;
-    if (initialWidth > 0) {
-      setGridContainerWidth(initialWidth);
-    }
-  }, [viewMode]);
-
-  // ★ 网格模式虚拟滚动：监听容器宽度变化（用于响应式调整）
-  useEffect(() => {
-    if (viewMode !== 'grid') return;
-    
-    const container = gridContainerRef.current;
-    if (!container) return;
-    
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        // 使用 contentRect.width 获取内容区宽度（不包括 padding）
-        setGridContainerWidth(entry.contentRect.width);
-      }
-    });
-    
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [viewMode]);
 
   // ★ 框选功能：获取所有文件项的边界信息
   const getItemRects = useCallback(() => {
@@ -263,18 +208,14 @@ export function FinderFileList({
     overscan: 5,
   });
   
-  // ★ 网格模式虚拟滚动配置
-  const gridRowCount = useMemo(() => {
-    if (gridColumns === 0) return 0;
-    return Math.ceil(items.length / gridColumns);
-  }, [items.length, gridColumns]);
-  
-  const gridVirtualizer = useVirtualizer({
-    count: viewMode === 'grid' ? gridRowCount : 0,
-    getScrollElement: () => viewportRef.current,
-    estimateSize: () => GRID_ROW_HEIGHT + GRID_GAP,
-    overscan: 2,
-  });
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      if (viewMode === 'list') {
+        listVirtualizer.measure();
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [viewMode, items.length, listVirtualizer]);
 
   // 拖拽开始
   const handleDragStart = useCallback((event: DragStartEvent) => {
@@ -529,7 +470,7 @@ export function FinderFileList({
         </CustomScrollArea>
 
         {/* Notion 风格的拖拽覆盖层 */}
-        <DragOverlay dropAnimation={{
+        <DragOverlay modifiers={[snapCenterToCursor]} dropAnimation={{
           duration: 200,
           easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
         }}>
@@ -584,62 +525,39 @@ export function FinderFileList({
           items={items.map(item => item.id)}
           strategy={rectSortingStrategy}
         >
-          {/* ★ 网格模式虚拟滚动：外层容器用于 ResizeObserver */}
-          <div 
-            ref={gridContainerRef}
-            className="w-full"
+          <div
+            ref={containerRef}
+            className="grid w-full min-w-0 gap-2"
+            style={{
+              gridTemplateColumns: `repeat(auto-fill, minmax(min(${GRID_ITEM_MIN_WIDTH}px, 100%), 1fr))`,
+            }}
           >
-            {/* ★ 虚拟滚动容器 */}
-            <div
-              ref={containerRef}
-              className="relative"
-              style={{
-                height: `${gridVirtualizer.getTotalSize()}px`,
-              }}
-            >
-              {gridVirtualizer.getVirtualItems().map((virtualRow) => {
-                const startIndex = virtualRow.index * gridColumns;
-                const rowItems = items.slice(startIndex, startIndex + gridColumns);
-                
-                return (
-                  <div
-                    key={virtualRow.key}
-                    className="absolute left-0 right-0 grid gap-2"
-                    style={{
-                      top: `${virtualRow.start}px`,
-                      height: `${GRID_ROW_HEIGHT}px`,
-                      gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))`,
-                    }}
-                  >
-                    {rowItems.map(item => (
-                      <SortableFinderFileItem
-                        key={item.id}
-                        id={item.id}
-                        item={item}
-                        viewMode={viewMode}
-                        isSelected={selectedIds.has(item.id)}
-                        isActive={activeFileId === item.id}
-                        isHighlighted={highlightedIds?.has(item.id)}
-                        onSelect={(mode) => onSelect(item.id, mode)}
-                        onOpen={() => onOpen(item)}
-                        onContextMenu={(e) => onContextMenu(e, item)}
-                        enableDrag={enableDragDrop && editingId !== item.id}
-                        isEditing={editingId === item.id}
-                        onEditConfirm={(newName) => onEditConfirm?.(item.id, newName)}
-                        onEditCancel={onEditCancel}
-                        compact={compact}
-                      />
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
+            {items.map(item => (
+              <div key={item.id} className="min-w-0">
+                <SortableFinderFileItem
+                  id={item.id}
+                  item={item}
+                  viewMode={viewMode}
+                  isSelected={selectedIds.has(item.id)}
+                  isActive={activeFileId === item.id}
+                  isHighlighted={highlightedIds?.has(item.id)}
+                  onSelect={(mode) => onSelect(item.id, mode)}
+                  onOpen={() => onOpen(item)}
+                  onContextMenu={(e) => onContextMenu(e, item)}
+                  enableDrag={enableDragDrop && editingId !== item.id}
+                  isEditing={editingId === item.id}
+                  onEditConfirm={(newName) => onEditConfirm?.(item.id, newName)}
+                  onEditCancel={onEditCancel}
+                  compact={compact}
+                />
+              </div>
+            ))}
           </div>
         </SortableContext>
       </CustomScrollArea>
 
       {/* Notion 风格的拖拽覆盖层 */}
-      <DragOverlay dropAnimation={{
+      <DragOverlay modifiers={[snapCenterToCursor]} dropAnimation={{
         duration: 200,
         easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
       }}>

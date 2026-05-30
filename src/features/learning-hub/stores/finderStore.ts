@@ -185,6 +185,7 @@ interface FinderState {
    * 如果不匹配说明有更新的请求，应丢弃结果
    */
   _currentRequestId: number;
+  _navigationRequestId: number;
   
   // ========== 内联编辑状态 ==========
   /** 内联编辑状态 */
@@ -234,7 +235,7 @@ interface FinderState {
   loadItems: () => Promise<void>;
   
   /** ★ 2026-01-15: 设置当前路径但不添加历史记录（用于外部同步） */
-  setCurrentPathWithoutHistory: (folderId: string | null) => Promise<void>;
+  setCurrentPathWithoutHistory: (folderId: string | null, options?: { replaceHistory?: boolean }) => Promise<void>;
   
   /** 设置当前目录内容（主要用于 Mock 或从外部加载） */
   setItems: (items: DstuNode[]) => void;
@@ -308,6 +309,7 @@ export const useFinderStore = create<FinderState>()(
       
       // ★ 请求取消状态
       _currentRequestId: 0,
+      _navigationRequestId: 0,
       
       // 内联编辑状态
       inlineEdit: {
@@ -336,12 +338,22 @@ export const useFinderStore = create<FinderState>()(
           lastSelectedId: null,
           searchQuery: '',
           isSearching: false,
+          _currentRequestId: get()._currentRequestId + 1,
         });
       },
       
       enterFolder: async (folderId: string, folderName?: string, folderPath?: string) => {
+        const navigationRequestId = get()._navigationRequestId + 1;
+        set({
+          _navigationRequestId: navigationRequestId,
+          _currentRequestId: get()._currentRequestId + 1,
+        });
         // ★ 2025-12-27 修复：从后端获取真实的面包屑 ID 链
         const newBreadcrumbs = await fetchBreadcrumbs(folderId);
+        if (get()._navigationRequestId !== navigationRequestId) {
+          console.log('[finderStore] enterFolder 导航已过期，丢弃结果', { navigationRequestId, current: get()._navigationRequestId });
+          return;
+        }
 
         const { currentPath } = get();
         const newPath: FinderPath = createFinderPath({
@@ -381,6 +393,7 @@ export const useFinderStore = create<FinderState>()(
             currentPath: history[newIndex],
             selectedIds: new Set(),
             lastSelectedId: null,
+            _currentRequestId: get()._currentRequestId + 1,
           });
         }
       },
@@ -394,13 +407,14 @@ export const useFinderStore = create<FinderState>()(
             currentPath: history[newIndex],
             selectedIds: new Set(),
             lastSelectedId: null,
+            _currentRequestId: get()._currentRequestId + 1,
           });
         }
       },
       
       // ★ 2026-01-15: 设置当前路径但不添加历史记录（用于外部同步）
       // 解决 NavigationContext 和 finderStore 两个历史栈互相干扰导致的循环问题
-      setCurrentPathWithoutHistory: async (folderId: string | null) => {
+      setCurrentPathWithoutHistory: async (folderId: string | null, options?: { replaceHistory?: boolean }) => {
         const normalizedFolderId = folderId === 'root' || folderId == null ? null : folderId;
         const viewKind = getViewKindFromFolderId(normalizedFolderId);
         
@@ -409,25 +423,39 @@ export const useFinderStore = create<FinderState>()(
         if (currentPath.folderId === normalizedFolderId && currentPath.viewKind === viewKind) {
           return;
         }
+
+        const navigationRequestId = get()._navigationRequestId + 1;
+        set({
+          _navigationRequestId: navigationRequestId,
+          _currentRequestId: get()._currentRequestId + 1,
+        });
         
         // 获取面包屑
         const newBreadcrumbs = normalizedFolderId && isRealFolderId(normalizedFolderId)
           ? await fetchBreadcrumbs(normalizedFolderId)
           : [];
+        if (get()._navigationRequestId !== navigationRequestId) {
+          console.log('[finderStore] setCurrentPathWithoutHistory 导航已过期，丢弃结果', { navigationRequestId, current: get()._navigationRequestId });
+          return;
+        }
         
-        // 直接设置当前路径，不添加历史记录
+        const nextPath = createFinderPath({
+          ...currentPath,
+          viewKind,
+          breadcrumbs: newBreadcrumbs,
+          folderId: viewKind === 'folder' ? normalizedFolderId : null,
+          typeFilter: null,
+        });
+
+        // 直接设置当前路径，不添加历史记录；必要时替换历史栈以防返回越过课题根
         set({
-          currentPath: createFinderPath({
-            ...currentPath,
-            viewKind,
-            breadcrumbs: newBreadcrumbs,
-            folderId: viewKind === 'folder' ? normalizedFolderId : null,
-            typeFilter: null,
-          }),
+          currentPath: nextPath,
+          ...(options?.replaceHistory ? { history: [nextPath], historyIndex: 0 } : {}),
           selectedIds: new Set(),
           lastSelectedId: null,
           searchQuery: '',
           isSearching: false,
+          _currentRequestId: get()._currentRequestId + 1,
         });
       },
       
@@ -568,12 +596,16 @@ export const useFinderStore = create<FinderState>()(
           );
 
           const recentNodes: DstuNode[] = [];
+          const staleRecentIds: string[] = [];
           for (const { recent, getResult } of recentResults) {
             if (getResult.ok) {
               recentNodes.push(getResult.value);
             } else {
-              useRecentStore.getState().removeRecent(recent.id);
+              staleRecentIds.push(recent.id);
             }
+          }
+          if (staleRecentIds.length > 0) {
+            useRecentStore.getState().removeRecents(staleRecentIds);
           }
           result = { ok: true as const, value: recentNodes };
         } else if (currentPath.viewKind === 'trash') {
@@ -646,6 +678,14 @@ export const useFinderStore = create<FinderState>()(
         // ★ 生成新的请求 ID，取消之前的请求
         const requestId = get()._currentRequestId + 1;
         set({ isLoading: true, error: null, _currentRequestId: requestId });
+        const commitErrorIfCurrent = (message: string) => {
+          if (get()._currentRequestId !== requestId) {
+            console.log('[finderStore] loadItems 错误结果已过期，丢弃', { requestId, current: get()._currentRequestId });
+            return false;
+          }
+          set({ error: message, isLoading: false, items: [] });
+          return true;
+        };
 
         const { currentPath, getDstuListOptions } = get();
         let items: DstuNode[] = [];
@@ -681,14 +721,18 @@ export const useFinderStore = create<FinderState>()(
 
           // 提取成功的资源，清理失效记录
           const nodes: DstuNode[] = [];
+          const staleRecentIds: string[] = [];
           for (const { recent, result } of results) {
             if (result.ok) {
               nodes.push(result.value);
             } else {
               // 如果资源已被删除或不存在，从最近记录中移除
               console.warn('[finderStore] 最近文件已不存在，从记录中移除:', recent.path, recent.id);
-              useRecentStore.getState().removeRecent(recent.id);
+              staleRecentIds.push(recent.id);
             }
+          }
+          if (staleRecentIds.length > 0) {
+            useRecentStore.getState().removeRecents(staleRecentIds);
           }
 
           items = nodes;
@@ -714,7 +758,7 @@ export const useFinderStore = create<FinderState>()(
               items = result.value;
             } else {
               reportError(result.error, '加载回收站');
-              set({ error: result.error.message, isLoading: false, items: [] });
+              commitErrorIfCurrent(result.error.message);
               return;
             }
           } else {
@@ -727,7 +771,7 @@ export const useFinderStore = create<FinderState>()(
               items = result.value;
             } else {
               reportError(result.error, '加载回收站');
-              set({ error: result.error.message, isLoading: false, items: [] });
+              commitErrorIfCurrent(result.error.message);
               return;
             }
           }
@@ -735,7 +779,7 @@ export const useFinderStore = create<FinderState>()(
           const result = await dstu.list('/', { ...options, isFavorite: true });
           if (!result.ok) {
             reportError(result.error, '加载收藏');
-            set({ error: result.error.message, isLoading: false, items: [] });
+            commitErrorIfCurrent(result.error.message);
             return;
           }
           items = result.value;
@@ -744,7 +788,7 @@ export const useFinderStore = create<FinderState>()(
 
           if (!dstuResult.ok) {
             reportError(dstuResult.error, currentPath.folderId ? '加载文件夹' : '加载根目录');
-            set({ error: dstuResult.error.message, isLoading: false, items: [] });
+            commitErrorIfCurrent(dstuResult.error.message);
             return;
           }
 
@@ -756,7 +800,7 @@ export const useFinderStore = create<FinderState>()(
             items = result.value;
           } else {
             reportError(result.error, '加载列表');
-            set({ error: result.error.message, isLoading: false, items: [] });
+            commitErrorIfCurrent(result.error.message);
             return;
           }
         }
@@ -792,6 +836,7 @@ export const useFinderStore = create<FinderState>()(
           typeFilter: target.typeFilter,
         });
         get().navigateTo(newPath);
+        void get().refresh();
       },
       
       getDstuListOptions: () => {
@@ -831,6 +876,10 @@ export const useFinderStore = create<FinderState>()(
               lastSelectedId: null,
               searchQuery: '',
               isSearching: false,
+              isLoading: false,
+              error: null,
+              _currentRequestId: 0,
+              _navigationRequestId: 0,
               items: [],
               inlineEdit: {
                 editingId: null,

@@ -54,6 +54,17 @@ interface RecentState {
   removeRecent: (id: string) => void;
 
   /**
+   * 按资源 ID 或路径移除访问记录
+   */
+  removeRecentByIdentity: (id: string, path?: string | null) => void;
+
+  /**
+   * 批量移除访问记录
+   * @param ids 资源 ID 列表
+   */
+  removeRecents: (ids: readonly string[] | ReadonlySet<string>) => void;
+
+  /**
    * 获取最近访问项列表
    * @returns 按访问时间倒序的列表
    */
@@ -96,6 +107,18 @@ export const useRecentStore = create<RecentState>()(
 
       removeRecent: (id) => {
         set({ items: get().items.filter(i => i.id !== id) });
+      },
+
+      removeRecentByIdentity: (id, path) => {
+        set({
+          items: get().items.filter(i => i.id !== id && (!path || i.path !== path)),
+        });
+      },
+
+      removeRecents: (ids) => {
+        const idSet = new Set(ids);
+        if (idSet.size === 0) return;
+        set({ items: get().items.filter(i => !idSet.has(i.id)) });
       },
 
       getRecentItems: () => {

@@ -282,7 +282,7 @@ export const FinderFileItem = React.memo(function FinderFileItem({
       className={cn(
         // Notion 风格的网格卡片 - 更大、更精致
         "group relative flex flex-col items-center p-3 rounded-xl cursor-default select-none",
-        "w-[88px] h-[100px]",
+        "w-full min-w-0 h-[104px]",
         "transition-[background-color,box-shadow,border-color,opacity] duration-150 ease-out",
         "border border-transparent",
         // 悬停效果
@@ -313,12 +313,12 @@ export const FinderFileItem = React.memo(function FinderFileItem({
       )}
       
       {/* 自定义 SVG 图标 */}
-      <div className="mb-2">
-        <CustomIcon size={48} />
+      <div className="mb-1.5 shrink-0">
+        <CustomIcon size={44} />
       </div>
       
       {/* 文件名 */}
-      <div className="w-full text-center">
+      <div className="w-full min-w-0 text-center">
         {isEditing ? (
           <InlineEditText
             value={item.name}
@@ -330,7 +330,7 @@ export const FinderFileItem = React.memo(function FinderFileItem({
             inputClassName="text-center !text-[11px]"
           />
         ) : (
-          <span className="text-[11px] leading-tight font-medium text-foreground/85 line-clamp-2 break-words">
+          <span className="block min-w-0 text-[11px] leading-tight font-medium text-foreground/85 line-clamp-2 break-words [overflow-wrap:anywhere]">
             {item.name}
           </span>
         )}
@@ -377,6 +377,7 @@ export const SortableFinderFileItem = React.memo(function SortableFinderFileItem
   return (
     <div 
       ref={setNodeRef} 
+      className="w-full min-w-0"
       style={style} 
       {...attributes} 
       {...listeners}

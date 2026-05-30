@@ -26,6 +26,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      '@/components/learning-hub': path.resolve(__dirname, 'src/features/learning-hub'),
       '@': path.resolve(__dirname, 'src'),
       'heic2any': path.resolve(__dirname, 'tests/vitest/mocks/heic2any.mock.ts'),
       '@tauri-apps/api/core': path.resolve(__dirname, 'tests/ct/mocks/tauri-core-mock.ts'),

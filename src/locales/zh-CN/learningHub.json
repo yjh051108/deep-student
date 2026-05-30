@@ -601,7 +601,9 @@
     "root_create_success": "记忆根文件夹已创建",
     "root_create_error": "创建失败",
     "defaultRootTitle": "记忆",
-    "delete_confirm": "确定要删除这条记忆吗？"
+    "delete_confirm": "确定要删除这条记忆吗？",
+    "scope_all_confirm": "全部管理会显示所有课题的记忆，仅用于人工整理；Agent 默认仍只能看到当前课题 + 全局。确定切换吗？",
+    "scope_all_warning": "当前是人工全量管理视图，会显示所有课题记忆；这不会改变 Agent 的默认可见范围。"
   },
   "desktop": {
     "title": "桌面",
@@ -660,6 +662,12 @@
       "statsNote": "统计为全量（不受筛选影响）",
       "multimodal": "多模态:",
       "text": "文本:",
+      "imageIndexProgress": "图片索引进度",
+      "imageIndexCapability": {
+        "featureDisabled": "多模态索引未启用",
+        "notConfigured": "未配置多模态嵌入模型",
+        "invalidModel": "当前图片索引模型不可用"
+      },
       "items": "项",
       "staleHint": "{{count}} 个资源内容已更新，索引需要刷新",
       "recordCount": "{{count}} 条记录"

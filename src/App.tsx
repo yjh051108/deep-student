@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 // 🚀 性能优化：Settings, Dashboard, SOTADashboard 改为懒加载
-import { ArrowLeft, CaretLeft, CaretRight, CircleNotch, Terminal, Warning, X } from '@phosphor-icons/react';
+import { ArrowLeft, CaretLeft, CaretRight, CaretUp, CircleNotch, Terminal, Warning, X } from '@phosphor-icons/react';
 import { useSystemStatusStore } from '@/stores/systemStatusStore';
 import { CommonTooltip } from '@/components/shared/CommonTooltip';
 import { cn } from '@/lib/utils';
@@ -358,8 +358,10 @@ function DesktopSidebarAccessory({
 function DesktopHeaderNavControls({
   canGoBack,
   canGoForward,
+  canGoUp,
   onGoBack,
   onGoForward,
+  onGoUp,
   onNewSession,
   onTitlebarDoubleClick,
   newSessionLabel,
@@ -367,12 +369,16 @@ function DesktopHeaderNavControls({
   backLabel,
   forwardTitle,
   forwardLabel,
+  upTitle,
+  upLabel,
   collapsed,
 }: {
   canGoBack: boolean;
   canGoForward: boolean;
+  canGoUp?: boolean;
   onGoBack: () => void;
   onGoForward: () => void;
+  onGoUp?: () => void;
   onNewSession: () => void;
   onTitlebarDoubleClick: () => void | Promise<void>;
   newSessionLabel: string;
@@ -380,6 +386,8 @@ function DesktopHeaderNavControls({
   backLabel: string;
   forwardTitle: string;
   forwardLabel: string;
+  upTitle?: string;
+  upLabel?: string;
   collapsed: boolean;
 }) {
   return (
@@ -417,18 +425,36 @@ function DesktopHeaderNavControls({
           </NotionButton>
         </span>
       </CommonTooltip>
-      <CommonTooltip content={newSessionLabel} position="bottom">
-        <NotionButton
-          variant="ghost"
-          size="icon"
-          onMouseDown={(event) => handleDesktopToolbarButtonMouseDown(event, onTitlebarDoubleClick)}
-          onClick={(event) => handleDesktopToolbarButtonClick(event, onNewSession)}
-          className="desktop-shell-toolbar-button"
-          aria-label={newSessionLabel}
-        >
-          <StudyComposeIcon className="h-4 w-4" />
-        </NotionButton>
-      </CommonTooltip>
+      {onGoUp ? (
+        <CommonTooltip content={upTitle ?? upLabel ?? '上一级'} position="bottom">
+          <span className="inline-flex">
+            <NotionButton
+              variant="ghost"
+              size="icon"
+              onClick={onGoUp}
+              disabled={!canGoUp}
+              className="desktop-shell-toolbar-button"
+              aria-label={upLabel ?? upTitle ?? '上一级'}
+            >
+              <CaretUp size={16} />
+            </NotionButton>
+          </span>
+        </CommonTooltip>
+      ) : null}
+      {showNewSession ? (
+        <CommonTooltip content={newSessionLabel} position="bottom">
+          <NotionButton
+            variant="ghost"
+            size="icon"
+            onMouseDown={(event) => handleDesktopToolbarButtonMouseDown(event, onTitlebarDoubleClick)}
+            onClick={(event) => handleDesktopToolbarButtonClick(event, onNewSession)}
+            className="desktop-shell-toolbar-button"
+            aria-label={newSessionLabel}
+          >
+            <StudyComposeIcon className="h-4 w-4" />
+          </NotionButton>
+        </CommonTooltip>
+      ) : null}
     </div>
   );
 }
@@ -1333,6 +1359,7 @@ function App() {
   const unifiedCanGoBack = isInLearningHub && learningHubNav?.canGoBack
     ? true
     : navigationHistory.canGoBack;
+  const unifiedCanGoUp = isInLearningHub && Boolean(learningHubNav?.canGoUp);
   const unifiedCanGoForward = (() => {
     if (isInLearningHub) {
       // 通过页面级导航抵达 LH 且页面级有前进 → 页面级前进优先
@@ -1374,6 +1401,11 @@ function App() {
     }
     navigationHistory.goForward();
   }, [isInLearningHub, learningHubNav, navigationHistory]);
+  const unifiedGoUp = useCallback(() => {
+    if (isInLearningHub && learningHubNav?.canGoUp) {
+      learningHubNav.goUp();
+    }
+  }, [isInLearningHub, learningHubNav]);
   
   // ⌨️ 键盘和鼠标快捷键支持
   useNavigationShortcuts({
@@ -1983,8 +2015,10 @@ function App() {
     <DesktopHeaderNavControls
       canGoBack={unifiedCanGoBack}
       canGoForward={unifiedCanGoForward}
+      canGoUp={unifiedCanGoUp}
       onGoBack={unifiedGoBack}
       onGoForward={unifiedGoForward}
+      onGoUp={isInLearningHub ? unifiedGoUp : undefined}
       onNewSession={handleCreateChatSession}
       onTitlebarDoubleClick={toggleDesktopWindowMaximize}
       newSessionLabel={desktopHeaderNewSessionTooltipLabel}
@@ -1992,6 +2026,8 @@ function App() {
       backLabel={t('common:navigation.back')}
       forwardTitle={t('common:navigation.forward_tooltip', { shortcut: navigationShortcuts.forward })}
       forwardLabel={t('common:navigation.forward')}
+      upTitle={t('finder.toolbar.up', '上一级')}
+      upLabel={t('finder.toolbar.up', '上一级')}
       collapsed={leftPanelCollapsed}
     />
   );
@@ -2424,6 +2460,27 @@ function App() {
               onKeyDown={(event) => handleHeaderHotzoneKeyDown(event, openCommandPalette)}
             >
               <CommandPaletteButton onOpenReady={(trigger) => { commandPaletteTriggerRef.current = trigger; }} />
+              {currentView === 'learning-hub' ? (
+                <DesktopHeaderNavControls
+                  canGoBack={unifiedCanGoBack}
+                  canGoForward={unifiedCanGoForward}
+                  canGoUp={unifiedCanGoUp}
+                  onGoBack={unifiedGoBack}
+                  onGoForward={unifiedGoForward}
+                  onGoUp={unifiedGoUp}
+                  onNewSession={handleCreateChatSession}
+                  onTitlebarDoubleClick={toggleDesktopWindowMaximize}
+                  newSessionLabel={desktopHeaderNewSessionTooltipLabel}
+                  backTitle={t('common:navigation.back_tooltip', { shortcut: navigationShortcuts.back })}
+                  backLabel={t('common:navigation.back')}
+                  forwardTitle={t('common:navigation.forward_tooltip', { shortcut: navigationShortcuts.forward })}
+                  forwardLabel={t('common:navigation.forward')}
+                  upTitle={t('finder.toolbar.up', '上一级')}
+                  upLabel={t('finder.toolbar.up', '上一级')}
+                  collapsed={false}
+                  showNewSession={false}
+                />
+              ) : null}
 
               <div className="min-w-0 pl-1">
                 <div className="min-w-0 desktop-shell-header-title">

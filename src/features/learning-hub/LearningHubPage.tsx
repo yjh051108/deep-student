@@ -23,7 +23,6 @@ import type { DstuNode } from '@/dstu/types';
 import { createEmpty, dstu, type CreatableResourceType } from '@/dstu';
 import { showGlobalNotification } from '@/components/UnifiedNotification';
 import { setPendingMemoryLocate } from '@/utils/pendingMemoryLocate';
-import { getMemoryConfig } from '@/api/memoryApi';
 import { LearningHubSidebar } from './LearningHubSidebar';
 import type { ResourceListItem, ResourceType } from './types';
 import { cn } from '@/lib/utils';
@@ -55,6 +54,7 @@ import { setActiveTabForExternal } from './activeTabAccessor';
 import { COMMAND_EVENTS, useCommandEvents } from '@/command-palette/hooks/useCommandEvents';
 import { getCreatableFolderId } from './viewGuards';
 import { getQuickAccessTypeFromLauncherType, getViewCapabilities } from './learningHubContracts';
+import { setLearningHubLocalBackHandler } from './LearningHubNavigationContext';
 
 // ============================================================================
 // 三屏滑动布局类型和常量
@@ -110,9 +110,13 @@ export const LearningHubPage: React.FC = () => {
   const desktopShellSidebarTarget = useDesktopShellSidebarPortal('learning-hub');
 
   // ========== ★ 标签页状态 ==========
-  const [tabs, setTabs] = useState<OpenTab[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [tabState, setTabState] = useState<{ tabs: OpenTab[]; activeTabId: string | null }>({
+    tabs: [],
+    activeTabId: null,
+  });
+  const { tabs, activeTabId } = tabState;
   const [splitView, setSplitView] = useState<SplitViewState | null>(null);
+  const [localSidebarCollapsed, setLocalSidebarCollapsed] = useState(false);
 
   // 派生状态
   const activeTab = tabs.find(t => t.tabId === activeTabId) ?? null;
@@ -123,19 +127,38 @@ export const LearningHubPage: React.FC = () => {
   activeTabIdRef.current = activeTabId;
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
+  const hadOpenAppRef = useRef(false);
+
+  const setTabs = useCallback((updater: React.SetStateAction<OpenTab[]>) => {
+    setTabState(prev => {
+      const nextTabs = typeof updater === 'function' ? updater(prev.tabs) : updater;
+      const activeStillOpen = nextTabs.some(tab => tab.tabId === prev.activeTabId);
+      const activeTabId = activeStillOpen ? prev.activeTabId : nextTabs[nextTabs.length - 1]?.tabId ?? null;
+      return {
+        tabs: nextTabs,
+        activeTabId,
+      };
+    });
+  }, []);
 
   const openTab = useCallback((app: Omit<OpenTab, 'tabId' | 'openedAt'>) => {
-    setTabs(prev => {
+    if (!isSmallScreen) {
+      setLocalSidebarCollapsed(false);
+    }
+    setTabState(prev => {
       // 1. 已存在同 resourceId 的 tab → 激活并更新 openedAt（LRU）
-      const existing = prev.find(t => t.resourceId === app.resourceId);
+      const existing = prev.tabs.find(t => t.resourceId === app.resourceId);
       if (existing) {
-        setActiveTabId(existing.tabId);
-        return prev.map(t => t.tabId === existing.tabId ? { ...t, openedAt: Date.now() } : t);
+        return {
+          tabs: prev.tabs.map(t => t.tabId === existing.tabId ? { ...t, ...app, openedAt: Date.now() } : t),
+          activeTabId: existing.tabId,
+        };
       }
+      const newTab = createTab(app);
       // 2. 超出上限时 LRU 淘汰最旧的非固定、非活跃 tab
-      let next = [...prev];
+      let next = [...prev.tabs];
       if (next.length >= MAX_TABS) {
-        const currentActiveId = activeTabIdRef.current;
+        const currentActiveId = prev.activeTabId;
         const toEvict = [...next]
           .filter(t => !t.isPinned && t.tabId !== currentActiveId)
           .sort((a, b) => a.openedAt - b.openedAt)[0];
@@ -144,24 +167,21 @@ export const LearningHubPage: React.FC = () => {
         }
       }
       // 3. 新建 tab
-      const newTab = createTab(app);
-      setActiveTabId(newTab.tabId);
-      return [...next, newTab];
+      return { tabs: [...next, newTab], activeTabId: newTab.tabId };
     });
-  }, []);
+  }, [isSmallScreen]);
 
   const closeTab = useCallback((tabId: string) => {
-    setTabs(prev => {
-      const idx = prev.findIndex(t => t.tabId === tabId);
+    setTabState(prev => {
+      const idx = prev.tabs.findIndex(t => t.tabId === tabId);
       if (idx === -1) return prev;
-      const next = prev.filter(t => t.tabId !== tabId);
+      const next = prev.tabs.filter(t => t.tabId !== tabId);
       // 激活相邻 tab
-      setActiveTabId(currentId => {
-        if (currentId !== tabId) return currentId;
-        const newActive = next[idx] ?? next[idx - 1] ?? null;
-        return newActive?.tabId ?? null;
-      });
-      return next;
+      const newActive = next[idx] ?? next[idx - 1] ?? null;
+      return {
+        tabs: next,
+        activeTabId: prev.activeTabId === tabId ? newActive?.tabId ?? null : prev.activeTabId,
+      };
     });
   }, []);
 
@@ -176,8 +196,13 @@ export const LearningHubPage: React.FC = () => {
       if (prev?.rightTabId === tabId) return null;
       return prev;
     });
-    setActiveTabId(tabId);
-    setTabs(prev => prev.map(t => t.tabId === tabId ? { ...t, openedAt: Date.now() } : t));
+    setTabState(prev => {
+      if (!prev.tabs.some(t => t.tabId === tabId)) return prev;
+      return {
+        tabs: prev.tabs.map(t => t.tabId === tabId ? { ...t, openedAt: Date.now() } : t),
+        activeTabId: tabId,
+      };
+    });
   }, []);
 
   // ★ 分屏操作
@@ -185,15 +210,15 @@ export const LearningHubPage: React.FC = () => {
     // 将指定 tab 放到右侧分屏
     setSplitView({ rightTabId: tabId });
     // 如果右侧 tab 恰好是当前活跃 tab，则切换左侧到其他 tab
-    setActiveTabId(currentId => {
-      if (currentId === tabId) {
+    setTabState(prev => {
+      if (prev.activeTabId === tabId) {
         // 找一个非当前 tab 作为左侧
-        const other = tabs.find(t => t.tabId !== tabId);
-        return other?.tabId ?? currentId;
+        const other = prev.tabs.find(t => t.tabId !== tabId);
+        return { ...prev, activeTabId: other?.tabId ?? prev.activeTabId };
       }
-      return currentId;
+      return prev;
     });
-  }, [tabs]);
+  }, []);
 
   const closeSplitView = useCallback(() => {
     setSplitView(null);
@@ -224,29 +249,27 @@ export const LearningHubPage: React.FC = () => {
         tab => tab.resourceId === affectedResourceId && tab.tabId === activeTabIdRef.current
       );
 
-      setTabs(prev => {
-        const next = prev.filter(tab => tab.resourceId !== affectedResourceId);
-        if (next.length === prev.length) {
+      const removedRightTab = tabsRef.current.some(
+        tab => tab.resourceId === affectedResourceId && tab.tabId === splitView?.rightTabId
+      );
+
+      setTabState(prev => {
+        const next = prev.tabs.filter(tab => tab.resourceId !== affectedResourceId);
+        if (next.length === prev.tabs.length) {
           return prev;
         }
 
-        setActiveTabId(currentId => {
-          if (!currentId) return currentId;
-          if (next.some(tab => tab.tabId === currentId)) {
-            return currentId;
-          }
-          return next[next.length - 1]?.tabId ?? null;
-        });
-
-        setSplitView(prevSplit => {
-          if (prevSplit?.rightTabId && next.some(tab => tab.tabId === prevSplit.rightTabId)) {
-            return prevSplit;
-          }
-          return null;
-        });
-
-        return next;
+        return {
+          tabs: next,
+          activeTabId: next.some(tab => tab.tabId === prev.activeTabId)
+            ? prev.activeTabId
+            : next[next.length - 1]?.tabId ?? null,
+        };
       });
+
+      if (removedRightTab) {
+        setSplitView(null);
+      }
 
       if (wasActiveTabAffected) {
         showGlobalNotification(
@@ -259,11 +282,28 @@ export const LearningHubPage: React.FC = () => {
     return () => {
       unwatch();
     };
-  }, [t]);
+  }, [splitView?.rightTabId, t]);
 
   // ========== 三屏滑动布局状态（移动端） ==========
   const [screenPosition, setScreenPosition] = useState<ScreenPosition>('center');
   const [activeAppType, setActiveAppType] = useState<string>('all');
+
+  useEffect(() => {
+    const shouldOverrideBack = isSmallScreen ? screenPosition === 'right' : hasOpenApp;
+    return setLearningHubLocalBackHandler({
+      canGoBack: shouldOverrideBack,
+      goBack: () => {
+        if (isSmallScreen) {
+          setScreenPosition('center');
+          return;
+        }
+        const currentActiveId = activeTabIdRef.current;
+        if (currentActiveId) {
+          closeTabWithSplit(currentActiveId);
+        }
+      },
+    });
+  }, [closeTabWithSplit, hasOpenApp, isSmallScreen, screenPosition]);
 
   // 拖拽状态
   const containerRef = useRef<HTMLDivElement>(null);
@@ -305,23 +345,13 @@ export const LearningHubPage: React.FC = () => {
   const finderJumpToBreadcrumb = useFinderStore(state => state.jumpToBreadcrumb);
   const finderRefresh = useFinderStore(state => state.refresh);
   const finderQuickAccessNavigate = useFinderStore(state => state.quickAccessNavigate);
-  const finderEnterFolder = useFinderStore(state => state.enterFolder);
   const finderBreadcrumbs = finderCurrentPath.breadcrumbs;
   const finderViewCapabilities = getViewCapabilities(finderCurrentPath.viewKind);
 
-  // ★ 记忆系统改造：导航到记忆文件夹（优先 enterFolder，回退 MemoryView）
+  // ★ 记忆入口必须进入作用域感知的 MemoryView，避免暴露原始 DSTU 记忆根文件树。
   const navigateToMemory = useCallback(async () => {
-    try {
-      const config = await getMemoryConfig();
-      if (config.memoryRootFolderId) {
-        finderEnterFolder(config.memoryRootFolderId, config.memoryRootFolderTitle || '记忆');
-        return;
-      }
-    } catch (e) {
-      console.warn('[LearningHubPage] Failed to get memory config:', e);
-    }
     finderQuickAccessNavigate('memory');
-  }, [finderEnterFolder, finderQuickAccessNavigate]);
+  }, [finderQuickAccessNavigate]);
 
   // ========== VFS 引用模式注入 ==========
   const { injectToChat, canInject, isInjecting } = useVfsContextInject();
@@ -522,7 +552,6 @@ export const LearningHubPage: React.FC = () => {
 
   // ========== 侧边栏收缩状态 ==========
   const globalLeftPanelCollapsed = useUIStore((state) => state.leftPanelCollapsed);
-  const [localSidebarCollapsed, setLocalSidebarCollapsed] = useState(false);
   const sidebarCollapsed = globalLeftPanelCollapsed || localSidebarCollapsed;
 
   // ★ 当 Topbar 按钮将 globalLeftPanelCollapsed 切换为 false（展开）时，
@@ -532,6 +561,12 @@ export const LearningHubPage: React.FC = () => {
       setLocalSidebarCollapsed(false);
     }
   }, [globalLeftPanelCollapsed]);
+
+  useEffect(() => {
+    if (hasOpenApp && globalLeftPanelCollapsed && !isSmallScreen) {
+      useUIStore.getState().setLeftPanelCollapsed(false);
+    }
+  }, [globalLeftPanelCollapsed, hasOpenApp, isSmallScreen]);
 
   const handleSidebarCollapsedChange = useCallback((collapsed: boolean) => {
     setLocalSidebarCollapsed(collapsed);
@@ -882,26 +917,26 @@ export const LearningHubPage: React.FC = () => {
   // 应用面板引用，用于控制展开/折叠
   const appPanelRef = useRef<ImperativePanelHandle>(null);
   
-  // ★ 当标签页打开/全部关闭时控制面板展开/折叠
+  // ★ 当标签页打开/全部关闭时同步桌面面板宽度与移动端位置
   useEffect(() => {
-    const appPanel = appPanelRef.current;
-
     if (tabs.length > 0) {
-      if (appPanel) {
-        appPanel.expand();
-        requestAnimationFrame(() => {
-          setLocalSidebarCollapsed(true);
-        });
+      const wasOpen = hadOpenAppRef.current;
+      hadOpenAppRef.current = true;
+      if (wasOpen) {
+        return;
       }
-    } else {
-      if (appPanel) {
-        appPanel.collapse();
-      }
-      setLocalSidebarCollapsed(false);
-      // 移动端：所有 tab 关闭后返回中间屏
-      if (isSmallScreen) {
-        setScreenPosition('center');
-      }
+      const frame = window.requestAnimationFrame(() => {
+        sidebarPanelRef.current?.resize(35);
+        appPanelRef.current?.resize(65);
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
+
+    hadOpenAppRef.current = false;
+    setLocalSidebarCollapsed(false);
+    // 移动端：所有 tab 关闭后返回中间屏
+    if (isSmallScreen) {
+      setScreenPosition('center');
     }
   }, [tabs.length, isSmallScreen]);
 
@@ -1004,12 +1039,12 @@ export const LearningHubPage: React.FC = () => {
         <Panel
           ref={sidebarPanelRef}
           defaultSize={25}
-          minSize={15}
+          minSize={hasOpenApp ? (sidebarCollapsed ? 8 : 20) : 15}
           id="learning-hub-sidebar"
           order={1}
-          className="h-full"
+          className="h-full min-w-0 overflow-hidden"
         >
-          <div className={cn("study-shell-pane h-full", hasOpenApp && "border-r border-[color:var(--shell-workspace-border)]")}>
+          <div className={cn("study-shell-pane h-full min-w-0 overflow-hidden", hasOpenApp && "border-r border-[color:var(--shell-workspace-border)]")}>
             <LearningHubSidebar
               mode="fullscreen"
               onOpenPreview={handleOpenApp}
@@ -1032,18 +1067,16 @@ export const LearningHubPage: React.FC = () => {
           </PanelResizeHandle>
         )}
 
-        {/* 右侧：原生应用面板（始终渲染，通过 collapsible 控制显示） */}
-        <Panel
-          ref={appPanelRef}
-          defaultSize={75}
-          minSize={40}
-          collapsible={true}
-          collapsedSize={0}
-          id="learning-hub-app"
-          order={2}
-          className="h-full"
-        >
-          {tabs.length > 0 && (
+        {/* 右侧：原生应用面板。没有打开资源时不渲染，避免恢复到历史 0 宽布局。 */}
+        {hasOpenApp && (
+          <Panel
+            ref={appPanelRef}
+            defaultSize={75}
+            minSize={40}
+            id="learning-hub-app"
+            order={2}
+            className="h-full min-w-0 overflow-hidden"
+          >
             <div className="study-shell-panel h-full flex flex-col min-w-0">
               {/* ★ 标签页栏 */}
               <TabBar
@@ -1068,8 +1101,8 @@ export const LearningHubPage: React.FC = () => {
                 />
               </div>
             </div>
-          )}
-        </Panel>
+          </Panel>
+        )}
       </PanelGroup>
     </div>
   );

@@ -330,8 +330,7 @@ function ShortcutCard({
   return (
     <div
       className={cn(
-        'group relative flex flex-col items-center justify-center gap-2 p-4 rounded-xl cursor-pointer select-none',
-        'w-[88px] shrink-0',
+        'group relative flex h-[108px] min-w-0 w-full flex-col items-center justify-center gap-2 rounded-xl p-3 cursor-pointer select-none',
         'transition-all duration-200 ease-out',
         'hover:bg-[var(--interactive-hover)] dark:hover:bg-[var(--interactive-hover)]',
         'active:scale-95'
@@ -352,12 +351,12 @@ function ShortcutCard({
 
       {/* 名称 */}
       {isEditing ? (
-        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+        <div className="flex w-full max-w-[132px] min-w-0 items-center justify-center gap-1 px-1" onClick={e => e.stopPropagation()}>
           <Input
             value={editName}
             onChange={e => setEditName(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="h-6 w-24 text-xs text-center px-1"
+            className="h-6 min-w-0 flex-1 text-xs text-center px-1"
             autoFocus
           />
           <NotionButton variant="ghost" size="icon" iconOnly className="!h-5 !w-5 !p-0.5" onClick={() => { if (editName.trim() && editName !== shortcut.name) { onEditConfirm(editName.trim()); } else { onEditCancel(); } }} aria-label="confirm">
@@ -368,7 +367,7 @@ function ShortcutCard({
           </NotionButton>
         </div>
       ) : (
-        <span className="text-xs text-center font-medium text-foreground/80 group-hover:text-foreground line-clamp-2 max-w-[80px]">
+        <span className="w-full min-w-0 text-xs text-center font-medium text-foreground/80 group-hover:text-foreground line-clamp-2 break-words [overflow-wrap:anywhere]">
           {shortcut.name}
         </span>
       )}
@@ -602,11 +601,11 @@ export function DesktopView({
   }, []);
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
+    <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden bg-background">
       {/* 快捷方式网格 */}
-      <CustomScrollArea className="flex-1">
+      <CustomScrollArea className="flex-1 min-w-0" viewportClassName="min-w-0 overflow-x-hidden">
         <div
-          className="p-4 min-h-full"
+          className="min-h-full min-w-0 p-4"
           onContextMenu={handleContainerContextMenu}
         >
           {shortcuts.length === 0 ? (
@@ -627,7 +626,12 @@ export function DesktopView({
               </NotionButton>
             </div>
           ) : (
-            <div className="flex flex-wrap gap-2">
+            <div
+              className="grid min-w-0 gap-2"
+              style={{
+                gridTemplateColumns: 'repeat(auto-fill, minmax(min(112px, 100%), 1fr))',
+              }}
+            >
               {shortcuts.map(shortcut => (
                 <ShortcutCard
                   key={shortcut.id}

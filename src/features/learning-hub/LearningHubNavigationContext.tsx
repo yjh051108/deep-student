@@ -21,11 +21,45 @@ import { useFinderStore } from './stores/finderStore';
 interface GlobalNavigationState {
   canGoBack: boolean;
   canGoForward: boolean;
+  canGoUp: boolean;
   goBack: () => void;
   goForward: () => void;
+  goUp: () => void;
 }
 
 const globalNavigationRef: { current: GlobalNavigationState | null } = { current: null };
+const finderNavigationRef: { current: GlobalNavigationState | null } = { current: null };
+const localBackRef: { current: Pick<GlobalNavigationState, 'canGoBack' | 'goBack'> | null } = { current: null };
+
+function publishGlobalLearningHubNavigation() {
+  const finderState = finderNavigationRef.current;
+  if (!finderState) {
+    globalNavigationRef.current = null;
+    window.dispatchEvent(new CustomEvent(LEARNING_HUB_NAV_STATE_CHANGED, { detail: null }));
+    return;
+  }
+
+  const localBack = localBackRef.current;
+  const state: GlobalNavigationState = localBack?.canGoBack
+    ? { ...finderState, canGoBack: true, goBack: localBack.goBack }
+    : finderState;
+
+  globalNavigationRef.current = state;
+  window.dispatchEvent(new CustomEvent(LEARNING_HUB_NAV_STATE_CHANGED, { detail: state }));
+}
+
+export function setLearningHubLocalBackHandler(
+  state: Pick<GlobalNavigationState, 'canGoBack' | 'goBack'> | null
+): () => void {
+  localBackRef.current = state;
+  publishGlobalLearningHubNavigation();
+  return () => {
+    if (localBackRef.current === state) {
+      localBackRef.current = null;
+      publishGlobalLearningHubNavigation();
+    }
+  };
+}
 
 /**
  * 获取全局导航状态（供 App.tsx 使用）
@@ -70,10 +104,14 @@ interface LearningHubNavigationContextValue {
   canGoBack: boolean;
   /** 是否可以前进 */
   canGoForward: boolean;
+  /** 是否可以返回父目录 */
+  canGoUp: boolean;
   /** 后退 */
   goBack: () => void;
   /** 前进 */
   goForward: () => void;
+  /** 返回父目录 */
+  goUp: () => void;
   /** 是否在 Learning Hub 页面 */
   isInLearningHub: boolean;
   /** 设置是否在 Learning Hub 页面 */
@@ -90,6 +128,7 @@ export const LearningHubNavigationProvider: React.FC<{ children: React.ReactNode
     history,
     goBack: finderGoBack,
     goForward: finderGoForward,
+    goUp: finderGoUp,
     currentPath,
     enterFolder,
     jumpToBreadcrumb,
@@ -110,6 +149,7 @@ export const LearningHubNavigationProvider: React.FC<{ children: React.ReactNode
   // 全局后退只代表历史后退，避免语义混用。
   const canGoBack = historyIndex > 0;
   const canGoForward = historyIndex < history.length - 1;
+  const canGoUp = currentPath.viewKind === 'folder' && currentPath.breadcrumbs.length > 0;
 
   // goBack/goForward 直接使用 finderStore 的方法
   const goBack = useCallback(() => {
@@ -119,6 +159,10 @@ export const LearningHubNavigationProvider: React.FC<{ children: React.ReactNode
   const goForward = useCallback(() => {
     finderGoForward();
   }, [finderGoForward]);
+
+  const goUp = useCallback(() => {
+    finderGoUp();
+  }, [finderGoUp]);
 
   const navigateTo = useCallback((folderId: string | null) => {
     if (folderId) {
@@ -137,14 +181,14 @@ export const LearningHubNavigationProvider: React.FC<{ children: React.ReactNode
     const state: GlobalNavigationState = {
       canGoBack,
       canGoForward,
+      canGoUp,
       goBack,
       goForward,
+      goUp,
     };
-    globalNavigationRef.current = state;
-
-    // 触发自定义事件通知 App.tsx
-    window.dispatchEvent(new CustomEvent(LEARNING_HUB_NAV_STATE_CHANGED, { detail: state }));
-  }, [canGoBack, canGoForward, goBack, goForward]);
+    finderNavigationRef.current = state;
+    publishGlobalLearningHubNavigation();
+  }, [canGoBack, canGoForward, canGoUp, goBack, goForward, goUp]);
 
   const value = useMemo<LearningHubNavigationContextValue>(() => ({
     currentFolderId: currentPath.folderId,
@@ -154,8 +198,10 @@ export const LearningHubNavigationProvider: React.FC<{ children: React.ReactNode
     navigateToBreadcrumb,
     canGoBack,
     canGoForward,
+    canGoUp,
     goBack,
     goForward,
+    goUp,
     isInLearningHub,
     setIsInLearningHub,
   }), [
@@ -166,8 +212,10 @@ export const LearningHubNavigationProvider: React.FC<{ children: React.ReactNode
     navigateToBreadcrumb,
     canGoBack,
     canGoForward,
+    canGoUp,
     goBack,
     goForward,
+    goUp,
     isInLearningHub,
   ]);
 
