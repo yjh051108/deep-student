@@ -12,7 +12,8 @@ describe('LearningHubSidebar delete refresh contract', () => {
     expect(source).not.toContain('removeResourcesFromRecentAndFinder');
     expect(source).not.toContain('finderState.setItems(finderState.items.filter');
     expect(source).toContain('event.id ?? getDstuResourceIdFromPath(event.path)');
-    expect(source).toContain('useRecentStore.getState().removeRecent(resourceId)');
+    expect(source).toContain('useRecentStore.getState().removeRecentByIdentity(resourceId, event.path)');
+    expect(source).toContain('pruneFinderResource(resourceId, event.path)');
     expect(source).toContain('handleRefresh();');
   });
 });
