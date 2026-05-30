@@ -51,18 +51,13 @@ export const MemorySettingsSection: React.FC<MemorySettingsSectionProps> = ({
   const [showCreateInput, setShowCreateInput] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
 
-  const flattenFolders = useCallback(
-    (nodes: FolderTreeNode[], parentPath = ''): Array<{ id: string; title: string; path: string }> => {
-      const result: Array<{ id: string; title: string; path: string }> = [];
-      for (const node of nodes) {
-        const path = parentPath ? `${parentPath}/${node.folder.title}` : node.folder.title;
-        result.push({ id: node.folder.id, title: node.folder.title, path });
-        if (node.children.length > 0) {
-          result.push(...flattenFolders(node.children, path));
-        }
-      }
-      return result;
-    },
+  const rootFolderOptions = useCallback(
+    (nodes: FolderTreeNode[]): Array<{ id: string; title: string; path: string }> =>
+      nodes.map((node) => ({
+        id: node.folder.id,
+        title: node.folder.title,
+        path: node.folder.title,
+      })),
     []
   );
 
@@ -75,7 +70,7 @@ export const MemorySettingsSection: React.FC<MemorySettingsSectionProps> = ({
       ]);
       setConfig(configResult);
       if (treeResult.ok) {
-        setFolders(flattenFolders(treeResult.value));
+        setFolders(rootFolderOptions(treeResult.value));
       }
     } catch (error: unknown) {
       console.error('加载记忆配置失败:', error);
@@ -83,7 +78,7 @@ export const MemorySettingsSection: React.FC<MemorySettingsSectionProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [flattenFolders]);
+  }, [rootFolderOptions]);
 
   useEffect(() => {
     loadData();

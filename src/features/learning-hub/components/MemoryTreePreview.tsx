@@ -23,6 +23,7 @@ import { getMemoryTree, type FolderTreeNode } from '@/api/memoryApi';
 
 interface MemoryTreePreviewProps {
   onNavigateToFolder?: (folderId: string) => void;
+  rootPath?: string;
   className?: string;
 }
 
@@ -132,6 +133,7 @@ TreeNode.displayName = 'TreeNode';
 
 export const MemoryTreePreview: React.FC<MemoryTreePreviewProps> = React.memo(({
   onNavigateToFolder,
+  rootPath,
   className,
 }) => {
   const { t } = useTranslation('learningHub');
@@ -143,14 +145,14 @@ export const MemoryTreePreview: React.FC<MemoryTreePreviewProps> = React.memo(({
     setIsLoading(true);
     setError(null);
     try {
-      const data = await getMemoryTree();
+      const data = await getMemoryTree(rootPath);
       setTreeData(data);
     } catch (e) {
       setError(t('memory.tree_load_error', '加载记忆树失败'));
     } finally {
       setIsLoading(false);
     }
-  }, [t]);
+  }, [rootPath, t]);
 
   useEffect(() => { loadTree(); }, [loadTree]);
 
@@ -185,6 +187,11 @@ export const MemoryTreePreview: React.FC<MemoryTreePreviewProps> = React.memo(({
 
   const totalMemories = countRecursive(treeData);
 
+  const shouldFlattenRoot = !rootPath;
+  const visibleRootChildren = treeData.children.filter(
+    c => !(c.folder.title.startsWith('__') && c.folder.title.endsWith('__'))
+  );
+
   return (
     <div className={cn('flex flex-col h-full', className)}>
       {/* Header */}
@@ -205,12 +212,23 @@ export const MemoryTreePreview: React.FC<MemoryTreePreviewProps> = React.memo(({
       {/* Tree */}
       <CustomScrollArea className="flex-1">
         <div className="py-1">
-          <TreeNode
-            node={treeData}
-            depth={0}
-            isRoot
-            onNavigate={onNavigateToFolder}
-          />
+          {shouldFlattenRoot ? (
+            visibleRootChildren.map((child) => (
+              <TreeNode
+                key={child.folder.id}
+                node={child}
+                depth={0}
+                onNavigate={onNavigateToFolder}
+              />
+            ))
+          ) : (
+            <TreeNode
+              node={treeData}
+              depth={0}
+              isRoot
+              onNavigate={onNavigateToFolder}
+            />
+          )}
         </div>
       </CustomScrollArea>
     </div>

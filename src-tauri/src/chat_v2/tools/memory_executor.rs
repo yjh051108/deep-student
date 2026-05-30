@@ -2,14 +2,17 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use super::executor::{ExecutionContext, ToolExecutor, ToolSensitivity};
 use super::strip_tool_namespace;
-use crate::chat_v2::events::event_types;
+use crate::chat_v2::repo::ChatV2Repo;
+use crate::chat_v2::types::PersistStatus;
 use crate::chat_v2::types::{ToolCall, ToolResultInfo};
-use crate::memory::{MemoryOpSource, MemoryOpType, MemoryService, MemoryType, OpTimer, WriteMode};
+use crate::memory::{
+    MemoryOpSource, MemoryOpType, MemoryScope, MemoryService, MemoryType, OpTimer, WriteMode,
+};
 use crate::vfs::lance_store::VfsLanceStore;
 
 pub const MEMORY_SEARCH: &str = "builtin-memory_search";
@@ -23,9 +26,159 @@ pub const MEMORY_WRITE_BATCH: &str = "builtin-memory_write_batch";
 
 pub struct MemoryToolExecutor;
 
+struct EffectiveMemoryScope {
+    group_id: String,
+    group_name: String,
+}
+
 impl MemoryToolExecutor {
     pub fn new() -> Self {
         Self
+    }
+
+    fn load_active_group_scope(
+        ctx: &ExecutionContext,
+        group_id: &str,
+    ) -> Option<EffectiveMemoryScope> {
+        let db = ctx.chat_v2_db.as_ref()?;
+        let conn = db.get_conn_safe().ok()?;
+        let group = ChatV2Repo::get_group_with_conn(&conn, group_id)
+            .ok()
+            .flatten()?;
+        if group.persist_status != PersistStatus::Active {
+            return None;
+        }
+        Some(EffectiveMemoryScope {
+            group_id: group.id,
+            group_name: group.name,
+        })
+    }
+
+    fn load_active_session_scope(ctx: &ExecutionContext) -> Option<EffectiveMemoryScope> {
+        let db = ctx.chat_v2_db.as_ref()?;
+        let conn = db.get_conn_safe().ok()?;
+        let session = ChatV2Repo::get_session_with_conn(&conn, &ctx.session_id)
+            .ok()
+            .flatten()?;
+        let group_id = session.group_id?;
+        Self::load_active_group_scope(ctx, &group_id)
+    }
+
+    fn effective_topic_scope(ctx: &ExecutionContext) -> Option<EffectiveMemoryScope> {
+        if let Some(scope) = Self::load_active_session_scope(ctx) {
+            return Some(scope);
+        }
+        if ctx.chat_v2_db.is_some() {
+            return None;
+        }
+        let group_id = ctx.group_id.as_deref()?.trim();
+        if group_id.is_empty() {
+            return None;
+        }
+        Some(EffectiveMemoryScope {
+            group_id: group_id.to_string(),
+            group_name: ctx
+                .group_name
+                .clone()
+                .unwrap_or_else(|| group_id.to_string()),
+        })
+    }
+
+    fn topic_memory_root(ctx: &ExecutionContext) -> Option<String> {
+        let effective_scope = Self::effective_topic_scope(ctx)?;
+        crate::memory::topic_memory_root(
+            Some(effective_scope.group_id.as_str()),
+            Some(effective_scope.group_name.as_str()),
+        )
+    }
+
+    fn visible_scope_roots(ctx: &ExecutionContext) -> Vec<String> {
+        let effective_scope = Self::effective_topic_scope(ctx);
+        crate::memory::visible_scope_roots(
+            effective_scope
+                .as_ref()
+                .map(|scope| scope.group_id.as_str()),
+            effective_scope
+                .as_ref()
+                .map(|scope| scope.group_name.as_str()),
+        )
+    }
+
+    fn scoped_folder_path(
+        ctx: &ExecutionContext,
+        scope: MemoryScope,
+        folder: Option<&str>,
+    ) -> Option<String> {
+        let effective_scope = Self::effective_topic_scope(ctx);
+        crate::memory::scoped_folder_path(
+            effective_scope
+                .as_ref()
+                .map(|scope| scope.group_id.as_str()),
+            effective_scope
+                .as_ref()
+                .map(|scope| scope.group_name.as_str()),
+            scope,
+            folder,
+        )
+    }
+
+    fn parse_scope(call: &ToolCall) -> Result<MemoryScope, String> {
+        MemoryScope::from_arg(call.arguments.get("scope").and_then(|v| v.as_str()))
+    }
+
+    fn ensure_writable_scope(ctx: &ExecutionContext, scope: MemoryScope) -> Result<(), String> {
+        if matches!(scope, MemoryScope::Topic) && Self::topic_memory_root(ctx).is_none() {
+            Err("当前会话不属于任何课题，无法写入课题记忆；请使用 scope='global'".to_string())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn maintenance_paths(ctx: &ExecutionContext, folder: Option<&str>) -> Vec<String> {
+        let Some(folder) = folder else {
+            return Vec::new();
+        };
+        let effective_scope = Self::effective_topic_scope(ctx);
+        if crate::memory::classify_folder_scope(
+            folder,
+            effective_scope
+                .as_ref()
+                .map(|scope| scope.group_id.as_str()),
+            effective_scope
+                .as_ref()
+                .map(|scope| scope.group_name.as_str()),
+        )
+        .is_some()
+        {
+            vec![folder.to_string()]
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn ensure_note_in_scope(
+        &self,
+        service: &MemoryService,
+        ctx: &ExecutionContext,
+        note_id: &str,
+    ) -> Result<(), String> {
+        let folder_path = service
+            .get_note_folder_path(note_id)
+            .map_err(|e| e.to_string())?;
+        let effective_scope = Self::effective_topic_scope(ctx);
+        if crate::memory::is_folder_path_visible(
+            &folder_path,
+            effective_scope
+                .as_ref()
+                .map(|scope| scope.group_id.as_str()),
+            effective_scope
+                .as_ref()
+                .map(|scope| scope.group_name.as_str()),
+        ) {
+            Ok(())
+        } else {
+            Err("记忆不属于当前课题，已阻止跨课题访问".to_string())
+        }
     }
 
     /// 检查工具名是否为 Memory 工具
@@ -139,9 +292,10 @@ impl MemoryToolExecutor {
             .map(|v| v as usize)
             .unwrap_or(5);
 
+        let scoped_roots = Self::visible_scope_roots(ctx);
         let results = if let Some(cancel_token) = ctx.cancellation_token() {
             tokio::select! {
-                res = service.search_with_rerank(query, top_k, false) => res.map_err(|e| e.to_string())?,
+                res = service.search_with_rerank_in_folder_paths(query, top_k, false, &scoped_roots) => res.map_err(|e| e.to_string())?,
                 _ = cancel_token.cancelled() => {
                     log::info!("[MemoryToolExecutor] Memory search cancelled");
                     return Err("Memory search cancelled during execution".to_string());
@@ -149,7 +303,7 @@ impl MemoryToolExecutor {
             }
         } else {
             service
-                .search_with_rerank(query, top_k, false)
+                .search_with_rerank_in_folder_paths(query, top_k, false, &scoped_roots)
                 .await
                 .map_err(|e| e.to_string())?
         };
@@ -168,6 +322,7 @@ impl MemoryToolExecutor {
                         "memory_id": item.note_id,
                         "note_id": item.note_id,
                         "folder_path": item.folder_path,
+                        "scope": item.scope.clone(),
                         "source_type": "memory"
                     }
                 })
@@ -200,6 +355,7 @@ impl MemoryToolExecutor {
             .ok_or("Missing 'note_id' parameter")?;
 
         let note_id_owned = note_id.to_string();
+        self.ensure_note_in_scope(&service, ctx, &note_id_owned)?;
 
         // 🆕 取消支持：使用 spawn_blocking + tokio::select! 监听取消信号
         let read_task = {
@@ -275,6 +431,15 @@ impl MemoryToolExecutor {
             .get("folder")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
+        let scope = Self::parse_scope(call)?;
+        if note_id.is_none() {
+            Self::ensure_writable_scope(ctx, scope)?;
+        }
+        let scoped_folder = Self::scoped_folder_path(ctx, scope, folder.as_deref());
+
+        if let Some(ref note_id) = note_id {
+            self.ensure_note_in_scope(&service, ctx, note_id)?;
+        }
 
         // ★ 修复不一致：工具路径也需要敏感信息过滤
         if let Some(ref c) = content {
@@ -326,7 +491,7 @@ impl MemoryToolExecutor {
             let note_id = note_id.clone();
             let title = title.clone();
             let content = content.clone();
-            let folder = folder.clone();
+            let folder = scoped_folder.clone();
             tokio::task::spawn_blocking(move || -> Result<_, String> {
                 if let Some(ref note_id) = note_id {
                     match mode {
@@ -396,7 +561,7 @@ impl MemoryToolExecutor {
                     note_id: Some(result.note_id.clone()),
                     title: title.clone(),
                     content_preview: content.clone(),
-                    folder: folder.clone(),
+                    folder: scoped_folder.clone(),
                     event: Some(if result.is_new { "ADD" } else { "UPDATE" }.to_string()),
                     confidence: None,
                     reason: None,
@@ -413,7 +578,16 @@ impl MemoryToolExecutor {
                 svc.index_resource_immediately(&resource_id).await;
             });
         }
-        service.spawn_post_write_maintenance();
+        let maintenance_paths = if let Some(note_id) = note_id.as_deref() {
+            service
+                .get_note_folder_path(note_id)
+                .ok()
+                .map(|folder| Self::maintenance_paths(ctx, Some(&folder)))
+                .unwrap_or_default()
+        } else {
+            Self::maintenance_paths(ctx, scoped_folder.as_deref())
+        };
+        service.spawn_post_write_maintenance_for_paths(maintenance_paths);
 
         Ok(json!({
             "success": true,
@@ -439,6 +613,21 @@ impl MemoryToolExecutor {
             .get("folder")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
+        let scope = Self::parse_scope(call)?;
+        let scoped_folder = if folder.is_some() {
+            Self::scoped_folder_path(ctx, scope, folder.as_deref()).map(|path| vec![path])
+        } else {
+            match scope {
+                MemoryScope::Global => Some(vec![crate::memory::GLOBAL_MEMORY_FOLDER.to_string()]),
+                MemoryScope::Topic => {
+                    if call.arguments.get("scope").is_some() {
+                        Self::topic_memory_root(ctx).map(|path| vec![path])
+                    } else {
+                        Some(Self::visible_scope_roots(ctx))
+                    }
+                }
+            }
+        };
 
         let limit = call
             .arguments
@@ -456,7 +645,11 @@ impl MemoryToolExecutor {
         // 🆕 取消支持：使用 spawn_blocking + tokio::select! 监听取消信号
         let list_task = {
             let service = service.clone();
-            tokio::task::spawn_blocking(move || service.list(folder.as_deref(), limit, offset))
+            tokio::task::spawn_blocking(move || match scoped_folder {
+                Some(paths) if paths.len() > 1 => service.list_folder_paths(&paths, limit, offset),
+                Some(paths) => service.list(paths.first().map(|s| s.as_str()), limit, offset),
+                None => Ok(Vec::new()),
+            })
         };
 
         let items = if let Some(cancel_token) = ctx.cancellation_token() {
@@ -502,6 +695,12 @@ impl MemoryToolExecutor {
             .and_then(|v| v.as_str())
             .ok_or("Missing 'note_id' parameter")?
             .to_string();
+        self.ensure_note_in_scope(&service, ctx, &note_id)?;
+        let maintenance_paths = service
+            .get_note_folder_path(&note_id)
+            .ok()
+            .map(|folder| Self::maintenance_paths(ctx, Some(&folder)))
+            .unwrap_or_default();
         let title = call
             .arguments
             .get("title")
@@ -519,6 +718,7 @@ impl MemoryToolExecutor {
         // 🆕 取消支持：使用 spawn_blocking + tokio::select! 监听取消信号
         let update_task = {
             let service = service.clone();
+            let note_id = note_id.clone();
             tokio::task::spawn_blocking(move || {
                 service.update_by_id_with_source(
                     &note_id,
@@ -553,7 +753,7 @@ impl MemoryToolExecutor {
                 svc.index_resource_immediately(&resource_id).await;
             });
         }
-        service.spawn_post_write_maintenance();
+        service.spawn_post_write_maintenance_for_paths(maintenance_paths);
 
         Ok(json!({
             "success": true,
@@ -583,6 +783,12 @@ impl MemoryToolExecutor {
             .get("note_id")
             .and_then(|v| v.as_str())
             .ok_or("Missing 'note_id' parameter")?;
+        self.ensure_note_in_scope(&service, ctx, note_id)?;
+        let maintenance_paths = service
+            .get_note_folder_path(note_id)
+            .ok()
+            .map(|folder| Self::maintenance_paths(ctx, Some(&folder)))
+            .unwrap_or_default();
 
         // 🆕 取消支持：使用 tokio::select! 监听取消信号
         if let Some(cancel_token) = ctx.cancellation_token() {
@@ -599,7 +805,7 @@ impl MemoryToolExecutor {
                 .await
                 .map_err(|e| e.to_string())?
         };
-        service.spawn_post_write_maintenance();
+        service.spawn_post_write_maintenance_for_paths(maintenance_paths);
         Ok(json!({ "success": true, "note_id": note_id }))
     }
 
@@ -629,6 +835,9 @@ impl MemoryToolExecutor {
             .and_then(|v| v.as_str())
             .ok_or("Missing 'content' parameter")?;
         let folder = call.arguments.get("folder").and_then(|v| v.as_str());
+        let scope = Self::parse_scope(call)?;
+        Self::ensure_writable_scope(ctx, scope)?;
+        let scoped_folder = Self::scoped_folder_path(ctx, scope, folder);
         let memory_type = Self::parse_memory_type(
             call.arguments.get("memory_type").and_then(|v| v.as_str()),
             MemoryType::Fact,
@@ -680,7 +889,10 @@ impl MemoryToolExecutor {
                     max_chars
                 ),
                 MemoryType::Study => {
-                    format!("学习记忆内容过长（超过 {} 字）。请精简或拆分为多条。", max_chars)
+                    format!(
+                        "学习记忆内容过长（超过 {} 字）。请精简或拆分为多条。",
+                        max_chars
+                    )
                 }
                 MemoryType::Note => {
                     format!("经验笔记内容过长（超过 {} 字）。请精简内容。", max_chars)
@@ -701,7 +913,7 @@ impl MemoryToolExecutor {
                 call,
                 &ctx.session_id,
                 &ctx.message_id,
-                folder,
+                scoped_folder.as_deref(),
                 title,
                 content,
                 memory_type,
@@ -709,7 +921,7 @@ impl MemoryToolExecutor {
             );
             tokio::select! {
                 res = service.write_smart_with_source(
-                    folder,
+                    scoped_folder.as_deref(),
                     title,
                     content,
                     MemoryOpSource::ToolCall,
@@ -728,7 +940,7 @@ impl MemoryToolExecutor {
                 call,
                 &ctx.session_id,
                 &ctx.message_id,
-                folder,
+                scoped_folder.as_deref(),
                 title,
                 content,
                 memory_type,
@@ -736,7 +948,7 @@ impl MemoryToolExecutor {
             );
             service
                 .write_smart_with_source(
-                    folder,
+                    scoped_folder.as_deref(),
                     title,
                     content,
                     MemoryOpSource::ToolCall,
@@ -750,7 +962,10 @@ impl MemoryToolExecutor {
         };
 
         if result.event != "NONE" && result.event != "FILTERED" {
-            service.spawn_post_write_maintenance();
+            service.spawn_post_write_maintenance_for_paths(Self::maintenance_paths(
+                ctx,
+                scoped_folder.as_deref(),
+            ));
         }
 
         Ok(json!({
@@ -799,6 +1014,7 @@ impl MemoryToolExecutor {
         let mut filtered = 0usize;
         let mut results = Vec::with_capacity(items.len());
         let mut resource_ids = Vec::new();
+        let mut maintenance_paths: Vec<String> = Vec::new();
 
         for (index, item) in items.iter().enumerate() {
             let title = item
@@ -814,6 +1030,14 @@ impl MemoryToolExecutor {
                 .or_else(|| item.get("folder_path"))
                 .and_then(|v| v.as_str())
                 .or(default_folder);
+            let item_scope = item
+                .get("scope")
+                .and_then(|v| v.as_str())
+                .map(|scope| MemoryScope::from_arg(Some(scope)))
+                .transpose()?
+                .unwrap_or(Self::parse_scope(call)?);
+            Self::ensure_writable_scope(ctx, item_scope)?;
+            let scoped_folder = Self::scoped_folder_path(ctx, item_scope, folder);
             let memory_type = Self::parse_memory_type(
                 item.get("memory_type").and_then(|v| v.as_str()),
                 default_memory_type,
@@ -836,7 +1060,7 @@ impl MemoryToolExecutor {
                             call,
                             &ctx.session_id,
                             &ctx.message_id,
-                            folder,
+                            scoped_folder.as_deref(),
                             title,
                             content,
                             memory_type,
@@ -848,7 +1072,7 @@ impl MemoryToolExecutor {
             let output = match memory_type {
                 MemoryType::Fact => service
                     .write_smart_with_source(
-                        folder,
+                        scoped_folder.as_deref(),
                         title,
                         content,
                         MemoryOpSource::ToolCall,
@@ -860,7 +1084,13 @@ impl MemoryToolExecutor {
                     .await
                     .map_err(|e| e.to_string())?,
                 _ => service
-                    .write_explicit_memory(folder, title, content, memory_type, memory_purpose)
+                    .write_explicit_memory(
+                        scoped_folder.as_deref(),
+                        title,
+                        content,
+                        memory_type,
+                        memory_purpose,
+                    )
                     .map_err(|e| e.to_string())?,
             };
 
@@ -872,6 +1102,16 @@ impl MemoryToolExecutor {
             }
             if let Some(resource_id) = &output.resource_id {
                 resource_ids.push(resource_id.clone());
+            }
+            if matches!(
+                output.event.as_str(),
+                "ADD" | "UPDATE" | "APPEND" | "DELETE"
+            ) {
+                for path in Self::maintenance_paths(ctx, scoped_folder.as_deref()) {
+                    if !maintenance_paths.contains(&path) {
+                        maintenance_paths.push(path);
+                    }
+                }
             }
             results.push(json!({
                 "title": title,
@@ -891,7 +1131,7 @@ impl MemoryToolExecutor {
                     svc.index_resource_immediately(&resource_id).await;
                 });
             }
-            service.spawn_post_write_maintenance();
+            service.spawn_post_write_maintenance_for_paths(maintenance_paths);
         }
 
         Ok(json!({

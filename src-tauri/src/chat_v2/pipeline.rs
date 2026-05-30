@@ -21,10 +21,10 @@ pub(crate) use std::collections::{HashMap, HashSet};
 pub(crate) use std::sync::Arc;
 pub(crate) use std::time::Instant;
 
-pub(crate) use serde_json::{json, Value};
+pub(crate) use serde_json::{Value, json};
 pub(crate) use sha2::{Digest, Sha256};
 pub(crate) use tauri::Window;
-pub(crate) use tokio::time::{timeout, Duration};
+pub(crate) use tokio::time::{Duration, timeout};
 pub(crate) use tokio_util::sync::CancellationToken;
 pub(crate) use uuid::Uuid;
 
@@ -44,11 +44,11 @@ pub(crate) use crate::database::Database as MainDatabase;
 pub(crate) use crate::models::{
     ChatMessage as LegacyChatMessage, MultimodalContentPart, RagSourceInfo,
 };
-pub(crate) use crate::tools::web_search::{do_search, SearchInput, ToolConfig as WebSearchConfig};
 pub(crate) use crate::tools::ToolRegistry;
+pub(crate) use crate::tools::web_search::{SearchInput, ToolConfig as WebSearchConfig, do_search};
 
 pub(crate) use super::error::{ChatV2Error, ChatV2Result};
-pub(crate) use super::events::{event_types, ChatV2EventEmitter};
+pub(crate) use super::events::{ChatV2EventEmitter, event_types};
 pub(crate) use super::prompt_builder;
 pub(crate) use super::repo::ChatV2Repo;
 // 🆕 VFS 统一存储（2025-12-07）：使用 vfs.db 的 VfsResourceRepo
@@ -64,11 +64,11 @@ pub(crate) use crate::vfs::repos::MODALITY_TEXT;
 pub(crate) use super::context::PipelineContext;
 pub(crate) use super::resource_types::{ContentBlock, ContextRef, ContextSnapshot, SendContextRef};
 pub(crate) use super::types::{
-    block_status, block_types, feature_flags, variant_status, AttachmentInput, ChatMessage,
-    MessageBlock, MessageMeta, MessageRole, MessageSources, SendMessageRequest, SendOptions,
-    SharedContext, SourceInfo, TokenUsage, ToolCall, ToolResultInfo, Variant,
+    AttachmentInput, ChatMessage, MessageBlock, MessageMeta, MessageRole, MessageSources,
+    SendMessageRequest, SendOptions, SharedContext, SourceInfo, TokenUsage, ToolCall,
+    ToolResultInfo, Variant, block_status, block_types, feature_flags, variant_status,
 };
-pub(crate) use super::user_message_builder::{build_user_message, UserMessageParams};
+pub(crate) use super::user_message_builder::{UserMessageParams, build_user_message};
 pub(crate) use super::workspace::WorkspaceCoordinator;
 pub(crate) use std::sync::Mutex;
 
@@ -87,18 +87,10 @@ pub mod tool_loop;
 pub mod variant_adapter;
 
 pub use compaction::*;
-pub use constants::*;
-pub use helpers::*;
-pub use history::*;
+pub(crate) use constants::*;
+pub(crate) use helpers::*;
 pub use llm_adapter::*;
-pub use multi_variant::*;
-pub use persistence::*;
-pub use prompt::*;
-pub use retrieval::*;
-pub use summary::*;
-pub use token_resources::*;
-pub use tool_loop::*;
-pub use variant_adapter::*;
+pub(crate) use variant_adapter::*;
 
 // ============================================================
 // 流水线主结构
@@ -339,6 +331,132 @@ impl ChatV2Pipeline {
         Self::skill_allows_tool(tool_name, allowed)
     }
 
+    fn normalize_group_scope_options(options: &mut SendOptions) {
+        options.group_id = options.group_id.as_ref().and_then(|id| {
+            let trimmed = id.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+        options.group_name = options.group_name.as_ref().and_then(|name| {
+            let trimmed = name.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+        if let Some(ids) = options.group_pinned_resource_ids.take() {
+            let normalized: Vec<String> = ids
+                .into_iter()
+                .filter_map(|id| {
+                    let trimmed = id.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    }
+                })
+                .collect();
+            if !normalized.is_empty() {
+                options.group_pinned_resource_ids = Some(normalized);
+            }
+        }
+    }
+
+    fn clear_group_scope(options: &mut SendOptions) {
+        options.group_id = None;
+        options.group_name = None;
+        options.group_pinned_resource_ids = None;
+    }
+
+    fn enrich_group_scope_for_options(
+        &self,
+        session_id: &str,
+        options: &mut SendOptions,
+    ) -> ChatV2Result<()> {
+        Self::normalize_group_scope_options(options);
+
+        let frontend_group_id = options.group_id.clone();
+        let conn = self.db.get_conn_safe()?;
+        let session_group_id = ChatV2Repo::get_session_with_conn(&conn, session_id)?
+            .and_then(|session| session.group_id);
+
+        if frontend_group_id.as_deref() != session_group_id.as_deref() {
+            log::info!(
+                "[ChatV2::pipeline] Ignoring frontend group scope for session {}: frontend={:?}, session={:?}",
+                session_id,
+                frontend_group_id,
+                session_group_id
+            );
+        }
+
+        let Some(group_id) = session_group_id else {
+            Self::clear_group_scope(options);
+            return Ok(());
+        };
+
+        let Some(mut group) = ChatV2Repo::get_group_with_conn(&conn, &group_id)? else {
+            log::warn!(
+                "[ChatV2::pipeline] clearing stale topic scope: session {} references missing group {}",
+                session_id,
+                group_id
+            );
+            Self::clear_group_scope(options);
+            return Ok(());
+        };
+
+        if group.persist_status != crate::chat_v2::types::PersistStatus::Active {
+            log::warn!(
+                "[ChatV2::pipeline] clearing stale topic scope: session {} references non-active group {}",
+                session_id,
+                group_id
+            );
+            Self::clear_group_scope(options);
+            return Ok(());
+        }
+
+        if let Some(vfs_db) = &self.vfs_db {
+            match crate::chat_v2::handlers::group_handlers::ensure_group_folder(
+                vfs_db.as_ref(),
+                &group.name,
+                group.pinned_resource_ids.clone(),
+            ) {
+                Ok(next_pinned) => {
+                    if next_pinned != group.pinned_resource_ids {
+                        group.pinned_resource_ids = next_pinned;
+                        ChatV2Repo::update_group_with_conn(&conn, &group)?;
+                        log::info!(
+                            "[ChatV2::pipeline] Ensured topic resource folder for group {} ({})",
+                            group.id,
+                            group.name
+                        );
+                    }
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[ChatV2::pipeline] Failed to ensure topic resource folder for group {}: {}",
+                        group_id,
+                        e
+                    );
+                }
+            }
+        }
+
+        options.group_id = Some(group.id);
+        options.group_name = Some(group.name);
+        options.group_pinned_resource_ids = Some(group.pinned_resource_ids);
+        Ok(())
+    }
+
+    fn enrich_group_scope_options(&self, request: &mut SendMessageRequest) -> ChatV2Result<()> {
+        let session_id = request.session_id.clone();
+        let options = request.options.get_or_insert_with(Default::default);
+        self.enrich_group_scope_for_options(&session_id, options)
+    }
+
     /// 执行消息发送流水线
     ///
     /// ## 流程
@@ -370,6 +488,8 @@ impl ChatV2Pipeline {
             "[ChatV2::pipeline] Feature flags: {}",
             feature_flags::get_flags_summary()
         );
+
+        self.enrich_group_scope_options(&mut request)?;
 
         // === 多变体模式检查 ===
         // 如果 parallel_model_ids 有 2+ 个模型，走多变体执行路径
@@ -622,7 +742,9 @@ impl ChatV2Pipeline {
                     if let Some(ref state) = chat_v2_state {
                         state.spawn_tracked(summary_future);
                     } else {
-                        log::warn!("[ChatV2::pipeline] spawn_tracked unavailable, using untracked tokio::spawn for metadata task");
+                        log::warn!(
+                            "[ChatV2::pipeline] spawn_tracked unavailable, using untracked tokio::spawn for metadata task"
+                        );
                         tokio::spawn(summary_future);
                     }
                 }

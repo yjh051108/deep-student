@@ -77,6 +77,17 @@ impl MemoryCategoryManager {
     /// 1. 预定义种子分类（保证基础结构存在）
     /// 2. 记忆根文件夹下的实际子文件夹（捕获 LLM 自动创建的新分类）
     pub async fn refresh_all_categories(&self, memory_service: &MemoryService) -> VfsResult<()> {
+        self.refresh_categories_for_paths(memory_service, &[]).await
+    }
+
+    /// 刷新指定记忆路径范围内的分类摘要文件。
+    ///
+    /// 空 `scope_paths` 表示兼容旧行为，刷新整棵记忆树。
+    pub async fn refresh_categories_for_paths(
+        &self,
+        memory_service: &MemoryService,
+        scope_paths: &[String],
+    ) -> VfsResult<()> {
         let mut categories: Vec<(String, String)> = SEED_CATEGORIES
             .iter()
             .map(|(name, path)| (name.to_string(), path.to_string()))
@@ -88,6 +99,18 @@ impl MemoryCategoryManager {
 
         let mut seen_paths = HashSet::new();
         categories.retain(|(_, path)| seen_paths.insert(path.clone()));
+        let scope_paths: Vec<&str> = scope_paths
+            .iter()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if !scope_paths.is_empty() {
+            categories.retain(|(_, path)| {
+                scope_paths
+                    .iter()
+                    .any(|scope| super::scope::is_folder_path_within_scope(path, scope))
+            });
+        }
 
         for (cat_name, folder_path) in &categories {
             if let Err(e) = self
@@ -344,6 +367,14 @@ impl MemoryCategoryManager {
         &self,
         root_folder_id: &str,
     ) -> VfsResult<Vec<(String, String)>> {
+        self.load_category_summaries_for_paths(root_folder_id, &[])
+    }
+
+    pub fn load_category_summaries_for_paths(
+        &self,
+        root_folder_id: &str,
+        scope_paths: &[String],
+    ) -> VfsResult<Vec<(String, String)>> {
         let sys_folder_id = self.find_system_folder(root_folder_id)?;
         let mut folder_ids = Vec::new();
         if let Some(sys_id) = sys_folder_id {
@@ -353,6 +384,11 @@ impl MemoryCategoryManager {
 
         let mut dedup_keys = HashSet::new();
         let mut results = Vec::new();
+        let scope_paths: Vec<&str> = scope_paths
+            .iter()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
         for folder_id in folder_ids {
             for (note_id, title) in self.list_category_notes_in_folder(&folder_id)? {
                 let cat_name = title
@@ -360,6 +396,13 @@ impl MemoryCategoryManager {
                     .and_then(|s| s.strip_suffix(CATEGORY_NOTE_SUFFIX))
                     .unwrap_or(&title);
                 let decoded = Self::decode_category_key(cat_name);
+                if !scope_paths.is_empty()
+                    && !scope_paths
+                        .iter()
+                        .any(|scope| super::scope::is_folder_path_within_scope(&decoded, scope))
+                {
+                    continue;
+                }
                 if !dedup_keys.insert(decoded.clone()) {
                     continue;
                 }

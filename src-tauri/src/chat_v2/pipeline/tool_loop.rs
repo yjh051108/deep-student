@@ -497,6 +497,10 @@ impl ChatV2Pipeline {
                         if tool.name.starts_with(BUILTIN_NAMESPACE) {
                             return true;
                         }
+                        // 渐进披露入口必须始终可用，否则新会话第一轮无法加载技能工具。
+                        if super::super::tools::SkillsExecutor::is_load_skills_tool(&tool.name) {
+                            return true;
+                        }
                         // 黑名单优先级最高
                         if !blacklist.is_empty() && blacklist.iter().any(|b| b == &tool.name) {
                             log::debug!(
@@ -971,6 +975,10 @@ impl ChatV2Pipeline {
             let active_skill_ids = ctx.options.active_skill_ids.clone();
             let rag_top_k = ctx.options.rag_top_k;
             let rag_enable_reranking = ctx.options.rag_enable_reranking;
+            let group_id = ctx.options.group_id.clone();
+            let group_name = ctx.options.group_name.clone();
+            let group_pinned_resource_ids = ctx.options.group_pinned_resource_ids.clone();
+            let workspace_id = ctx.get_workspace_id().map(str::to_string);
             let memory_enabled = ctx.options.memory_enabled.unwrap_or(true);
             let rag_enabled = ctx.options.rag_enabled.unwrap_or(true);
             let web_search_enabled = ctx.options.web_search_enabled.unwrap_or(true);
@@ -993,6 +1001,10 @@ impl ChatV2Pipeline {
                     cancel_token,
                     rag_top_k,
                     rag_enable_reranking,
+                    group_id,
+                    group_name,
+                    group_pinned_resource_ids,
+                    workspace_id,
                     memory_enabled,
                     rag_enabled,
                     web_search_enabled,
@@ -1430,6 +1442,10 @@ impl ChatV2Pipeline {
         cancellation_token: Option<&CancellationToken>,
         rag_top_k: Option<u32>,
         rag_enable_reranking: Option<bool>,
+        group_id: Option<String>,
+        group_name: Option<String>,
+        group_pinned_resource_ids: Option<Vec<String>>,
+        workspace_id: Option<String>,
         memory_enabled: bool,
         rag_enabled: bool,
         web_search_enabled: bool,
@@ -1474,6 +1490,7 @@ impl ChatV2Pipeline {
         // value: create 工具返回的实际 file_id
         let mut created_file_ids: std::collections::HashMap<String, String> =
             std::collections::HashMap::new();
+        let mut current_workspace_id = workspace_id;
 
         // 顺序执行工具调用，避免非幂等工具并发导致的数据竞态
         let mut tool_results = Vec::new();
@@ -1584,6 +1601,10 @@ impl ChatV2Pipeline {
                     cancellation_token.cloned(),
                     rag_top_k,
                     rag_enable_reranking,
+                    group_id.clone(),
+                    group_name.clone(),
+                    group_pinned_resource_ids.clone(),
+                    current_workspace_id.clone(),
                     memory_enabled,
                     rag_enabled,
                     web_search_enabled,
@@ -1598,6 +1619,9 @@ impl ChatV2Pipeline {
                             &info.output,
                             &mut created_file_ids,
                         );
+                        if let Some(workspace_id) = Self::capture_workspace_id(&info.output) {
+                            current_workspace_id = Some(workspace_id);
+                        }
                     }
                     tool_results.push(info);
                 }
@@ -1759,6 +1783,21 @@ impl ChatV2Pipeline {
         }
     }
 
+    fn capture_workspace_id(output: &Value) -> Option<String> {
+        output
+            .get("workspace_id")
+            .and_then(|v| v.as_str())
+            .or_else(|| {
+                output
+                    .get("result")
+                    .and_then(|r| r.get("workspace_id"))
+                    .and_then(|v| v.as_str())
+            })
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(str::to_string)
+    }
+
     /// 执行单个工具调用
     ///
     /// 🆕 文档 29 P0-1: 委托给 ToolExecutorRegistry 执行
@@ -1791,6 +1830,10 @@ impl ChatV2Pipeline {
         cancellation_token: Option<CancellationToken>,
         rag_top_k: Option<u32>,
         rag_enable_reranking: Option<bool>,
+        group_id: Option<String>,
+        group_name: Option<String>,
+        group_pinned_resource_ids: Option<Vec<String>>,
+        workspace_id: Option<String>,
         memory_enabled: bool,
         rag_enabled: bool,
         web_search_enabled: bool,
@@ -1996,6 +2039,8 @@ impl ChatV2Pipeline {
         .with_question_bank_service(self.question_bank_service.clone()) // 🆕 智能题目集工具
         .with_pdf_processing_service(self.pdf_processing_service.clone()) // 🆕 论文保存触发 Pipeline
         .with_rag_config(rag_top_k, rag_enable_reranking)
+        .with_group_scope(group_id, group_name, group_pinned_resource_ids)
+        .with_workspace_id(workspace_id)
         .with_variant_id(variant_id.map(|s| s.to_string()))
         .with_event_meta(skill_state_version, round_id.map(|s| s.to_string()));
 

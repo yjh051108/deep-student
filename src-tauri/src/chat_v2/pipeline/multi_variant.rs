@@ -83,6 +83,7 @@ impl ChatV2Pipeline {
         let session_id = request.session_id.clone();
         let user_content = request.content.clone();
         let mut options = request.options.clone().unwrap_or_default();
+        self.enrich_group_scope_for_options(&session_id, &mut options)?;
 
         // === 0. 智能 vision_quality 计算（与单变体路径保持一致）===
         // 如果用户没有显式指定，根据图片数量和来源自动选择压缩策略
@@ -128,7 +129,9 @@ impl ChatV2Pipeline {
 
             log::info!(
                 "[ChatV2::pipeline] Multi-variant vision_quality: auto -> '{}' (images={}, has_pdf_or_textbook={})",
-                auto_quality, image_count, has_pdf_or_textbook
+                auto_quality,
+                image_count,
+                has_pdf_or_textbook
             );
             options.vision_quality = Some(auto_quality.to_string());
         }
@@ -405,6 +408,7 @@ impl ChatV2Pipeline {
         let options_arc = Arc::new(options.clone());
         let user_content_arc = Arc::new(user_content.clone());
         let session_id_arc = Arc::new(session_id.clone());
+        let workspace_id_arc = Arc::new(request.workspace_id.clone());
         // ★ 2026-03 修复：共享 user_context_refs 给所有变体，确保多模态内容不丢失
         let context_refs_arc = Arc::new(request.user_context_refs.clone().unwrap_or_default());
 
@@ -417,6 +421,7 @@ impl ChatV2Pipeline {
             let options_clone = Arc::clone(&options_arc);
             let user_content_clone = Arc::clone(&user_content_arc);
             let session_id_clone = Arc::clone(&session_id_arc);
+            let workspace_id_clone = Arc::clone(&workspace_id_arc);
             let shared_ctx = Arc::clone(&shared_context);
             let context_refs_clone = Arc::clone(&context_refs_arc);
             let state_clone = chat_v2_state.clone();
@@ -429,6 +434,7 @@ impl ChatV2Pipeline {
                     (*options_clone).clone(),
                     (*user_content_clone).clone(),
                     (*session_id_clone).clone(),
+                    (*workspace_id_clone).clone(),
                     shared_ctx,
                     Vec::new(),
                     (*context_refs_clone).clone(),
@@ -617,11 +623,13 @@ impl ChatV2Pipeline {
                             && !llm_wrote_fact_memory
                         {
                             let llm_mgr = self.llm_manager.clone();
+                            let memory_scope_folder =
+                                super::persistence::memory_scope_folder_for_group(
+                                    options.group_id.as_deref(),
+                                    options.group_name.as_deref(),
+                                );
                             tokio::spawn(async move {
-                                use crate::memory::{
-                                    MemoryAutoExtractor, MemoryCategoryManager, MemoryEvolution,
-                                    MemoryService,
-                                };
+                                use crate::memory::{MemoryAutoExtractor, MemoryService};
                                 use crate::vfs::lance_store::VfsLanceStore;
 
                                 let lance_store = match VfsLanceStore::new(vfs_db.clone()) {
@@ -636,42 +644,32 @@ impl ChatV2Pipeline {
 
                                 let extractor = MemoryAutoExtractor::new(llm_mgr.clone());
                                 if let Ok(count) = extractor
-                                    .extract_and_store(
+                                    .extract_and_store_in_folder(
                                         &memory_service,
                                         &user_content_for_mem,
                                         &assistant_content,
+                                        memory_scope_folder.as_deref(),
                                     )
                                     .await
                                 {
                                     if count > 0 {
-                                        log::info!("[AutoMemory::MultiVariant] Auto-extracted {} memories (frequency={:?})", count, frequency);
-                                        let should_refresh = memory_service
-                                            .list(None, 500, 0)
-                                            .map(|all| {
-                                                let t = all
-                                                    .iter()
-                                                    .filter(|m| !m.title.starts_with("__"))
-                                                    .count();
-                                                frequency.should_refresh_categories(t)
-                                            })
-                                            .unwrap_or(false);
-                                        if should_refresh {
-                                            let cat_mgr = MemoryCategoryManager::new(
-                                                vfs_db.clone(),
-                                                llm_mgr.clone(),
-                                            );
-                                            let _ = cat_mgr
-                                                .refresh_all_categories(&memory_service)
-                                                .await;
-                                        }
+                                        log::info!(
+                                            "[AutoMemory::MultiVariant] Auto-extracted {} memories (frequency={:?})",
+                                            count,
+                                            frequency
+                                        );
+                                        let scope_paths = match &memory_scope_folder {
+                                            Some(path) => {
+                                                vec![
+                                                    crate::memory::GLOBAL_MEMORY_FOLDER.to_string(),
+                                                    path.clone(),
+                                                ]
+                                            }
+                                            None => Vec::new(),
+                                        };
+                                        memory_service
+                                            .spawn_post_write_maintenance_for_paths(scope_paths);
                                     }
-
-                                    // 自进化：使用共享全局节流，间隔由频率档位决定
-                                    let evolution = MemoryEvolution::new(vfs_db);
-                                    evolution.run_throttled(
-                                        &memory_service,
-                                        frequency.evolution_interval_ms(),
-                                    );
                                 }
                             });
                         }
@@ -715,7 +713,9 @@ impl ChatV2Pipeline {
                     if let Some(ref state) = chat_v2_state {
                         state.spawn_tracked(summary_future);
                     } else {
-                        log::warn!("[ChatV2::pipeline] spawn_tracked unavailable, using untracked tokio::spawn for metadata task (multi-variant)");
+                        log::warn!(
+                            "[ChatV2::pipeline] spawn_tracked unavailable, using untracked tokio::spawn for metadata task (multi-variant)"
+                        );
                         tokio::spawn(summary_future);
                     }
                 }
@@ -743,6 +743,7 @@ impl ChatV2Pipeline {
         mut options: SendOptions,
         user_content: String,
         session_id: String,
+        _workspace_id: Option<String>,
         shared_context: Arc<SharedContext>,
         attachments: Vec<AttachmentInput>,
         user_context_refs: Vec<SendContextRef>,
@@ -986,6 +987,7 @@ impl ChatV2Pipeline {
         mut options: SendOptions,
         user_content: String,
         session_id: String,
+        workspace_id: Option<String>,
         shared_context: Arc<SharedContext>,
         attachments: Vec<AttachmentInput>,
         user_context_refs: Vec<SendContextRef>,
@@ -1296,6 +1298,9 @@ impl ChatV2Pipeline {
             let cancel_token = Some(ctx.cancel_token());
             let rag_top_k = options.rag_top_k;
             let rag_enable_reranking = options.rag_enable_reranking;
+            let group_id = options.group_id.clone();
+            let group_name = options.group_name.clone();
+            let group_pinned_resource_ids = options.group_pinned_resource_ids.clone();
             let memory_enabled = options.memory_enabled.unwrap_or(true);
             let rag_enabled = options.rag_enabled.unwrap_or(true);
             let web_search_enabled = options.web_search_enabled.unwrap_or(true);
@@ -1316,6 +1321,10 @@ impl ChatV2Pipeline {
                     cancel_token,
                     rag_top_k,
                     rag_enable_reranking,
+                    group_id,
+                    group_name,
+                    group_pinned_resource_ids,
+                    workspace_id.clone(),
                     memory_enabled,
                     rag_enabled,
                     web_search_enabled,
@@ -1557,7 +1566,7 @@ impl ChatV2Pipeline {
     ) -> String {
         let canvas_note = self.build_canvas_note_info_from_options(options).await;
 
-        let user_profile = self.load_user_profile_for_variant(options).await;
+        let memory_context = self.load_memory_prompt_context_for_variant(options).await;
 
         let active_todos = self.load_active_todo_summary().await;
 
@@ -1565,12 +1574,15 @@ impl ChatV2Pipeline {
             .with_shared_context(shared_context)
             .with_options(options)
             .with_canvas_note(canvas_note)
-            .with_user_profile(user_profile)
+            .with_memory_context(memory_context)
             .with_active_todos(active_todos)
             .build()
     }
 
-    async fn load_user_profile_for_variant(&self, options: &SendOptions) -> Option<String> {
+    async fn load_memory_prompt_context_for_variant(
+        &self,
+        options: &SendOptions,
+    ) -> Option<prompt_builder::MemoryPromptContext> {
         use crate::memory::{MemoryCategoryManager, MemoryConfig, MemoryService};
         use crate::vfs::lance_store::VfsLanceStore;
 
@@ -1593,29 +1605,65 @@ impl ChatV2Pipeline {
             _ => return None,
         };
 
-        let mut sections: Vec<String> = Vec::new();
+        let topic_root = crate::memory::topic_memory_root(
+            options.group_id.as_deref(),
+            options.group_name.as_deref(),
+        );
+        let mut scope_paths = vec![crate::memory::GLOBAL_MEMORY_FOLDER.to_string()];
+        if let Some(path) = &topic_root {
+            scope_paths.push(path.clone());
+        }
 
         let cat_mgr = MemoryCategoryManager::new(vfs_db.clone(), self.llm_manager.clone());
-        if let Ok(categories) = cat_mgr.load_all_category_summaries(&root_id) {
-            for (cat_name, content) in &categories {
-                sections.push(format!("### {}\n{}", cat_name, content));
+        let categories = cat_mgr
+            .load_category_summaries_for_paths(&root_id, &scope_paths)
+            .unwrap_or_default();
+
+        let mut global_sections = Vec::new();
+        let mut topic_sections = Vec::new();
+        for (cat_name, content) in categories {
+            let section = format!("### {}\n{}", cat_name, content);
+            if crate::memory::is_folder_path_within_scope(
+                &cat_name,
+                crate::memory::GLOBAL_MEMORY_FOLDER,
+            ) {
+                global_sections.push(section);
+            } else if let Some(topic_root) = &topic_root {
+                if crate::memory::is_folder_path_within_scope(&cat_name, topic_root) {
+                    topic_sections.push(section);
+                }
             }
         }
 
-        if sections.is_empty() {
-            return svc.get_profile_summary().ok().flatten();
+        fn join_limited(sections: &[String], max_chars: usize) -> Option<String> {
+            if sections.is_empty() {
+                return None;
+            }
+            let combined = sections.join("\n\n");
+            if combined.chars().count() > max_chars {
+                let truncated: String = combined.chars().take(max_chars).collect();
+                Some(format!(
+                    "{}...\n（记忆摘要已截断，完整信息请使用 memory_search 工具检索）",
+                    truncated
+                ))
+            } else {
+                Some(combined)
+            }
         }
 
-        let combined = sections.join("\n\n");
-        if combined.chars().count() > 2000 {
-            let truncated: String = combined.chars().take(2000).collect();
-            Some(format!(
-                "{}...\n（用户画像已截断，完整信息请使用 memory_search 工具检索）",
-                truncated
-            ))
-        } else {
-            Some(combined)
+        let global_profile = join_limited(&global_sections, 1200);
+        let topic_profile = join_limited(&topic_sections, 1600);
+        if global_profile.is_none() && topic_profile.is_none() && topic_root.is_none() {
+            return None;
         }
+
+        Some(prompt_builder::MemoryPromptContext::new(
+            options.group_name.clone().or(options.group_id.clone()),
+            topic_root,
+            crate::memory::GLOBAL_MEMORY_FOLDER.to_string(),
+            global_profile,
+            topic_profile,
+        ))
     }
 
     /// 加载活跃待办摘要（注入 system prompt）
@@ -2183,11 +2231,7 @@ impl ChatV2Pipeline {
                     }
                 })
                 .collect();
-            if docs.is_empty() {
-                None
-            } else {
-                Some(docs)
-            }
+            if docs.is_empty() { None } else { Some(docs) }
         };
 
         LegacyChatMessage {
@@ -2217,7 +2261,7 @@ impl ChatV2Pipeline {
     ///
     /// 复用原有 SharedContext，并行执行多个变体的重试。
     /// 使用单一事件发射器以保证序列号全局递增。
-    pub async fn execute_variants_retry_batch(
+    pub(crate) async fn execute_variants_retry_batch(
         &self,
         window: Window,
         session_id: String,
@@ -2226,7 +2270,7 @@ impl ChatV2Pipeline {
         user_content: String,
         user_attachments: Vec<AttachmentInput>,
         shared_context: SharedContext,
-        options: SendOptions,
+        mut options: SendOptions,
         cancel_token: CancellationToken,
         chat_v2_state: Option<Arc<super::super::state::ChatV2State>>,
     ) -> ChatV2Result<()> {
@@ -2253,6 +2297,7 @@ impl ChatV2Pipeline {
         ));
 
         let shared_context_arc = Arc::new(shared_context);
+        self.enrich_group_scope_for_options(&session_id, &mut options)?;
 
         // 创建并行执行管理器（多变体重试）
         let manager = ParallelExecutionManager::with_cancel_token(cancel_token.clone());
@@ -2316,6 +2361,7 @@ impl ChatV2Pipeline {
                             (*options_clone).clone(),
                             (*user_content_clone).clone(),
                             (*session_id_clone).clone(),
+                            None,
                             shared_ctx,
                             (*attachments_clone).clone(),
                             Vec::new(),
@@ -2421,7 +2467,7 @@ impl ChatV2Pipeline {
         user_content: String,
         user_attachments: Vec<AttachmentInput>,
         shared_context: SharedContext,
-        options: SendOptions,
+        mut options: SendOptions,
         cancel_token: CancellationToken,
     ) -> ChatV2Result<()> {
         log::info!(
@@ -2431,6 +2477,7 @@ impl ChatV2Pipeline {
             variant_id,
             model_id
         );
+        self.enrich_group_scope_for_options(&session_id, &mut options)?;
 
         // 创建事件发射器
         let emitter = Arc::new(super::super::events::ChatV2EventEmitter::new(
@@ -2498,6 +2545,7 @@ impl ChatV2Pipeline {
                 options,
                 user_content,
                 session_id.clone(),
+                None,
                 shared_context_arc,
                 user_attachments,
                 Vec::new(),
@@ -2984,20 +3032,25 @@ impl ChatV2Pipeline {
                                     VfsResourceRepo::increment_ref_with_conn(&vfs_conn, resource_id)
                                 {
                                     log::warn!(
-                                    "[ChatV2::pipeline] Failed to increment ref for resource {}: {}",
-                                    resource_id, e
-                                );
+                                        "[ChatV2::pipeline] Failed to increment ref for resource {}: {}",
+                                        resource_id,
+                                        e
+                                    );
                                 }
                             }
                             log::debug!(
-                            "[ChatV2::pipeline] Multi-variant: incremented refs for {} resources in vfs.db",
-                            resource_ids.len()
-                        );
+                                "[ChatV2::pipeline] Multi-variant: incremented refs for {} resources in vfs.db",
+                                resource_ids.len()
+                            );
                         } else {
-                            log::warn!("[ChatV2::pipeline] Multi-variant: failed to get vfs.db connection for increment refs");
+                            log::warn!(
+                                "[ChatV2::pipeline] Multi-variant: failed to get vfs.db connection for increment refs"
+                            );
                         }
                     } else {
-                        log::warn!("[ChatV2::pipeline] Multi-variant: vfs_db not available, skipping increment refs");
+                        log::warn!(
+                            "[ChatV2::pipeline] Multi-variant: vfs_db not available, skipping increment refs"
+                        );
                     }
                 }
             }
@@ -3008,11 +3061,11 @@ impl ChatV2Pipeline {
             }
 
             log::info!(
-            "[ChatV2::pipeline] Multi-variant results saved: user_msg={}, assistant_msg={}, variants={}",
-            user_message_id,
-            assistant_message_id,
-            variant_contexts.len()
-        );
+                "[ChatV2::pipeline] Multi-variant results saved: user_msg={}, assistant_msg={}, variants={}",
+                user_message_id,
+                assistant_message_id,
+                variant_contexts.len()
+            );
 
             Ok(())
         })(); // 闭包结束

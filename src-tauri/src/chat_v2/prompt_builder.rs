@@ -156,6 +156,91 @@ impl SourceType {
 // 格式化辅助函数
 // ============================================================================
 
+#[derive(Debug, Clone)]
+pub struct MemoryPromptContext {
+    pub topic_name: Option<String>,
+    pub topic_memory_path: Option<String>,
+    pub global_memory_path: String,
+    pub global_profile: Option<String>,
+    pub topic_profile: Option<String>,
+}
+
+impl MemoryPromptContext {
+    pub fn legacy_profile(profile: String) -> Self {
+        Self {
+            topic_name: None,
+            topic_memory_path: None,
+            global_memory_path: "全局".to_string(),
+            global_profile: Some(profile),
+            topic_profile: None,
+        }
+    }
+
+    fn trimmed(value: Option<String>) -> Option<String> {
+        value.and_then(|v| {
+            let trimmed = v.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        })
+    }
+
+    pub fn new(
+        topic_name: Option<String>,
+        topic_memory_path: Option<String>,
+        global_memory_path: String,
+        global_profile: Option<String>,
+        topic_profile: Option<String>,
+    ) -> Self {
+        Self {
+            topic_name: Self::trimmed(topic_name),
+            topic_memory_path: Self::trimmed(topic_memory_path),
+            global_memory_path,
+            global_profile: Self::trimmed(global_profile),
+            topic_profile: Self::trimmed(topic_profile),
+        }
+    }
+
+    pub fn to_prompt_blocks(self) -> Vec<String> {
+        let mut blocks = Vec::new();
+        let topic_name = self.topic_name.as_deref().unwrap_or("未绑定课题");
+        let topic_path = self
+            .topic_memory_path
+            .as_deref()
+            .unwrap_or("无当前课题记忆区");
+        blocks.push(format!(
+            r#"<current_topic>
+<topic_name>{}</topic_name>
+<topic_memory_path>{}</topic_memory_path>
+<global_memory_path>{}</global_memory_path>
+<memory_visibility>
+你当前只能使用当前课题记忆和全局记忆。不得主动搜索、枚举、读取或引用其它课题的记忆。
+全局记忆用于用户长期偏好、身份背景、稳定交流习惯和长期目标；当前课题记忆用于课程、项目、论文、实验、资料、bug、学习进度和课题内方法。
+</memory_visibility>
+</current_topic>"#,
+            escape_xml_content(topic_name),
+            escape_xml_content(topic_path),
+            escape_xml_content(&self.global_memory_path)
+        ));
+
+        if let Some(profile) = self.global_profile {
+            blocks.push(format!(
+                "<global_memory_profile>\n以下是跨课题共享的长期用户记忆：\n{}\n</global_memory_profile>",
+                escape_xml_content(&profile)
+            ));
+        }
+        if let Some(profile) = self.topic_profile {
+            blocks.push(format!(
+                "<topic_memory_profile>\n以下是当前课题专属记忆：\n{}\n</topic_memory_profile>",
+                escape_xml_content(&profile)
+            ));
+        }
+        blocks
+    }
+}
+
 /// 截断超长内容，保留 `max_chars` 个字符并追加省略标记
 fn truncate_content(content: &str, max_chars: usize) -> String {
     if content.chars().count() <= max_chars {
@@ -384,8 +469,8 @@ pub struct PromptBuilder {
     canvas_note: Option<CanvasNoteInfo>,
     /// 上下文类型 Hints（告知 LLM 用户消息中 XML 标签的含义）
     context_type_hints: Vec<String>,
-    /// 用户画像摘要（始终注入，不依赖 query 匹配）
-    user_profile: Option<String>,
+    /// 当前课题与 scoped 记忆摘要（始终注入，不依赖 query 匹配）
+    memory_context: Option<MemoryPromptContext>,
     /// 活跃待办摘要（始终注入）
     active_todos: Option<String>,
 }
@@ -408,7 +493,7 @@ impl PromptBuilder {
             has_sources: false,
             canvas_note: None,
             context_type_hints: Vec::new(),
-            user_profile: None,
+            memory_context: None,
             active_todos: None,
         }
     }
@@ -463,7 +548,12 @@ impl PromptBuilder {
 
     /// 添加用户画像摘要（始终注入，不依赖检索 query）
     pub fn with_user_profile(mut self, profile: Option<String>) -> Self {
-        self.user_profile = profile;
+        self.memory_context = profile.map(MemoryPromptContext::legacy_profile);
+        self
+    }
+
+    pub fn with_memory_context(mut self, context: Option<MemoryPromptContext>) -> Self {
+        self.memory_context = context;
         self
     }
 
@@ -559,12 +649,9 @@ impl PromptBuilder {
             ));
         }
 
-        // 1.8 用户画像（始终注入，不依赖检索 query）
-        if let Some(profile) = self.user_profile {
-            parts.push(format!(
-                "<user_profile>\n以下是关于当前用户的已知信息，请在回答中自然地运用这些背景：\n{}\n</user_profile>",
-                profile
-            ));
+        // 1.8 scoped 记忆上下文（始终注入，不依赖检索 query）
+        if let Some(memory_context) = self.memory_context {
+            parts.extend(memory_context.to_prompt_blocks());
         }
 
         // 1.9 活跃待办事项（始终注入，帮助 LLM 了解用户当前任务）
@@ -686,6 +773,20 @@ pub fn build_system_prompt_with_profile(
         .with_options(options)
         .with_canvas_note(canvas_note)
         .with_user_profile(user_profile)
+        .build()
+}
+
+pub fn build_system_prompt_with_memory_context(
+    options: &SendOptions,
+    sources: &MessageSources,
+    canvas_note: Option<CanvasNoteInfo>,
+    memory_context: Option<MemoryPromptContext>,
+) -> String {
+    PromptBuilder::new(options.system_prompt_override.as_deref())
+        .with_message_sources(sources)
+        .with_options(options)
+        .with_canvas_note(canvas_note)
+        .with_memory_context(memory_context)
         .build()
 }
 
