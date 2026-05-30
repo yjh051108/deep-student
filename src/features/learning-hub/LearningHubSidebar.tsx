@@ -69,14 +69,17 @@ const getDstuResourceIdFromPath = (path?: string | null): string | null => {
 };
 
 const pruneFinderResource = (resourceId: string, path?: string | null) => {
+  const pathId = getDstuResourceIdFromPath(path);
   useFinderStore.setState((state) => {
     const items = state.items.filter((item) => (
       item.id !== resourceId &&
       item.resourceId !== resourceId &&
+      (!pathId || (item.id !== pathId && item.resourceId !== pathId)) &&
       (!path || item.path !== path)
     ));
     const selectedIds = new Set(state.selectedIds);
     selectedIds.delete(resourceId);
+    if (pathId) selectedIds.delete(pathId);
     return { items, selectedIds };
   });
 };
@@ -1415,7 +1418,7 @@ export function LearningHubSidebar({
   // ★ 执行删除资源操作（AlertDialog 确认后调用）
   const executeDeleteResource = useCallback(async (resource: ResourceListItem) => {
     const resourcePath = resource.path ?? items.find(i => i.id === resource.id)?.path ?? null;
-    const deletePath = `/${resource.id}`;
+    const deletePath = resourcePath ?? `/${resource.id}`;
 
     const deleteResult = await dstu.delete(deletePath);
 

@@ -55,29 +55,34 @@ export const TabPanelContainer: React.FC<TabPanelContainerProps> = ({
   const handleTitleChange = useCallback((tabId: string, title: string) => onTitleChange(tabId, title), [onTitleChange]);
 
   // 渲染单个 tab 面板内容（保活逻辑）
+  const renderUnifiedPanel = (tab: OpenTab, visible: boolean) => (
+    <Suspense fallback={<PanelLoading label={t('loading', '加载中...')} />}>
+      <UnifiedAppPanel
+        type={tab.type}
+        resourceId={tab.resourceId}
+        dstuPath={tab.dstuPath}
+        onClose={() => handleClose(tab.tabId)}
+        onTitleChange={(title) => handleTitleChange(tab.tabId, title)}
+        isActive={visible}
+        className="h-full w-full"
+      />
+    </Suspense>
+  );
+
   const renderTabPanel = (tab: OpenTab, visible: boolean) => (
     <div
       key={tab.tabId}
       className="absolute inset-0"
       style={{ display: visible ? 'flex' : 'none' }}
     >
-      <Suspense fallback={<PanelLoading label={t('loading', '加载中...')} />}>
-        <UnifiedAppPanel
-          type={tab.type}
-          resourceId={tab.resourceId}
-          dstuPath={tab.dstuPath}
-          onClose={() => handleClose(tab.tabId)}
-          onTitleChange={(title) => handleTitleChange(tab.tabId, title)}
-          isActive={visible}
-          className="h-full w-full"
-        />
-      </Suspense>
+      {renderUnifiedPanel(tab, visible)}
     </div>
   );
 
   // ========== 分屏模式 ==========
   if (splitView) {
     const rightTab = tabs.find(t => t.tabId === splitView.rightTabId);
+    const leftTab = tabs.find(t => t.tabId === activeTabId && t.tabId !== splitView.rightTabId);
 
     return (
       <PanelGroup
@@ -87,8 +92,12 @@ export const TabPanelContainer: React.FC<TabPanelContainerProps> = ({
       >
         {/* 左侧面板：当前活跃 tab */}
         <Panel defaultSize={50} minSize={25} id="split-left" order={1}>
-          <div className="relative h-full">
-            {tabs.map(tab => renderTabPanel(tab, tab.tabId === activeTabId && tab.tabId !== splitView.rightTabId))}
+          <div className="h-full min-w-0 overflow-hidden">
+            {leftTab ? renderUnifiedPanel(leftTab, true) : (
+              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                {t('noContent', '无内容')}
+              </div>
+            )}
           </div>
         </Panel>
 
@@ -99,22 +108,22 @@ export const TabPanelContainer: React.FC<TabPanelContainerProps> = ({
 
         {/* 右侧面板：分屏 tab */}
         <Panel defaultSize={50} minSize={25} id="split-right" order={2}>
-          <div className="relative h-full">
-        {/* 右侧面板顶部关闭按钮 */}
-        <div className="absolute top-2 right-4 z-10 flex items-center gap-2">
-          <div className="bg-background/80 backdrop-blur-sm shadow-sm border border-border rounded-md px-2 py-1 text-xs text-muted-foreground font-medium flex items-center gap-1.5">
-            <SidebarSimple size={14} />
-            {t('learningHub:splitView.title', '分屏视图')}
-          </div>
-          <button
-            onClick={onCloseSplitView}
-            className="p-1.5 rounded-md bg-background/80 backdrop-blur-sm border border-border hover:bg-[var(--interactive-hover)] text-muted-foreground hover:text-foreground transition-all shadow-sm"
-            title={t('actions.close', '关闭分屏')}
-          >
-            <X size={14} />
-          </button>
-        </div>
-            {rightTab ? renderTabPanel(rightTab, true) : (
+          <div className="relative h-full min-w-0 overflow-hidden">
+            {/* 右侧面板顶部关闭按钮 */}
+            <div className="absolute top-2 right-4 z-10 flex items-center gap-2">
+              <div className="bg-background/80 backdrop-blur-sm shadow-sm border border-border rounded-md px-2 py-1 text-xs text-muted-foreground font-medium flex items-center gap-1.5">
+                <SidebarSimple size={14} />
+                {t('learningHub:splitView.title', '分屏视图')}
+              </div>
+              <button
+                onClick={onCloseSplitView}
+                className="p-1.5 rounded-md bg-background/80 backdrop-blur-sm border border-border hover:bg-[var(--interactive-hover)] text-muted-foreground hover:text-foreground transition-all shadow-sm"
+                title={t('actions.close', '关闭分屏')}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            {rightTab ? renderUnifiedPanel(rightTab, true) : (
               <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
                 {t('noContent', '无内容')}
               </div>
