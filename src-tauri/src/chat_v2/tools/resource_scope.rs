@@ -39,9 +39,25 @@ fn has_existing_folder(vfs_db: &Arc<VfsDatabase>, folder_id: &str) -> bool {
 }
 
 fn has_existing_topic_folder(vfs_db: &Arc<VfsDatabase>, pinned_ids: &[String]) -> bool {
-    normalize_folder_ids(pinned_ids.iter().cloned())
-        .iter()
-        .any(|folder_id| has_existing_folder(vfs_db, folder_id))
+    existing_folder_ids(vfs_db, pinned_ids.iter().cloned())
+        .next()
+        .is_some()
+}
+
+fn existing_folder_ids(
+    vfs_db: &Arc<VfsDatabase>,
+    ids: impl IntoIterator<Item = String>,
+) -> impl Iterator<Item = String> + '_ {
+    normalize_folder_ids(ids)
+        .into_iter()
+        .filter(|folder_id| has_existing_folder(vfs_db, folder_id))
+}
+
+fn existing_topic_folder_roots(
+    vfs_db: &Arc<VfsDatabase>,
+    pinned_ids: impl IntoIterator<Item = String>,
+) -> Vec<String> {
+    existing_folder_ids(vfs_db, pinned_ids).collect()
 }
 
 fn emit_scope_repaired(ctx: &ExecutionContext, group_id: &str) {
@@ -116,18 +132,29 @@ fn repair_group_scope(ctx: &ExecutionContext, group_id: &str) -> Option<GroupSco
     })
 }
 
-fn load_group_id_from_session(ctx: &ExecutionContext) -> Option<String> {
+fn load_group_scope_from_session(ctx: &ExecutionContext) -> Option<GroupScope> {
     let chat_db = ctx.chat_v2_db.as_ref()?;
     let conn = chat_db.get_conn_safe().ok()?;
-    conn.query_row(
-        "SELECT g.id
+    let group_id = conn
+        .query_row(
+            "SELECT g.id
          FROM chat_v2_sessions s
          JOIN chat_v2_session_groups g ON g.id = s.group_id
          WHERE s.id = ?1 AND g.persist_status = 'active'",
-        rusqlite::params![ctx.session_id],
-        |row| row.get::<_, String>(0),
-    )
-    .ok()
+            rusqlite::params![ctx.session_id],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()?;
+    let group = ChatV2Repo::get_group_with_conn(&conn, &group_id)
+        .ok()
+        .flatten()?;
+    if group.persist_status != PersistStatus::Active {
+        return None;
+    }
+    Some(GroupScope {
+        id: group.id,
+        pinned_resource_ids: group.pinned_resource_ids,
+    })
 }
 
 /// Resolve the authoritative topic scope for a tool call.
@@ -136,9 +163,20 @@ fn load_group_id_from_session(ctx: &ExecutionContext) -> Option<String> {
 /// session/group relationship is the source of truth. Falling back to the
 /// database here prevents resource tools from treating a topic session as a
 /// global-root session when the frontend snapshot is missing or stale.
-fn effective_group_scope(ctx: &ExecutionContext) -> Option<GroupScope> {
-    if let Some(group_id) = load_group_id_from_session(ctx) {
-        return repair_group_scope(ctx, &group_id);
+fn effective_group_scope(
+    ctx: &ExecutionContext,
+    repair_missing_folder: bool,
+) -> Option<GroupScope> {
+    if let Some(scope) = load_group_scope_from_session(ctx) {
+        if repair_missing_folder {
+            return repair_group_scope(ctx, &scope.id);
+        }
+        if let Some(vfs_db) = ctx.vfs_db.as_ref() {
+            if !has_existing_topic_folder(vfs_db, &scope.pinned_resource_ids) {
+                return repair_group_scope(ctx, &scope.id);
+            }
+        }
+        return Some(scope);
     }
 
     if ctx.chat_v2_db.is_some() {
@@ -156,18 +194,21 @@ fn effective_group_scope(ctx: &ExecutionContext) -> Option<GroupScope> {
 }
 
 pub fn current_topic_folder_roots(ctx: &ExecutionContext) -> Vec<String> {
-    let pinned_ids = effective_group_scope(ctx)
+    let pinned_ids = effective_group_scope(ctx, false)
         .map(|scope| scope.pinned_resource_ids)
         .unwrap_or_default();
+    if let Some(vfs_db) = ctx.vfs_db.as_ref() {
+        return existing_topic_folder_roots(vfs_db, pinned_ids);
+    }
     normalize_folder_ids(pinned_ids)
 }
 
 pub fn is_topic_scoped(ctx: &ExecutionContext) -> bool {
-    effective_group_scope(ctx).is_some()
+    effective_group_scope(ctx, false).is_some()
 }
 
 pub fn current_topic_pinned_resource_ids(ctx: &ExecutionContext) -> Vec<String> {
-    effective_group_scope(ctx)
+    effective_group_scope(ctx, false)
         .map(|scope| {
             scope
                 .pinned_resource_ids
@@ -186,7 +227,7 @@ pub fn current_topic_pinned_resource_ids(ctx: &ExecutionContext) -> Vec<String> 
 }
 
 pub fn current_topic_group_id(ctx: &ExecutionContext) -> Option<String> {
-    effective_group_scope(ctx).map(|scope| scope.id)
+    effective_group_scope(ctx, false).map(|scope| scope.id)
 }
 
 pub fn current_context_folder_roots(ctx: &ExecutionContext) -> Vec<String> {
@@ -230,16 +271,26 @@ pub fn resolve_scoped_folder_id(
     explicit_folder_id: Option<String>,
     tool_name: &str,
 ) -> Result<Option<String>, String> {
-    if !is_topic_scoped(ctx) {
-        return Ok(explicit_folder_id);
-    }
+    resolve_scoped_folder_id_inner(ctx, vfs_db, explicit_folder_id, tool_name, false)
+}
 
-    let topic_folders = current_topic_folder_roots(ctx);
+fn resolve_scoped_folder_id_inner(
+    ctx: &ExecutionContext,
+    vfs_db: &Arc<VfsDatabase>,
+    explicit_folder_id: Option<String>,
+    tool_name: &str,
+    repair_missing_folder: bool,
+) -> Result<Option<String>, String> {
+    let Some(scope) = effective_group_scope(ctx, repair_missing_folder) else {
+        return Ok(explicit_folder_id);
+    };
+
+    let topic_folders = existing_topic_folder_roots(vfs_db, scope.pinned_resource_ids);
     if topic_folders.is_empty() {
         log::warn!(
-            "[ResourceScope] {}: group {:?} has no usable topic folder after repair attempt; returning empty scoped results",
+            "[ResourceScope] {}: group {:?} has no usable topic folder; returning empty scoped results",
             tool_name,
-            current_topic_group_id(ctx)
+            scope.id
         );
         return Ok(Some(NO_TOPIC_RESOURCE_FOLDER_SENTINEL.to_string()));
     }
@@ -261,7 +312,7 @@ pub fn resolve_scoped_folder_id_for_write(
     explicit_folder_id: Option<String>,
     tool_name: &str,
 ) -> Result<Option<String>, String> {
-    let scoped = resolve_scoped_folder_id(ctx, vfs_db, explicit_folder_id, tool_name)?;
+    let scoped = resolve_scoped_folder_id_inner(ctx, vfs_db, explicit_folder_id, tool_name, true)?;
     if scoped.as_deref() == Some(NO_TOPIC_RESOURCE_FOLDER_SENTINEL) {
         return Err("当前课题没有绑定资源文件夹，已拒绝把新资源写入全局根目录。".to_string());
     }
@@ -311,6 +362,68 @@ pub fn pinned_resource_matches(
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vfs::{VfsDatabase, VfsFolder};
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    fn setup_test_db() -> (TempDir, Arc<VfsDatabase>) {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let db = Arc::new(VfsDatabase::new(temp_dir.path()).expect("create vfs db"));
+        (temp_dir, db)
+    }
+
+    fn create_folder(db: &Arc<VfsDatabase>, title: &str, parent_id: Option<String>) -> VfsFolder {
+        let folder = VfsFolder::new(title.to_string(), parent_id, None, None);
+        VfsFolderRepo::create_folder(db, &folder).expect("create folder");
+        folder
+    }
+
+    #[test]
+    fn current_topic_folder_roots_filters_stale_pinned_folders() {
+        let (_temp_dir, db) = setup_test_db();
+        let valid = create_folder(&db, "Topic", None);
+
+        assert_eq!(
+            existing_topic_folder_roots(
+                &db,
+                vec![
+                    "fld_stale_missing".to_string(),
+                    valid.id.clone(),
+                    "res_pinned".to_string(),
+                ],
+            ),
+            vec![valid.id]
+        );
+    }
+
+    #[test]
+    fn topic_folder_roots_empty_when_all_pinned_folders_are_stale() {
+        let (_temp_dir, db) = setup_test_db();
+
+        assert!(existing_topic_folder_roots(
+            &db,
+            vec!["fld_stale_missing".to_string(), "res_pinned".to_string(),],
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn folder_scope_allows_descendants_and_rejects_siblings() {
+        let (_temp_dir, db) = setup_test_db();
+        let root = create_folder(&db, "Topic", None);
+        let child = create_folder(&db, "Child", Some(root.id.clone()));
+        let sibling = create_folder(&db, "Sibling", None);
+
+        assert!(folder_is_within_roots(&db, &child.id, &[root.id.clone()])
+            .expect("descendant check should succeed"));
+        assert!(!folder_is_within_roots(&db, &sibling.id, &[root.id])
+            .expect("sibling check should succeed"));
+    }
 }
 
 pub fn ensure_item_in_scope(

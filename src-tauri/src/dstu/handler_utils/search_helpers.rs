@@ -758,9 +758,21 @@ pub fn search_all(
     let mut results = Vec::new();
 
     // S-020: 如果指定了 folder_id，先获取文件夹内的资源 ID 集合，用于后续过滤
-    let folder_item_ids: Option<HashSet<String>> = if let Some(ref folder_id) = options.folder_id {
-        let items = VfsFolderRepo::list_items_by_folder(vfs_db, Some(folder_id))
-            .map_err(|e| format!("list folder items: {}", e))?;
+    let folder_filter = options
+        .folder_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|folder_id| {
+            !folder_id.is_empty()
+                && !folder_id.eq_ignore_ascii_case("root")
+                && !folder_id.eq_ignore_ascii_case("null")
+        });
+
+    let folder_item_ids: Option<HashSet<String>> = if let Some(folder_id) = folder_filter {
+        let folder_ids = VfsFolderRepo::get_folder_ids_recursive(vfs_db, folder_id)
+            .map_err(|e| format!("list folder descendants: {}", e))?;
+        let items = VfsFolderRepo::get_items_by_folders(vfs_db, &folder_ids)
+            .map_err(|e| format!("list scoped folder items: {}", e))?;
         Some(items.iter().map(|item| item.item_id.clone()).collect())
     } else {
         None
@@ -850,4 +862,130 @@ pub fn search_all(
     results.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
 
     Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vfs::{VfsCreateNoteParams, VfsFolder, VfsFolderItem, VfsNoteRepo};
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    fn setup_test_db() -> (TempDir, Arc<VfsDatabase>) {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let db = VfsDatabase::new(temp_dir.path()).expect("Failed to create database");
+        (temp_dir, Arc::new(db))
+    }
+
+    fn create_folder(db: &Arc<VfsDatabase>, title: &str, parent_id: Option<String>) -> VfsFolder {
+        let folder = VfsFolder::new(title.to_string(), parent_id, None, None);
+        VfsFolderRepo::create_folder(db, &folder).expect("create folder");
+        folder
+    }
+
+    fn create_note(db: &Arc<VfsDatabase>, folder_id: &str, title: &str) -> String {
+        let note = VfsNoteRepo::create_note(
+            db,
+            VfsCreateNoteParams {
+                title: title.to_string(),
+                content: format!("content for {}", title),
+                tags: vec![],
+            },
+        )
+        .expect("create note");
+        let item = VfsFolderItem::new(
+            Some(folder_id.to_string()),
+            "note".to_string(),
+            note.id.clone(),
+        );
+        VfsFolderRepo::add_item_to_folder(db, &item).expect("add note to folder");
+        note.id
+    }
+
+    #[test]
+    fn search_all_filters_folder_recursively() {
+        let (_temp_dir, db) = setup_test_db();
+
+        let root = create_folder(&db, "Topic", None);
+        let child = create_folder(&db, "Child", Some(root.id.clone()));
+        let grandchild = create_folder(&db, "Grandchild", Some(child.id.clone()));
+        let sibling = create_folder(&db, "Sibling", None);
+
+        let root_note_id = create_note(&db, &root.id, "scope unique root");
+        let child_note_id = create_note(&db, &child.id, "scope unique child");
+        let grandchild_note_id = create_note(&db, &grandchild.id, "scope unique grandchild");
+        let sibling_note_id = create_note(&db, &sibling.id, "scope unique sibling");
+
+        let results = search_all(
+            &db,
+            "scope unique",
+            &DstuListOptions {
+                folder_id: Some(root.id.clone()),
+                types: Some(vec![DstuNodeType::Note]),
+                limit: Some(20),
+                ..Default::default()
+            },
+        )
+        .expect("search should succeed");
+        let ids: HashSet<String> = results.into_iter().map(|node| node.id).collect();
+
+        assert!(ids.contains(&root_note_id));
+        assert!(ids.contains(&child_note_id));
+        assert!(ids.contains(&grandchild_note_id));
+        assert!(!ids.contains(&sibling_note_id));
+    }
+
+    #[test]
+    fn search_all_without_folder_keeps_root_search_unscoped() {
+        let (_temp_dir, db) = setup_test_db();
+
+        let topic = create_folder(&db, "Topic", None);
+        let sibling = create_folder(&db, "Sibling", None);
+        let topic_note_id = create_note(&db, &topic.id, "global unique topic");
+        let sibling_note_id = create_note(&db, &sibling.id, "global unique sibling");
+
+        let results = search_all(
+            &db,
+            "global unique",
+            &DstuListOptions {
+                folder_id: None,
+                types: Some(vec![DstuNodeType::Note]),
+                limit: Some(20),
+                ..Default::default()
+            },
+        )
+        .expect("search should succeed");
+        let ids: HashSet<String> = results.into_iter().map(|node| node.id).collect();
+
+        assert!(ids.contains(&topic_note_id));
+        assert!(ids.contains(&sibling_note_id));
+    }
+
+    #[test]
+    fn search_all_root_sentinel_keeps_search_unscoped() {
+        let (_temp_dir, db) = setup_test_db();
+
+        let topic = create_folder(&db, "Topic", None);
+        let sibling = create_folder(&db, "Sibling", None);
+        let topic_note_id = create_note(&db, &topic.id, "root sentinel topic");
+        let sibling_note_id = create_note(&db, &sibling.id, "root sentinel sibling");
+
+        for root_value in ["", "root", "ROOT", "null"] {
+            let results = search_all(
+                &db,
+                "root sentinel",
+                &DstuListOptions {
+                    folder_id: Some(root_value.to_string()),
+                    types: Some(vec![DstuNodeType::Note]),
+                    limit: Some(20),
+                    ..Default::default()
+                },
+            )
+            .expect("root sentinel search should succeed");
+            let ids: HashSet<String> = results.into_iter().map(|node| node.id).collect();
+
+            assert!(ids.contains(&topic_note_id));
+            assert!(ids.contains(&sibling_note_id));
+        }
+    }
 }

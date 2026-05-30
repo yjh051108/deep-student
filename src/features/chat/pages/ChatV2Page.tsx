@@ -500,6 +500,9 @@ export const ChatV2Page: React.FC = () => {
 
   // ========== 移动端统一顶栏配置 ==========
   const currentSession = sessions.find(s => s.id === currentSessionId);
+  const currentSessionGroup = currentSession?.groupId
+    ? groups.find((group) => group.id === currentSession.groupId && group.persistStatus === 'active') ?? null
+    : null;
   const currentSessionGroupName = currentSession?.groupId
     ? groupNameMap.get(currentSession.groupId) ?? null
     : null;
@@ -702,6 +705,8 @@ export const ChatV2Page: React.FC = () => {
             mode="canvas"
             onClose={toggleCanvasSidebar}
             onOpenApp={handleOpenApp}
+            topicGroupId={currentSessionGroup?.id ?? null}
+            topicGroupName={currentSessionGroupName}
             className="h-full"
           />
         </Panel>
@@ -989,6 +994,8 @@ export const ChatV2Page: React.FC = () => {
                     handleOpenApp(item);
                   }}
                   highlightedIds={groupPickerAddRef.current ? groupPinnedIds : undefined}
+                  topicGroupId={currentSessionGroup?.id ?? null}
+                  topicGroupName={currentSessionGroupName}
                   className="h-full"
                   hideToolbarAndNav
                 />
@@ -1196,6 +1203,8 @@ export const ChatV2Page: React.FC = () => {
                   mode="canvas"
                   onClose={() => setLearningHubSheetOpen(false)}
                   onOpenApp={handleOpenApp}
+                  topicGroupId={currentSessionGroup?.id ?? null}
+                  topicGroupName={currentSessionGroupName}
                   className="h-full"
                 />
               )}

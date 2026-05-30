@@ -33,12 +33,23 @@ fn topic_folder_title(name: &str) -> String {
     }
 }
 
-fn first_pinned_folder_id(pinned_resource_ids: &[String]) -> Option<String> {
-    pinned_resource_ids.iter().find_map(|id| {
-        id.trim()
-            .strip_prefix("fld_")
-            .map(|_| id.trim().to_string())
-    })
+fn first_existing_pinned_folder_id(
+    conn: &rusqlite::Connection,
+    pinned_resource_ids: &[String],
+) -> Result<Option<String>, String> {
+    for id in pinned_resource_ids {
+        let folder_id = id.trim();
+        if !folder_id.starts_with("fld_") {
+            continue;
+        }
+        if VfsFolderRepo::get_folder_with_conn(conn, folder_id)
+            .map_err(|e| e.to_string())?
+            .is_some()
+        {
+            return Ok(Some(folder_id.to_string()));
+        }
+    }
+    Ok(None)
 }
 
 fn prepend_unique_pinned_folder(
@@ -58,7 +69,7 @@ pub(crate) fn ensure_group_folder(
     let conn = vfs_db.get_conn_safe().map_err(|e| e.to_string())?;
     let folder_title = topic_folder_title(group_name);
 
-    if let Some(folder_id) = first_pinned_folder_id(&pinned_resource_ids) {
+    if let Some(folder_id) = first_existing_pinned_folder_id(&conn, &pinned_resource_ids)? {
         if let Some(mut folder) =
             VfsFolderRepo::get_folder_with_conn(&conn, &folder_id).map_err(|e| e.to_string())?
         {
@@ -203,8 +214,7 @@ pub async fn chat_v2_get_group(
     db: State<'_, Arc<ChatV2Database>>,
 ) -> Result<Option<SessionGroup>, String> {
     let conn = db.get_conn_safe().map_err(|e| e.to_string())?;
-    let group = ChatV2Repo::get_group_with_conn(&conn, &group_id).map_err(|e| e.to_string())?;
-    Ok(group)
+    ChatV2Repo::get_group_with_conn(&conn, &group_id).map_err(|e| e.to_string())
 }
 
 /// 列出分组

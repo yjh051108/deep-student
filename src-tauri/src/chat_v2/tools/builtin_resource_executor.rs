@@ -9,7 +9,7 @@
 //! 该执行器通过 VfsDatabase 直接访问 DSTU 数据层，
 //! 为 LLM 提供主动读取用户学习资源的能力。
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -34,8 +34,8 @@ use crate::utils::text::safe_truncate_chars;
 use crate::vfs::repos::embedding_repo::VfsIndexStateRepo;
 use crate::vfs::{
     VfsBlobRepo, VfsCreateMindMapParams, VfsDatabase, VfsEssayRepo, VfsExamRepo, VfsFileRepo,
-    VfsFolderRepo, VfsMindMapRepo, VfsNoteRepo, VfsResourceRepo, VfsTextbookRepo,
-    VfsTranslationRepo, VfsUpdateMindMapParams,
+    VfsMindMapRepo, VfsNoteRepo, VfsResourceRepo, VfsTextbookRepo, VfsTranslationRepo,
+    VfsUpdateMindMapParams,
 };
 
 // ============================================================================
@@ -116,6 +116,18 @@ impl BuiltinResourceExecutor {
         }
     }
 
+    fn list_option_folder_id(
+        search: Option<&str>,
+        is_topic_scoped: bool,
+        effective_folder_id: Option<String>,
+    ) -> Option<String> {
+        if search.is_some() && !is_topic_scoped && effective_folder_id.as_deref() == Some("root") {
+            None
+        } else {
+            effective_folder_id
+        }
+    }
+
     /// 从资源 ID 推断资源类型
     fn infer_type_from_id(resource_id: &str) -> Option<&'static str> {
         if resource_id.starts_with("note_") {
@@ -139,51 +151,6 @@ impl BuiltinResourceExecutor {
         } else {
             None
         }
-    }
-
-    fn item_ids_in_topic_scope(
-        ctx: &ExecutionContext,
-        vfs_db: &Arc<VfsDatabase>,
-    ) -> Result<HashSet<String>, String> {
-        let mut allowed = HashSet::new();
-        for root in resource_scope::current_topic_folder_roots(ctx) {
-            let folder_ids = VfsFolderRepo::get_folder_ids_recursive(vfs_db, &root)
-                .map_err(|e| format!("Failed to resolve topic folder scope: {}", e))?;
-            for folder_id in folder_ids {
-                let items = VfsFolderRepo::list_items_by_folder(vfs_db, Some(&folder_id))
-                    .map_err(|e| format!("Failed to list topic folder items: {}", e))?;
-                allowed.extend(items.into_iter().map(|item| item.item_id));
-            }
-        }
-        Ok(allowed)
-    }
-
-    fn pinned_resource_matches(
-        vfs_db: &Arc<VfsDatabase>,
-        pinned_id: &str,
-        requested_id: &str,
-        read_id: &str,
-    ) -> bool {
-        let pinned_id = pinned_id.trim();
-        if pinned_id.is_empty() || pinned_id.starts_with("fld_") {
-            return false;
-        }
-        if pinned_id == requested_id || pinned_id == read_id {
-            return true;
-        }
-        if pinned_id.starts_with("res_") {
-            if let Ok(Some(resource)) = VfsResourceRepo::get_resource(vfs_db, pinned_id) {
-                if resource.id == requested_id || resource.id == read_id {
-                    return true;
-                }
-                if resource.source_id.as_deref().map_or(false, |source_id| {
-                    source_id == requested_id || source_id == read_id
-                }) {
-                    return true;
-                }
-            }
-        }
-        false
     }
 
     fn ensure_read_target_in_scope(
@@ -633,6 +600,14 @@ impl BuiltinResourceExecutor {
         let folder_id = resource_scope::normalize_folder_arg(call.arguments.get("folder_id"));
         let scoped_folder_id =
             resource_scope::resolve_scoped_folder_id(ctx, vfs_db, folder_id, "resource_list")?;
+        let is_topic_scoped = resource_scope::is_topic_scoped(ctx);
+        let effective_folder_id = if is_topic_scoped {
+            scoped_folder_id.clone()
+        } else {
+            scoped_folder_id
+                .clone()
+                .or_else(|| Some("root".to_string()))
+        };
         let search = call
             .arguments
             .get("search")
@@ -653,14 +628,18 @@ impl BuiltinResourceExecutor {
 
         log::debug!(
             "[BuiltinResourceExecutor] resource_list: type={}, folder_id={:?}, search={:?}, limit={}, favorites_only={}",
-            type_filter, scoped_folder_id, search, limit, favorites_only
+            type_filter, effective_folder_id, search, limit, favorites_only
         );
 
         let start_time = Instant::now();
+        let option_folder_id =
+            Self::list_option_folder_id(search.as_deref(), is_topic_scoped, effective_folder_id);
+        let empty_topic_scope =
+            option_folder_id.as_deref() == Some(resource_scope::NO_TOPIC_RESOURCE_FOLDER_SENTINEL);
 
         // 构建列表选项
         let options = DstuListOptions {
-            folder_id: scoped_folder_id.clone(),
+            folder_id: option_folder_id,
             types: if type_filter == "all" {
                 None
             } else {
@@ -676,7 +655,9 @@ impl BuiltinResourceExecutor {
         };
 
         // 根据是否有搜索关键词决定执行方式
-        let (mut results, partial_errors) = if let Some(ref query) = search {
+        let (mut results, partial_errors) = if empty_topic_scope {
+            (Vec::new(), vec![])
+        } else if let Some(ref query) = search {
             // 有搜索关键词，使用搜索函数
             (search_all(vfs_db, query, &options)?, vec![])
         } else {
@@ -1581,6 +1562,17 @@ impl BuiltinResourceExecutor {
         );
 
         let start_time = Instant::now();
+        if scoped_folder_id.as_deref() == Some(resource_scope::NO_TOPIC_RESOURCE_FOLDER_SENTINEL) {
+            return Ok(json!({
+                "success": true,
+                "query": query,
+                "items": [],
+                "count": 0,
+                "durationMs": start_time.elapsed().as_millis() as u64,
+                "scope": "topic",
+                "folderId": scoped_folder_id,
+            }));
+        }
 
         // 构建搜索选项
         let options = DstuListOptions {
@@ -3494,6 +3486,30 @@ mod tests {
         assert_eq!(
             BuiltinResourceExecutor::parse_resource_type("unknown"),
             None
+        );
+    }
+
+    #[test]
+    fn test_list_search_uses_unscoped_root_outside_topic() {
+        assert_eq!(
+            BuiltinResourceExecutor::list_option_folder_id(
+                Some("math"),
+                false,
+                Some("root".to_string())
+            ),
+            None
+        );
+        assert_eq!(
+            BuiltinResourceExecutor::list_option_folder_id(None, false, Some("root".to_string())),
+            Some("root".to_string())
+        );
+        assert_eq!(
+            BuiltinResourceExecutor::list_option_folder_id(
+                Some("math"),
+                true,
+                Some("root".to_string())
+            ),
+            Some("root".to_string())
         );
     }
 
