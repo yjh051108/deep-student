@@ -2752,6 +2752,7 @@ impl PdfProcessingService {
             ocr_text: ocr_text_for_unit,
             ocr_pages_json: file.ocr_pages_json.clone(),
             blob_hash: file.blob_hash.clone(),
+            image_mime_type: None,
             page_count: file.page_count,
             extracted_text: file.extracted_text.clone(),
             preview_json: file.preview_json.clone(),

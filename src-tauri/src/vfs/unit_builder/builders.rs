@@ -132,7 +132,10 @@ impl UnitBuilder for ImageBuilder {
                 resource_id: input.resource_id.clone(),
                 unit_index: 0,
                 image_blob_hash: input.blob_hash.clone(),
-                image_mime_type: Some("image/png".to_string()),
+                image_mime_type: input
+                    .image_mime_type
+                    .clone()
+                    .or_else(|| Some("image/png".to_string())),
                 text_content,
                 text_source,
             }],
@@ -565,6 +568,7 @@ mod tests {
             ocr_text: None,
             ocr_pages_json: None,
             blob_hash: None,
+            image_mime_type: None,
             page_count: None,
             extracted_text: None,
             preview_json: None,
@@ -589,6 +593,7 @@ mod tests {
             ocr_text: None,
             ocr_pages_json: Some(r#"["Page 1 text", null, "Page 3 text"]"#.to_string()),
             blob_hash: None,
+            image_mime_type: None,
             page_count: Some(3),
             extracted_text: None,
             preview_json: None,

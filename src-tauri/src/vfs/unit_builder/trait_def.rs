@@ -17,6 +17,8 @@ pub struct UnitBuildInput {
     pub ocr_pages_json: Option<String>,
     /// 关联的 blob hash（PDF 等外部存储）
     pub blob_hash: Option<String>,
+    /// 图片 MIME 类型（图片资源或附件）
+    pub image_mime_type: Option<String>,
     /// 页数（多页资源）
     pub page_count: Option<i32>,
     /// 提取的文本（PDF 原生文本等）

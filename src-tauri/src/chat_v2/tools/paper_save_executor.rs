@@ -295,7 +295,9 @@ impl PaperSaveExecutor {
             }
             // 如果对象自身是单篇论文 {"title": "...", "doi": "..."}
             if val.is_object() && val.get("title").is_some() {
-                log::warn!("[PaperSave] LLM sent a single paper object without 'papers' wrapper, auto-wrapping");
+                log::warn!(
+                    "[PaperSave] LLM sent a single paper object without 'papers' wrapper, auto-wrapping"
+                );
                 return Some(vec![val.clone()]);
             }
             None
@@ -692,6 +694,7 @@ impl PaperSaveExecutor {
                 ocr_text: None,
                 ocr_pages_json: None,
                 blob_hash: Some(blob_hash.clone()),
+                image_mime_type: None,
                 page_count: file.page_count,
                 extracted_text: file.extracted_text.clone(),
                 preview_json: file.preview_json.clone(),
