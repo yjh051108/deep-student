@@ -324,6 +324,8 @@ export interface InputBarUIProps {
   pendingApprovalRequest?: BlockingInteraction | null;
   /** 会话 ID（用于审批响应） */
   sessionId?: string;
+  /** 当前会话所属课题 ID，用于把附件写入课题资源范围 */
+  groupId?: string | null;
 
   // ========== PDF 页码引用（精准提问） ==========
 

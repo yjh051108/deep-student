@@ -216,6 +216,7 @@ export const InputBarV2: React.FC<InputBarV2Props> = memo(
     // 🔧 订阅合并：使用单个聚合选择器 + shallow 比较，避免多次重渲染
     const {
       sessionId,
+      groupId,
       mode,
       inputValue,
       enableThinking,
@@ -244,6 +245,7 @@ export const InputBarV2: React.FC<InputBarV2Props> = memo(
       store,
       useShallow((s) => ({
         sessionId: s.sessionId,
+        groupId: s.groupId,
         mode: s.mode,
         inputValue: s.inputValue,
         enableThinking: s.chatParams.enableThinking,
@@ -1061,6 +1063,7 @@ export const InputBarV2: React.FC<InputBarV2Props> = memo(
         // 🆕 工具审批请求
         pendingApprovalRequest={pendingApprovalRequest}
         sessionId={sessionId}
+        groupId={groupId}
         // ★ PDF 页码引用
         pdfPageRefs={pdfPageRefs}
         onRemovePdfPageRef={removePdfPageRef}

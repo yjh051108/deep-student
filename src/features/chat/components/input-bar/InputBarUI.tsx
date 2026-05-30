@@ -518,6 +518,7 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
   // 🆕 工具审批请求
   pendingApprovalRequest,
   sessionId,
+  groupId,
   // ★ PDF 页码引用
   pdfPageRefs,
   onRemovePdfPageRef,
@@ -734,6 +735,8 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
             mimeType: file.type || 'application/octet-stream',
             base64Content: base64Result,
             type: isImage ? 'image' : 'file',
+            sessionId,
+            groupId,
           });
 
           logAttachment('ui', 'vfs_upload_done', {
@@ -949,7 +952,7 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
       reader.readAsDataURL(file);
     });
 
-  }, [onFilesUpload, onAddAttachment, onUpdateAttachment, onContextRefCreated, attachments.length, t]);
+  }, [onFilesUpload, onAddAttachment, onUpdateAttachment, onContextRefCreated, attachments.length, sessionId, groupId, t]);
 
   // ========== 相机拍照处理 ==========
   // 检测是否在移动端环境

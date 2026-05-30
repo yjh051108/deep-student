@@ -1353,13 +1353,13 @@ fn resolve_upload_topic_folder_id(
             Some(trimmed.to_string())
         }
     });
-    let normalized_group_id = if explicit_group_id.is_some() {
-        explicit_group_id
-    } else if let Some(session_id) = explicit_session_id {
+    let normalized_group_id = if let Some(session_id) = explicit_session_id {
         let session = ChatV2Repo::get_session_with_conn(&conn, &session_id)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "当前会话不存在，已拒绝把附件写入全局根目录。".to_string())?;
         session.group_id
+    } else if explicit_group_id.is_some() {
+        explicit_group_id
     } else {
         None
     };
@@ -1413,13 +1413,35 @@ fn folder_is_within_upload_root(
     Ok(folder_ids.iter().any(|id| id == folder_id))
 }
 
+fn resolve_upload_target_folder_id(
+    vfs_db: &VfsDatabase,
+    requested_folder_id: Option<&str>,
+    topic_folder_id: Option<&str>,
+    fallback_folder_id: &str,
+) -> Result<String, String> {
+    if let Some(requested_folder_id) = requested_folder_id
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+    {
+        if let Some(topic_root_id) = topic_folder_id {
+            if folder_is_within_upload_root(vfs_db, requested_folder_id, topic_root_id)? {
+                return Ok(requested_folder_id.to_string());
+            }
+            return Err("目标文件夹不属于当前课题资源范围，已拒绝写入附件。".to_string());
+        }
+        return Ok(requested_folder_id.to_string());
+    }
+
+    Ok(topic_folder_id.unwrap_or(fallback_folder_id).to_string())
+}
+
 #[tauri::command]
 pub async fn vfs_upload_attachment(
     params: VfsUploadAttachmentParamsExt,
     app: AppHandle,
     vfs_db: State<'_, Arc<VfsDatabase>>,
     chat_v2_db: State<'_, Arc<crate::chat_v2::database::ChatV2Database>>,
-    database: State<'_, crate::database::Database>,
+    database: State<'_, Arc<crate::database::Database>>,
     pdf_processing_service: State<'_, Arc<PdfProcessingService>>,
 ) -> Result<VfsUploadAttachmentResult, String> {
     log::info!(
@@ -1440,41 +1462,20 @@ pub async fn vfs_upload_attachment(
         params.session_id.as_deref(),
     )?;
 
-    let target_folder_id = match params.folder_id {
-        Some(ref id) if !id.trim().is_empty() => {
-            let requested_folder_id = id.trim().to_string();
-            if let Some(ref topic_root_id) = topic_folder_id {
-                if folder_is_within_upload_root(
-                    vfs_db.inner().as_ref(),
-                    &requested_folder_id,
-                    topic_root_id,
-                )? {
-                    Some(requested_folder_id)
-                } else {
-                    log::warn!(
-                        "[VFS::handlers] upload folder {} is outside current topic root {}; using topic root instead",
-                        requested_folder_id,
-                        topic_root_id
-                    );
-                    Some(topic_root_id.clone())
-                }
-            } else {
-                Some(requested_folder_id)
-            }
-        }
-        _ => {
-            if let Some(folder_id) = topic_folder_id {
-                Some(folder_id)
-            } else {
-                let config = AttachmentConfig::new(vfs_db.inner().clone());
-                Some(
-                    config
-                        .get_or_create_root_folder()
-                        .map_err(|e| e.to_string())?,
-                )
-            }
-        }
+    let fallback_folder_id = if topic_folder_id.is_none() {
+        let config = AttachmentConfig::new(vfs_db.inner().clone());
+        config
+            .get_or_create_root_folder()
+            .map_err(|e| e.to_string())?
+    } else {
+        String::new()
     };
+    let target_folder_id = Some(resolve_upload_target_folder_id(
+        vfs_db.inner().as_ref(),
+        params.folder_id.as_deref(),
+        topic_folder_id.as_deref(),
+        &fallback_folder_id,
+    )?);
 
     let upload_params = VfsUploadAttachmentParams {
         name: params.name.clone(),
@@ -7898,6 +7899,20 @@ pub async fn vfs_get_resource_text_chunks(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vfs::{VfsDatabase, VfsFolder, VfsFolderRepo};
+    use tempfile::TempDir;
+
+    fn setup_test_db() -> (TempDir, VfsDatabase) {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let db = VfsDatabase::new(temp_dir.path()).expect("create vfs db");
+        (temp_dir, db)
+    }
+
+    fn create_folder(db: &VfsDatabase, title: &str, parent_id: Option<String>) -> VfsFolder {
+        let folder = VfsFolder::new(title.to_string(), parent_id, None, None);
+        VfsFolderRepo::create_folder(db, &folder).expect("create folder");
+        folder
+    }
 
     #[test]
     fn test_file_size_validation() {
@@ -7927,6 +7942,56 @@ mod tests {
         assert_ne!(hash1, hash3);
         // 哈希应该是 64 字符的十六进制字符串
         assert_eq!(hash1.len(), 64);
+    }
+
+    #[test]
+    fn upload_target_allows_topic_root_and_descendants() {
+        let (_temp_dir, db) = setup_test_db();
+        let topic = create_folder(&db, "Topic", None);
+        let child = create_folder(&db, "Child", Some(topic.id.clone()));
+        let sibling = create_folder(&db, "Sibling", None);
+
+        assert_eq!(
+            resolve_upload_target_folder_id(&db, Some(&topic.id), Some(&topic.id), "fallback")
+                .expect("topic root should be accepted"),
+            topic.id
+        );
+        assert_eq!(
+            resolve_upload_target_folder_id(&db, Some(&child.id), Some(&topic.id), "fallback")
+                .expect("topic child should be accepted"),
+            child.id
+        );
+        assert!(resolve_upload_target_folder_id(
+            &db,
+            Some(&sibling.id),
+            Some(&topic.id),
+            "fallback"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn upload_target_defaults_to_topic_or_fallback_root() {
+        let (_temp_dir, db) = setup_test_db();
+        let topic = create_folder(&db, "Topic", None);
+        let fallback = create_folder(&db, "Attachments", None);
+        let explicit = create_folder(&db, "Explicit", None);
+
+        assert_eq!(
+            resolve_upload_target_folder_id(&db, None, Some(&topic.id), &fallback.id)
+                .expect("missing folder should default to topic root"),
+            topic.id
+        );
+        assert_eq!(
+            resolve_upload_target_folder_id(&db, Some(&explicit.id), None, &fallback.id)
+                .expect("no topic scope should accept explicit folder"),
+            explicit.id
+        );
+        assert_eq!(
+            resolve_upload_target_folder_id(&db, None, None, &fallback.id)
+                .expect("no topic scope should use attachment fallback"),
+            fallback.id
+        );
     }
 
     #[test]

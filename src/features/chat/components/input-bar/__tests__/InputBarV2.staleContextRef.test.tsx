@@ -95,6 +95,7 @@ function createMockStore() {
 
   const store = createStore<any>(() => ({
     sessionId: 'session_1',
+    groupId: null,
     mode: 'chat',
     inputValue: '',
     chatParams: {
@@ -188,6 +189,19 @@ describe('InputBarV2 stale context ref guard', () => {
     });
 
     expect(capturedInputBarUIProps?.activeSkillIds).toEqual(['research-mode']);
+  });
+
+  it('passes the current group scope to InputBarUI for attachment uploads', () => {
+    const { store } = createMockStore();
+
+    act(() => {
+      store.setState({ groupId: 'group_topic_1' });
+    });
+
+    render(<InputBarV2 store={store as any} />);
+
+    expect(capturedInputBarUIProps?.sessionId).toBe('session_1');
+    expect(capturedInputBarUIProps?.groupId).toBe('group_topic_1');
   });
 
   it('passes a model-aware runtime thinking state label to InputBarUI', () => {
