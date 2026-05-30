@@ -889,16 +889,23 @@ impl VfsFolderRepo {
         Ok(items)
     }
 
-    /// 获取所有已分配到文件夹的资源 ID（包括所有文件夹，不只是根级别）
+    /// 获取所有不应作为根目录未分配资源显示的资源 ID。
     ///
-    /// ★ 用于在根目录列表时排除已分配到任何文件夹的资源
-    /// ★ P1-2 修复：过滤 deleted_at IS NULL，避免软删除的资源仍被排除在根目录列表外
+    /// 包括仍在任意活动 folder_items 中的资源，以及挂在已删除文件夹下的资源。
+    /// 后者需要继续从根目录隐藏，否则删除文件夹后其子资源会“漏回”根目录。
     pub fn list_all_assigned_item_ids(
         db: &VfsDatabase,
     ) -> VfsResult<std::collections::HashSet<String>> {
         let conn = db.get_conn_safe()?;
-        let mut stmt =
-            conn.prepare(r#"SELECT DISTINCT item_id FROM folder_items WHERE deleted_at IS NULL"#)?;
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT DISTINCT fi.item_id
+            FROM folder_items fi
+            LEFT JOIN folders f ON f.id = fi.folder_id
+            WHERE fi.deleted_at IS NULL
+               OR f.deleted_at IS NOT NULL
+            "#,
+        )?;
 
         let ids = stmt
             .query_map([], |row| row.get::<_, String>(0))?

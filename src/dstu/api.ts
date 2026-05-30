@@ -639,21 +639,23 @@ export function watch(path: string, callback: (event: DstuWatchEvent) => void): 
       unlistenFn = await listen<DstuWatchEvent>(eventChannel, (event) => {
         if (!isCleanedUp) {
           const eventType = event.payload.type;
-          let nodeId: string | undefined;
+          const nodeId = event.payload.id;
+          let derivedNodeId: string | undefined;
 
-          // [FIX-D003] 优先使用 node.id，如果不存在则从 path 提取
-          if (event.payload.node?.id) {
-            nodeId = event.payload.node.id;
-          } else if (event.payload.path) {
+          // [FIX-D003] 优先使用后端显式携带的 id；兼容旧事件再退回 node/path 派生
+          if (!nodeId && event.payload.node?.id) {
+            derivedNodeId = event.payload.node.id;
+          } else if (!nodeId && event.payload.path) {
             try {
-              nodeId = extractSourceIdFromPath(event.payload.path);
+              derivedNodeId = extractSourceIdFromPath(event.payload.path);
             } catch {
               // 提取失败时忽略，继续执行回调
             }
           }
 
           // 对所有影响缓存的事件触发失效
-          if (nodeId) {
+          const cacheNodeId = nodeId ?? derivedNodeId;
+          if (cacheNodeId) {
             if (
               eventType === 'created' ||
               eventType === 'updated' ||
@@ -662,7 +664,7 @@ export function watch(path: string, callback: (event: DstuWatchEvent) => void): 
               eventType === 'restored' ||
               eventType === 'purged'
             ) {
-              invalidateCacheWithLogging(nodeId, `watch[${eventType}]`);
+              invalidateCacheWithLogging(cacheNodeId, `watch[${eventType}]`);
             }
           }
 
@@ -670,7 +672,7 @@ export function watch(path: string, callback: (event: DstuWatchEvent) => void): 
           if (eventType === 'moved' && event.payload.oldPath) {
             try {
               const oldNodeId = extractSourceIdFromPath(event.payload.oldPath);
-              if (oldNodeId && oldNodeId !== nodeId) {
+              if (oldNodeId && oldNodeId !== cacheNodeId) {
                 invalidateCacheWithLogging(oldNodeId, 'watch[moved:oldPath]');
               }
             } catch {

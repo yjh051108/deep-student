@@ -34,7 +34,7 @@ use crate::document_parser::DocumentParser;
 use crate::vfs::database::VfsDatabase;
 use crate::vfs::error::{VfsError, VfsResult};
 use crate::vfs::ocr_utils::parse_ocr_pages_json;
-use crate::vfs::repos::{VfsBlobRepo, VfsFolderRepo, VfsResourceRepo};
+use crate::vfs::repos::{VfsBlobRepo, VfsFileRepo, VfsFolderRepo, VfsResourceRepo};
 use crate::vfs::types::VfsFolderItem;
 use crate::vfs::types::{
     PdfPreviewJson, VfsAttachment, VfsResourceMetadata, VfsResourceType, VfsUploadAttachmentParams,
@@ -651,13 +651,14 @@ impl VfsAttachmentRepo {
         // 4. 根据大小选择存储模式
         //    注意：即使后续插入附件记录失败（因为 hash 冲突），
         //    这些 resource/blob 也会保留，不会造成问题（它们本身也是去重的）
-        let (resource_id, blob_hash) = if data.len() < INLINE_SIZE_THRESHOLD {
-            // 小文件：inline 模式
-            Self::store_inline(conn, &data, &params, &content_hash, &attachment_type)?
-        } else {
-            // 大文件：external 模式
-            Self::store_external(conn, blobs_dir, &data, &params)?
-        };
+        let (resource_id, blob_hash) =
+            if attachment_type != "image" && data.len() < INLINE_SIZE_THRESHOLD {
+                // 小文件：inline 模式
+                Self::store_inline(conn, &data, &params, &content_hash, &attachment_type)?
+            } else {
+                // 大文件和图片：external 模式。图片必须有 blob_hash，供原生多模态索引和 OCR 复用。
+                Self::store_external(conn, blobs_dir, &data, &params)?
+            };
 
         // 4.5 PDF 预渲染（迁移 015）
         //     如果是 PDF 文件，触发预渲染逻辑
@@ -2011,33 +2012,8 @@ impl VfsAttachmentRepo {
 
     /// 软删除附件（使用现有连接）
     pub fn delete_attachment_with_conn(conn: &Connection, id: &str) -> VfsResult<()> {
-        let now = chrono::Utc::now()
-            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
-            .to_string();
-
-        let updated = conn.execute(
-            "UPDATE files SET status = 'deleted', deleted_at = ?1, updated_at = ?1 WHERE id = ?2 AND deleted_at IS NULL AND status = 'active'",
-            params![now, id],
-        )?;
-
-        if updated == 0 {
-            // 可能已删除或不存在
-            let exists: bool = conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM files WHERE id = ?1)",
-                params![id],
-                |row| row.get(0),
-            )?;
-
-            if !exists {
-                return Err(VfsError::NotFound {
-                    resource_type: "attachment".to_string(),
-                    id: id.to_string(),
-                });
-            }
-            // 已软删除，静默返回成功
-        }
-
-        info!("[VFS::AttachmentRepo] Soft deleted attachment: {}", id);
+        VfsFileRepo::delete_file_with_conn(conn, id)?;
+        info!("[VFS::AttachmentRepo] Soft deleted attachment via file repo: {}", id);
         Ok(())
     }
 
@@ -2075,7 +2051,16 @@ impl VfsAttachmentRepo {
             // 未在回收站中，静默返回成功
         }
 
-        info!("[VFS::AttachmentRepo] Restored attachment: {}", id);
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let fi_updated = conn.execute(
+            "UPDATE folder_items SET deleted_at = NULL, updated_at = ?1 WHERE item_id = ?2 AND item_type IN ('file', 'image') AND deleted_at IS NOT NULL",
+            params![now_ms, id],
+        )?;
+
+        info!(
+            "[VFS::AttachmentRepo] Restored attachment: {} (folder_items updated: {})",
+            id, fi_updated
+        );
         Ok(())
     }
 

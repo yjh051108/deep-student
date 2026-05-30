@@ -25,10 +25,10 @@ pub use path_utils::{
 
 // 重导出节点转换器
 pub use node_converters::{
-    attachment_to_dstu_node, create_type_folder, emit_watch_event, essay_to_dstu_node,
-    exam_to_dstu_node, file_to_dstu_node, generate_resource_id, item_type_to_dstu_node_type,
-    mindmap_to_dstu_node, note_to_dstu_node, parse_timestamp, session_to_dstu_node,
-    textbook_to_dstu_node, translation_to_dstu_node,
+    active_file_to_dstu_node, attachment_to_dstu_node, create_type_folder, emit_watch_event,
+    essay_to_dstu_node, exam_to_dstu_node, file_to_dstu_node, generate_resource_id,
+    item_type_to_dstu_node_type, mindmap_to_dstu_node, note_to_dstu_node, parse_timestamp,
+    session_to_dstu_node, textbook_to_dstu_node, translation_to_dstu_node,
 };
 
 // 重导出 CRUD 辅助函数

@@ -227,6 +227,12 @@ export interface DstuWatchEvent {
   /** 资源路径 */
   path: string;
 
+  /** 稳定资源 ID；path 可能是真实层级路径，不适合反推 ID */
+  id?: string;
+
+  /** 资源类型 */
+  itemType?: string;
+
   /** 资源节点（删除事件可能为空） */
   node?: DstuNode;
 

@@ -578,6 +578,14 @@ pub struct DstuWatchEvent {
     /// 路径
     pub path: String,
 
+    /// 资源 ID（事件消费者需要稳定定位资源时使用，path 保持真实路径语义）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+
+    /// 资源类型
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item_type: Option<String>,
+
     /// 旧路径（移动事件有效）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub old_path: Option<String>,
@@ -593,6 +601,8 @@ impl DstuWatchEvent {
         Self {
             event_type: DstuWatchEventType::Created,
             path: path.into(),
+            id: None,
+            item_type: None,
             old_path: None,
             node: Some(node),
         }
@@ -603,6 +613,8 @@ impl DstuWatchEvent {
         Self {
             event_type: DstuWatchEventType::Updated,
             path: path.into(),
+            id: None,
+            item_type: None,
             old_path: None,
             node: Some(node),
         }
@@ -613,9 +625,22 @@ impl DstuWatchEvent {
         Self {
             event_type: DstuWatchEventType::Deleted,
             path: path.into(),
+            id: None,
+            item_type: None,
             old_path: None,
             node: None,
         }
+    }
+
+    /// 为事件补充稳定资源 ID，避免消费者从真实路径反推 ID
+    pub fn with_resource(
+        mut self,
+        resource_id: impl Into<String>,
+        item_type: impl Into<String>,
+    ) -> Self {
+        self.id = Some(resource_id.into());
+        self.item_type = Some(item_type.into());
+        self
     }
 
     /// 创建"已移动"事件
@@ -623,6 +648,8 @@ impl DstuWatchEvent {
         Self {
             event_type: DstuWatchEventType::Moved,
             path: new_path.into(),
+            id: None,
+            item_type: None,
             old_path: Some(old_path.into()),
             node: Some(node),
         }
@@ -633,6 +660,8 @@ impl DstuWatchEvent {
         Self {
             event_type: DstuWatchEventType::Restored,
             path: path.into(),
+            id: None,
+            item_type: None,
             old_path: None,
             node,
         }
@@ -643,6 +672,8 @@ impl DstuWatchEvent {
         Self {
             event_type: DstuWatchEventType::Purged,
             path: path.into(),
+            id: None,
+            item_type: None,
             old_path: None,
             node: None,
         }

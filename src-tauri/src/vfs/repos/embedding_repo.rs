@@ -348,6 +348,35 @@ impl VfsDimensionRepo {
 
 pub struct VfsIndexStateRepo;
 
+const PENDING_RESOURCES_WHERE_SQL: &str = r#"
+    r.deleted_at IS NULL
+    AND COALESCE(r.index_state, 'pending') != 'disabled'
+    AND (
+        r.index_state = 'pending'
+        OR r.index_state IS NULL
+        OR (r.index_state = 'failed' AND COALESCE(r.index_retry_count, 0) < ?1)
+        OR (r.index_state = 'indexed' AND r.index_hash IS NOT NULL AND r.index_hash != r.hash)
+        OR (r.index_state = 'indexed' AND NOT EXISTS (SELECT 1 FROM vfs_index_units WHERE resource_id = r.id))
+        OR EXISTS (
+            SELECT 1 FROM vfs_index_units u
+            WHERE u.resource_id = r.id
+              AND u.text_required = 1
+              AND (
+                u.text_state = 'pending'
+                OR (u.text_state = 'failed' AND COALESCE(r.index_retry_count, 0) < ?1)
+              )
+        )
+    )
+    AND (
+        EXISTS (SELECT 1 FROM notes WHERE resource_id = r.id)
+        OR EXISTS (SELECT 1 FROM files WHERE status = 'active' AND (resource_id = r.id OR id = r.source_id))
+        OR EXISTS (SELECT 1 FROM exam_sheets WHERE resource_id = r.id OR id = r.source_id)
+        OR EXISTS (SELECT 1 FROM translations WHERE resource_id = r.id)
+        OR EXISTS (SELECT 1 FROM essays WHERE resource_id = r.id)
+        OR EXISTS (SELECT 1 FROM mindmaps WHERE resource_id = r.id)
+    )
+"#;
+
 impl VfsIndexStateRepo {
     pub fn get_index_state(db: &VfsDatabase, resource_id: &str) -> VfsResult<Option<IndexState>> {
         let conn = db.get_conn_safe()?;
@@ -506,6 +535,22 @@ impl VfsIndexStateRepo {
         Ok(ids)
     }
 
+    pub fn count_pending_resources(db: &VfsDatabase, max_retries: i32) -> VfsResult<i64> {
+        let conn = db.get_conn_safe()?;
+        Self::count_pending_resources_with_conn(&conn, max_retries)
+    }
+
+    pub fn count_pending_resources_with_conn(
+        conn: &Connection,
+        max_retries: i32,
+    ) -> VfsResult<i64> {
+        let sql = format!(
+            "SELECT COUNT(*) FROM resources r WHERE {}",
+            PENDING_RESOURCES_WHERE_SQL
+        );
+        Ok(conn.query_row(&sql, params![max_retries], |row| row.get(0))?)
+    }
+
     pub fn get_pending_resources_with_conn(
         conn: &Connection,
         limit: u32,
@@ -514,18 +559,14 @@ impl VfsIndexStateRepo {
         // 查询待索引资源（不包含 disabled 状态，避免队列污染）
         // - pending/NULL: 新资源，需要索引
         // - failed: 失败资源，重试次数未超限时重新索引
+        // - indexed/hash mismatch: 内容更新后索引过期，需要重新索引
         // - indexed 但无 unit: 索引元数据丢失，需要重新索引（使用新架构 vfs_index_units）
         // 注意：disabled 资源不在此查询中，需通过 get_disabled_resources 显式获取
-        let mut stmt = conn.prepare(
-            r#"
-            SELECT id FROM resources r
-            WHERE (r.index_state = 'pending' OR r.index_state IS NULL)
-               OR (r.index_state = 'failed' AND COALESCE(r.index_retry_count, 0) < ?1)
-               OR (r.index_state = 'indexed' AND NOT EXISTS (SELECT 1 FROM vfs_index_units WHERE resource_id = r.id))
-            ORDER BY r.updated_at DESC
-            LIMIT ?2
-            "#,
-        )?;
+        let sql = format!(
+            "SELECT id FROM resources r WHERE {} ORDER BY r.updated_at DESC LIMIT ?2",
+            PENDING_RESOURCES_WHERE_SQL
+        );
+        let mut stmt = conn.prepare(&sql)?;
 
         let rows = stmt.query_map(params![max_retries, limit], |row| row.get::<_, String>(0))?;
         let ids: Vec<String> = rows.filter_map(log_and_skip_err).collect();
@@ -715,6 +756,11 @@ impl VfsIndexStateRepo {
             WHERE r.type IN ('image', 'textbook', 'file', 'exam')
               AND ((r.mm_index_state = 'pending' OR r.mm_index_state IS NULL)
                    OR (r.mm_index_state = 'failed' AND COALESCE(r.mm_index_retry_count, 0) < ?1))
+              AND r.deleted_at IS NULL
+              AND (
+                  EXISTS (SELECT 1 FROM files WHERE status = 'active' AND deleted_at IS NULL AND (resource_id = r.id OR id = r.source_id))
+                  OR EXISTS (SELECT 1 FROM exam_sheets WHERE deleted_at IS NULL AND (resource_id = r.id OR id = r.source_id))
+              )
             ORDER BY r.updated_at DESC
             LIMIT ?2
             "#,

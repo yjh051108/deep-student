@@ -159,9 +159,12 @@ pub async fn dstu_soft_delete(
                 cleanup_vector_index(lance_store.inner(), &resource_id).await;
             }
 
-            // 发射删除事件
-            let path = format!("/{}s/{}", item_type, id);
-            emit_watch_event(&window, DstuWatchEvent::deleted(&path));
+            // 发射删除事件：trash 入口没有完整路径，仍显式携带资源 ID 供前端清理派生状态
+            emit_watch_event(
+                &window,
+                DstuWatchEvent::deleted(format!("/{id}"))
+                    .with_resource(id.clone(), item_type.clone()),
+            );
             Ok(())
         }
         Err(e) => {

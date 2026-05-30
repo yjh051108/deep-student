@@ -28,6 +28,7 @@ use super::types::{
 
 // 从子模块导入路径工具和节点转换器
 use super::handler_utils::{
+    active_file_to_dstu_node,
     delete_resource_by_type,
     delete_resource_by_type_with_conn,
     emit_watch_event,
@@ -533,7 +534,7 @@ pub async fn dstu_get(
             }
         },
         "files" => match VfsFileRepo::get_file(&vfs_db, &id) {
-            Ok(Some(file)) => Some(file_to_dstu_node(&file)),
+            Ok(Some(file)) => active_file_to_dstu_node(&file),
             Ok(None) => None,
             Err(e) => {
                 log::error!(
@@ -1410,8 +1411,11 @@ pub async fn dstu_delete(
     // 使用辅助函数执行删除
     delete_resource_by_type(&vfs_db, &resource_type, &id)?;
 
-    // 发射删除事件
-    emit_watch_event(&window, DstuWatchEvent::deleted(&path));
+    // 发射删除事件：path 保持真实资源路径，id 用于前端精确清理派生状态
+    emit_watch_event(
+        &window,
+        DstuWatchEvent::deleted(&path).with_resource(id.clone(), resource_type.clone()),
+    );
 
     // ★ P1 修复：删除成功后异步清理向量索引
     if let Some(rid) = resource_id {
@@ -5006,20 +5010,20 @@ pub async fn dstu_delete_many(
     let items_for_delete = parsed_items.clone();
 
     // 在事务中执行所有删除操作
-    let deleted_paths: Vec<String> = tokio::task::spawn_blocking(move || {
+    let deleted_items: Vec<(String, String, String)> = tokio::task::spawn_blocking(move || {
         let conn = vfs_db_clone.get_conn_safe().map_err(|e| e.to_string())?;
 
         // 开始事务
         conn.execute("BEGIN IMMEDIATE", [])
             .map_err(|e| format!("开始事务失败: {}", e))?;
 
-        let transaction_result = (|| -> Result<Vec<String>, String> {
+        let transaction_result = (|| -> Result<Vec<(String, String, String)>, String> {
             let mut deleted = Vec::with_capacity(items_for_delete.len());
 
             for (path, resource_type, id) in &items_for_delete {
                 // 使用支持外部事务的删除函数
                 delete_resource_by_type_with_conn(&conn, resource_type, id)?;
-                deleted.push(path.clone());
+                deleted.push((path.clone(), resource_type.clone(), id.clone()));
             }
 
             Ok(deleted)
@@ -5046,9 +5050,12 @@ pub async fn dstu_delete_many(
     .map_err(|e| format!("Task join error: {}", e))??;
 
     // 事务成功后，发射所有删除事件
-    let success_count = deleted_paths.len();
-    for path in deleted_paths {
-        emit_watch_event(&window, DstuWatchEvent::deleted(&path));
+    let success_count = deleted_items.len();
+    for (path, resource_type, id) in deleted_items {
+        emit_watch_event(
+            &window,
+            DstuWatchEvent::deleted(&path).with_resource(id, resource_type),
+        );
     }
 
     // ★ P1 修复：事务成功后，异步清理向量索引（不阻塞返回）

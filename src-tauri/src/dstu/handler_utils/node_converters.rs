@@ -427,7 +427,13 @@ pub fn file_to_dstu_node(file: &VfsFile) -> DstuNode {
     // ★ 移动端修复：file_name 不透明 ID 兼容处理
     let display_name = sanitize_textbook_display_name(&file.file_name, &file.created_at);
 
-    DstuNode::resource(&file.id, &path, &display_name, node_type, &file.sha256)
+    let resource_id = file
+        .resource_id
+        .as_deref()
+        .filter(|id| !id.trim().is_empty())
+        .unwrap_or(&file.id);
+
+    DstuNode::resource(&file.id, &path, &display_name, node_type, resource_id)
         .with_timestamps(created_at, updated_at)
         .with_size(file.size as u64)
         .with_preview_type(preview_type.to_string())
@@ -441,6 +447,14 @@ pub fn file_to_dstu_node(file: &VfsFile) -> DstuNode {
             "isFavorite": file.is_favorite,
             "pageCount": file.page_count,
         }))
+}
+
+pub fn active_file_to_dstu_node(file: &VfsFile) -> Option<DstuNode> {
+    if file.status == "active" && file.deleted_at.is_none() {
+        Some(file_to_dstu_node(file))
+    } else {
+        None
+    }
 }
 
 // ============================================================================

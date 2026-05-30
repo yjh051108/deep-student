@@ -1354,6 +1354,7 @@ pub fn run() {
             ,crate::vfs::handlers::vfs_batch_index_pending
             ,crate::vfs::handlers::vfs_set_indexing_config
             ,crate::vfs::handlers::vfs_get_indexing_config
+            ,crate::vfs::handlers::vfs_get_multimodal_index_capability
             ,crate::vfs::handlers::vfs_get_all_index_status
             // VFS 数据透视命令（OCR 查看/清除、文本块查看）
             ,crate::vfs::handlers::vfs_get_resource_ocr_info

@@ -82,6 +82,17 @@ pub async fn vfs_unified_batch_index(
 
     // 文本模态使用 VfsFullIndexingService
     if mode == "text" || mode == "both" {
+        if let Ok(recovered) =
+            VfsFullIndexingService::recover_stale_indexing(&vfs_db, 10 * 60 * 1000)
+        {
+            if recovered > 0 {
+                log::info!(
+                    "[VFS::index_handlers] Recovered {} stale indexing records before unified batch",
+                    recovered
+                );
+            }
+        }
+
         // 获取索引配置
         let indexing_service = VfsIndexingService::new(Arc::clone(&vfs_db));
         let _config = indexing_service
@@ -95,10 +106,23 @@ pub async fn vfs_unified_batch_index(
         )
         .map_err(|e| e.to_string())?;
 
-        let (success, fail) = full_indexing_service
-            .process_pending_batch(limit)
-            .await
-            .map_err(|e| e.to_string())?;
+        let mut success = 0usize;
+        let mut fail = 0usize;
+        loop {
+            let (batch_success, batch_fail) = full_indexing_service
+                .process_pending_batch(limit)
+                .await
+                .map_err(|e| e.to_string())?;
+            let processed = batch_success + batch_fail;
+            if processed == 0 {
+                break;
+            }
+            success += batch_success;
+            fail += batch_fail;
+            if processed < limit as usize {
+                break;
+            }
+        }
 
         log::info!(
             "[VFS::index_handlers] vfs_unified_batch_index completed: success={}, fail={}",
@@ -169,6 +193,7 @@ pub async fn vfs_sync_resource_units(
         ocr_text,
         ocr_pages_json,
         blob_hash,
+        image_mime_type: None,
         page_count,
         extracted_text,
         preview_json,

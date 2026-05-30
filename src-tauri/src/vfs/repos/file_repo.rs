@@ -608,7 +608,7 @@ impl VfsFileRepo {
                    processing_started_at, processing_completed_at,
                    compressed_blob_hash
             FROM files
-            WHERE status = 'active'
+            WHERE status = 'active' AND deleted_at IS NULL
             ORDER BY updated_at DESC
             LIMIT ?1 OFFSET ?2
             "#,
@@ -645,7 +645,7 @@ impl VfsFileRepo {
                    f.compressed_blob_hash
             FROM files f
             JOIN folder_items fi ON fi.item_type = 'file' AND fi.item_id = f.id
-            WHERE fi.folder_id IS ?1 AND f.status = 'active'
+            WHERE fi.folder_id IS ?1 AND fi.deleted_at IS NULL AND f.status = 'active' AND f.deleted_at IS NULL
             ORDER BY fi.sort_order ASC, f.updated_at DESC
             LIMIT ?2 OFFSET ?3
         "#;
@@ -688,7 +688,7 @@ impl VfsFileRepo {
                    processing_started_at, processing_completed_at,
                    compressed_blob_hash
             FROM files
-            WHERE "type" = ?1 AND status = 'active'
+            WHERE "type" = ?1 AND status = 'active' AND deleted_at IS NULL
             ORDER BY updated_at DESC
             LIMIT ?2 OFFSET ?3
             "#,
@@ -774,6 +774,14 @@ impl VfsFileRepo {
 
     /// ★ CONC-02 修复：软删除文件时同步软删除 folder_items 中的关联记录
     pub fn delete_file_with_conn(conn: &Connection, file_id: &str) -> VfsResult<()> {
+        let resource_id: Option<String> = conn
+            .query_row(
+                "SELECT resource_id FROM files WHERE id = ?1",
+                params![file_id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
         let now = chrono::Utc::now()
             .format("%Y-%m-%dT%H:%M:%S%.3fZ")
             .to_string();
@@ -814,9 +822,30 @@ impl VfsFileRepo {
             .to_string();
         let now_ms = chrono::Utc::now().timestamp_millis();
         let fi_updated = conn.execute(
-            "UPDATE folder_items SET deleted_at = ?1, updated_at = ?2 WHERE item_type = 'file' AND item_id = ?3 AND deleted_at IS NULL",
+            "UPDATE folder_items SET deleted_at = ?1, updated_at = ?2 WHERE item_id = ?3 AND item_type IN ('file', 'image') AND deleted_at IS NULL",
             params![now_str, now_ms, file_id],
         )?;
+
+        if let Some(ref rid) = resource_id {
+            conn.execute(
+                "UPDATE resources
+                 SET deleted_at = COALESCE(deleted_at, ?1),
+                     deleted_reason = COALESCE(deleted_reason, 'file_deleted'),
+                     index_state = 'disabled',
+                     mm_index_state = 'disabled',
+                     updated_at = ?1
+                 WHERE id = ?2",
+                params![now_ms, rid],
+            )?;
+            conn.execute(
+                "UPDATE vfs_index_units
+                 SET text_state = 'disabled',
+                     mm_state = 'disabled',
+                     updated_at = ?1
+                 WHERE resource_id = ?2",
+                params![now_ms, rid],
+            )?;
+        }
 
         info!(
             "[VFS::FileRepo] Soft deleted file: {} (folder_items updated: {})",
@@ -832,6 +861,14 @@ impl VfsFileRepo {
 
     /// ★ CONC-02 修复：恢复文件时同步恢复 folder_items 中的关联记录
     pub fn restore_file_with_conn(conn: &Connection, file_id: &str) -> VfsResult<()> {
+        let resource_id: Option<String> = conn
+            .query_row(
+                "SELECT resource_id FROM files WHERE id = ?1",
+                params![file_id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
         let now = chrono::Utc::now()
             .format("%Y-%m-%dT%H:%M:%S%.3fZ")
             .to_string();
@@ -851,9 +888,30 @@ impl VfsFileRepo {
         // ★ CONC-02 修复：恢复 folder_items 中的关联记录
         let now_ms = chrono::Utc::now().timestamp_millis();
         let fi_updated = conn.execute(
-            "UPDATE folder_items SET deleted_at = NULL, updated_at = ?1 WHERE item_type = 'file' AND item_id = ?2 AND deleted_at IS NOT NULL",
+            "UPDATE folder_items SET deleted_at = NULL, updated_at = ?1 WHERE item_id = ?2 AND item_type IN ('file', 'image') AND deleted_at IS NOT NULL",
             params![now_ms, file_id],
         )?;
+
+        if let Some(ref rid) = resource_id {
+            conn.execute(
+                "UPDATE resources
+                 SET deleted_at = NULL,
+                     deleted_reason = NULL,
+                     index_state = CASE WHEN index_state = 'disabled' THEN 'pending' ELSE index_state END,
+                     mm_index_state = CASE WHEN mm_index_state = 'disabled' THEN 'pending' ELSE mm_index_state END,
+                     updated_at = ?1
+                 WHERE id = ?2",
+                params![now_ms, rid],
+            )?;
+            conn.execute(
+                "UPDATE vfs_index_units
+                 SET text_state = CASE WHEN text_state = 'disabled' THEN 'pending' ELSE text_state END,
+                     mm_state = CASE WHEN mm_state = 'disabled' THEN 'pending' ELSE mm_state END,
+                     updated_at = ?1
+                 WHERE resource_id = ?2",
+                params![now_ms, rid],
+            )?;
+        }
 
         info!(
             "[VFS::FileRepo] Restored file: {} (folder_items updated: {})",
@@ -1192,6 +1250,193 @@ impl VfsFileRepo {
             // ★ P0 架构改造：压缩图片字段
             compressed_blob_hash: row.get(29)?,
         })
+    }
+
+    /// Ensure an image file has a blob row and `files.blob_hash`.
+    ///
+    /// Historical small images were stored only as base64 in `resources.data`.
+    /// Native multimodal indexing and OCR both consume blob files, so lazily
+    /// materialize that inline image into the blob store when it is first used.
+    pub fn ensure_image_blob_with_conn(
+        conn: &Connection,
+        blobs_dir: &Path,
+        file_id: &str,
+    ) -> VfsResult<Option<String>> {
+        let file = match Self::get_file_with_conn(conn, file_id)? {
+            Some(file) => file,
+            None => return Ok(None),
+        };
+
+        let is_image = file.file_type == "image"
+            || file
+                .mime_type
+                .as_deref()
+                .map(|m| m.starts_with("image/"))
+                .unwrap_or(false);
+        if !is_image {
+            return Ok(file.blob_hash);
+        }
+
+        if let Some(blob_hash) = file.blob_hash.as_deref().filter(|h| !h.trim().is_empty()) {
+            if VfsBlobRepo::get_blob_path_with_conn(conn, blobs_dir, blob_hash)?.is_some() {
+                return Ok(Some(blob_hash.to_string()));
+            }
+            warn!(
+                "[VFS::FileRepo] Image file {} has missing blob {}, trying inline repair",
+                file_id, blob_hash
+            );
+        }
+
+        if let Some(resource_id) = file.resource_id.as_deref() {
+            let inline_data: Option<String> = conn
+                .query_row(
+                    "SELECT data FROM resources WHERE id = ?1",
+                    params![resource_id],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .optional()?
+                .flatten()
+                .filter(|data| !data.trim().is_empty());
+
+            if let Some(inline_data) = inline_data {
+                match Self::decode_inline_base64(&inline_data) {
+                    Ok(bytes) if !bytes.is_empty() => {
+                        let extension = Self::image_extension(
+                            file.mime_type.as_deref(),
+                            Some(file.file_name.as_str()),
+                        );
+                        let blob = VfsBlobRepo::store_blob_with_conn(
+                            conn,
+                            blobs_dir,
+                            &bytes,
+                            file.mime_type.as_deref(),
+                            extension.as_deref(),
+                        )?;
+                        let now = chrono::Utc::now()
+                            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+                            .to_string();
+                        let now_ms = chrono::Utc::now().timestamp_millis();
+
+                        let repaired_hash = blob.hash.clone();
+                        conn.execute(
+                            "UPDATE files SET blob_hash = ?1, updated_at = ?2 WHERE id = ?3",
+                            params![repaired_hash, now, file_id],
+                        )?;
+                        conn.execute(
+                            "UPDATE resources SET external_hash = ?1, updated_at = ?2 WHERE id = ?3 AND (external_hash IS NULL OR external_hash = '')",
+                            params![repaired_hash, now_ms, resource_id],
+                        )?;
+
+                        info!(
+                            "[VFS::FileRepo] Repaired inline image {} into blob {}",
+                            file_id, repaired_hash
+                        );
+                        return Ok(Some(repaired_hash));
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        warn!(
+                            "[VFS::FileRepo] Failed to decode inline image for {}: {}",
+                            file_id, e
+                        );
+                    }
+                }
+            }
+        }
+
+        if let Some(compressed_hash) = file
+            .compressed_blob_hash
+            .as_deref()
+            .filter(|h| !h.trim().is_empty())
+        {
+            if VfsBlobRepo::get_blob_path_with_conn(conn, blobs_dir, compressed_hash)?.is_some() {
+                warn!(
+                    "[VFS::FileRepo] Using compressed image blob {} as fallback for {}",
+                    compressed_hash, file_id
+                );
+                let now = chrono::Utc::now()
+                    .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+                    .to_string();
+                conn.execute(
+                    "UPDATE files SET blob_hash = ?1, updated_at = ?2 WHERE id = ?3 AND (blob_hash IS NULL OR blob_hash = '')",
+                    params![compressed_hash, now, file_id],
+                )?;
+                return Ok(Some(compressed_hash.to_string()));
+            }
+        }
+
+        Ok(None)
+    }
+
+    pub fn ensure_image_blob_for_resource_with_conn(
+        conn: &Connection,
+        blobs_dir: &Path,
+        resource_id: &str,
+    ) -> VfsResult<Option<String>> {
+        let file_id: Option<String> = conn
+            .query_row(
+                r#"
+                SELECT f.id
+                FROM files f
+                LEFT JOIN resources r ON r.id = ?1
+                WHERE (f.resource_id = ?1 OR (r.source_id IS NOT NULL AND f.id = r.source_id))
+                  AND (f."type" = 'image' OR f.mime_type LIKE 'image/%')
+                ORDER BY CASE WHEN f.resource_id = ?1 THEN 0 ELSE 1 END, f.updated_at DESC
+                LIMIT 1
+                "#,
+                params![resource_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+
+        match file_id {
+            Some(file_id) => Self::ensure_image_blob_with_conn(conn, blobs_dir, &file_id),
+            None => Ok(None),
+        }
+    }
+
+    fn decode_inline_base64(input: &str) -> VfsResult<Vec<u8>> {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+
+        let trimmed = input.trim();
+        let raw = if trimmed.starts_with("data:") {
+            trimmed
+                .split_once(',')
+                .map(|(_, data)| data)
+                .ok_or_else(|| VfsError::InvalidArgument {
+                    param: "resources.data".to_string(),
+                    reason: "Invalid data URL".to_string(),
+                })?
+        } else {
+            trimmed
+        };
+
+        STANDARD
+            .decode(raw.as_bytes())
+            .map_err(|e| VfsError::InvalidArgument {
+                param: "resources.data".to_string(),
+                reason: format!("Invalid base64 image data: {}", e),
+            })
+    }
+
+    fn image_extension(mime_type: Option<&str>, file_name: Option<&str>) -> Option<String> {
+        match mime_type {
+            Some("image/jpeg") | Some("image/jpg") => return Some("jpg".to_string()),
+            Some("image/png") => return Some("png".to_string()),
+            Some("image/webp") => return Some("webp".to_string()),
+            Some("image/gif") => return Some("gif".to_string()),
+            Some("image/bmp") => return Some("bmp".to_string()),
+            Some("image/svg+xml") => return Some("svg".to_string()),
+            Some("image/heic") => return Some("heic".to_string()),
+            Some("image/heif") => return Some("heif".to_string()),
+            _ => {}
+        }
+
+        file_name
+            .and_then(|name| Path::new(name).extension())
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_lowercase())
+            .filter(|ext| !ext.is_empty() && ext.len() < 10)
     }
 
     // ========================================================================
@@ -1707,6 +1952,49 @@ mod tests {
     }
 
     #[test]
+    fn test_list_files_excludes_deleted_at_ghosts() {
+        let (_temp_dir, db) = setup_test_db();
+
+        let file =
+            VfsFileRepo::create_file(&db, "sha1", "ghost.pdf", 1024, "document", None, None, None)
+                .unwrap();
+        let folder_file = VfsFileRepo::create_file_in_folder(
+            &db,
+            "sha2",
+            "folder-ghost.pdf",
+            1024,
+            "document",
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let conn = db.get_conn_safe().unwrap();
+        conn.execute(
+            "UPDATE files SET deleted_at = ?1 WHERE id = ?2",
+            params!["2026-05-30T00:00:00.000Z", file.id],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE folder_items SET deleted_at = ?1 WHERE item_id = ?2",
+            params!["2026-05-30T00:00:00.000Z", folder_file.id],
+        )
+        .unwrap();
+
+        let all = VfsFileRepo::list_files(&db, 10, 0).expect("List should succeed");
+        assert!(!all.iter().any(|item| item.id == file.id));
+
+        let by_type =
+            VfsFileRepo::list_files_by_type(&db, "document", 10, 0).expect("List should succeed");
+        assert!(!by_type.iter().any(|item| item.id == file.id));
+
+        let by_folder =
+            VfsFileRepo::list_files_by_folder(&db, None, 10, 0).expect("List should succeed");
+        assert!(!by_folder.iter().any(|item| item.id == folder_file.id));
+    }
+
+    #[test]
     fn test_soft_delete_and_restore() {
         let (_temp_dir, db) = setup_test_db();
 
@@ -1728,6 +2016,15 @@ mod tests {
             .expect("Get should succeed")
             .expect("File should exist");
         assert_eq!(deleted.status, "deleted");
+        let conn = db.get_conn_safe().unwrap();
+        let resource_deleted_at: Option<i64> = conn
+            .query_row(
+                "SELECT deleted_at FROM resources WHERE id = ?1",
+                params![file.resource_id.as_deref().unwrap()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(resource_deleted_at.is_some());
 
         VfsFileRepo::restore_file(&db, &file.id).expect("Restore should succeed");
 
@@ -1735,5 +2032,13 @@ mod tests {
             .expect("Get should succeed")
             .expect("File should exist");
         assert_eq!(restored.status, "active");
+        let resource_deleted_at: Option<i64> = conn
+            .query_row(
+                "SELECT deleted_at FROM resources WHERE id = ?1",
+                params![file.resource_id.as_deref().unwrap()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(resource_deleted_at.is_none());
     }
 }

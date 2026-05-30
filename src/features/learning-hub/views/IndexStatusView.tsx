@@ -88,6 +88,7 @@ import { Progress } from '@/components/ui/shad/Progress';
 import { debugLog } from '@/debug-panel/debugMasterSwitch';
 // ★ 2026-02 修复：统一使用共享类型定义，避免重复定义不一致风险
 import type { IndexState } from '@/types/vfs-unified-index';
+import { invoke } from '@tauri-apps/api/core';
 
 // ============================================================================
 // 类型和常量
@@ -117,6 +118,45 @@ const RESOURCE_TYPE_CONFIG: Record<string, { icon: React.ElementType; labelKey: 
 
 /** 不支持任何索引的资源类型（技能卡等系统资源） */
 const UNSUPPORTED_INDEX_TYPES = new Set(['retrieval']);
+const MULTIMODAL_RESOURCE_TYPES = new Set(['textbook', 'exam', 'image', 'file']);
+const DISPLAY_STATE_PRIORITY: IndexState[] = ['failed', 'indexing', 'pending', 'indexed', 'disabled'];
+
+const isPendingMultimodalResource = (resource: ResourceIndexStatus): boolean =>
+  MULTIMODAL_RESOURCE_TYPES.has(resource.resourceType)
+    && resource.mmIndexState !== 'indexed'
+    && resource.mmIndexState !== 'disabled';
+
+type ImageIndexCapability = 'ready' | 'featureDisabled' | 'notConfigured' | 'invalidModel';
+
+interface MultimodalIndexCapability {
+  status: ImageIndexCapability;
+  ready: boolean;
+  modelConfigId?: string | null;
+  modelName?: string | null;
+  model?: string | null;
+  reason?: string | null;
+}
+
+const normalizeIndexState = (state: string | undefined): IndexState =>
+  state && state in STATE_CONFIG ? state as IndexState : 'pending';
+
+const isPendingTextResource = (resource: ResourceIndexStatus): boolean => {
+  const state = normalizeIndexState(resource.textIndexState);
+  return state === 'pending' || state === 'failed';
+};
+
+const resolveResourceDisplayState = (
+  resource: ResourceIndexStatus,
+  includeImageIndex: boolean
+): IndexState => {
+  const textState = normalizeIndexState(resource.textIndexState);
+  if (!includeImageIndex || !MULTIMODAL_RESOURCE_TYPES.has(resource.resourceType)) {
+    return textState;
+  }
+
+  const states = [textState, normalizeIndexState(resource.mmIndexState)];
+  return DISPLAY_STATE_PRIORITY.find(state => states.includes(state)) ?? textState;
+};
 
 // ============================================================================
 // 环形进度图组件
@@ -201,6 +241,9 @@ export const IndexStatusView: React.FC = () => {
   // ========== 状态 ==========
   const [summary, setSummary] = useState<IndexStatusSummary | null>(null);
   const [dimensions, setDimensions] = useState<VfsEmbeddingDimension[]>([]);
+  const [imageIndexCapability, setImageIndexCapability] = useState<ImageIndexCapability>(
+    MULTIMODAL_INDEX_ENABLED ? 'notConfigured' : 'featureDisabled'
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedState, setSelectedState] = useState<IndexState | 'all'>('all');
@@ -219,12 +262,6 @@ export const IndexStatusView: React.FC = () => {
   const [batchIndexing, setBatchIndexing] = useState(false);
   const [batchProgress, setBatchProgress] = useState(0);
   const [batchMessage, setBatchMessage] = useState('');
-  const [batchCurrent, setBatchCurrent] = useState(0);
-  const [batchTotal, setBatchTotal] = useState(0);
-
-  // ========== 平滑进度动画 ==========
-  const smoothProgressRef = useRef(0);
-  const [smoothProgress, setSmoothProgress] = useState(0);
 
   // ========== 数据透视状态 ==========
   const [inspectingResourceId, setInspectingResourceId] = useState<string | null>(null);
@@ -232,12 +269,10 @@ export const IndexStatusView: React.FC = () => {
   const [ocrInfo, setOcrInfo] = useState<ResourceOcrInfo | null>(null);
   const [textChunks, setTextChunks] = useState<TextChunkInfo[]>([]);
   const [inspectLoading, setInspectLoading] = useState(false);
-  const [clearingOcr, setClearingOcr] = useState(false);
+  const [clearingOcrIds, setClearingOcrIds] = useState<Set<string>>(() => new Set());
 
   // ========== 原生多模态索引状态 ==========
   const [mmIndexing, setMmIndexing] = useState(false);
-  const [mmProgress, setMmProgress] = useState(0);
-  const [mmMessage, setMmMessage] = useState('');
 
   // ========== 加载数据 ==========
   // 使用 ref 跟踪请求版本，避免竞态条件
@@ -258,13 +293,16 @@ export const IndexStatusView: React.FC = () => {
       // 之前"刷新"会静默重置用户主动禁用的资源，违反用户意图
       // disabled 资源的重置现在需要用户通过"重置状态"按钮显式操作
 
-      const [data, dims] = await Promise.all([
+      const [data, dims, multimodalCapability] = await Promise.all([
         getAllIndexStatus({
-          stateFilter: selectedState === 'all' ? undefined : selectedState,
           resourceType: selectedType === 'all' ? undefined : selectedType,
           limit: 200,
         }),
         listDimensions(),
+        invoke<MultimodalIndexCapability>('vfs_get_multimodal_index_capability').catch(() => ({
+          status: MULTIMODAL_INDEX_ENABLED ? 'notConfigured' : 'featureDisabled',
+          ready: false,
+        } satisfies MultimodalIndexCapability)),
       ]);
       
       debugLog.log('[IndexStatusView] API 返回', {
@@ -285,6 +323,7 @@ export const IndexStatusView: React.FC = () => {
       
       setSummary(data);
       setDimensions(dims);
+      setImageIndexCapability(MULTIMODAL_INDEX_ENABLED ? multimodalCapability.status : 'featureDisabled');
     } catch (err: unknown) {
       // 检查是否是最新请求
       if (currentRequestId !== requestIdRef.current) {
@@ -379,7 +418,11 @@ export const IndexStatusView: React.FC = () => {
             setBatchIndexing(false);
             setBatchProgress(100);
             setBatchMessage(payload.message || t('indexStatus.notification.batchCompleted'));
-            showGlobalNotification('success', t('indexStatus.notification.batchCompleted'), t('indexStatus.notification.batchCompletedDetail', { success: payload.successCount, fail: payload.failCount }));
+            if ((payload.total ?? 0) === 0) {
+              showGlobalNotification('info', t('indexStatus.notification.hint'), t('indexStatus.notification.noResourcesToIndex'));
+            } else {
+              showGlobalNotification('success', t('indexStatus.notification.batchCompleted'), t('indexStatus.notification.batchCompletedDetail', { success: payload.successCount, fail: payload.failCount }));
+            }
             loadData(); // 刷新列表
             // ★ 2026-02 修复：setTimeout 添加卸载保护
             setTimeout(() => {
@@ -417,18 +460,6 @@ export const IndexStatusView: React.FC = () => {
     let unlisten: UnlistenFn | null = null;
 
     const setupListener = async () => {
-      const resolveResourceLabel = (payload: { sourceId: string }) => {
-        if (!summary?.resources?.length) {
-          return payload.sourceId;
-        }
-
-        const matched = summary.resources.find((resource) =>
-          resource.resourceId === payload.sourceId || resource.sourceId === payload.sourceId
-        );
-
-        return matched?.name || matched?.resourceId || payload.sourceId;
-      };
-
       unlisten = await listen<{
         sourceType: string;
         sourceId: string;
@@ -443,43 +474,7 @@ export const IndexStatusView: React.FC = () => {
         const payload = event.payload;
         debugLog.log('[IndexStatusView] mm_index_progress event:', payload);
 
-        const resourceLabel = resolveResourceLabel(payload);
-        const prefix = resourceLabel ? `${resourceLabel} · ` : '';
-
-        // 根据不同阶段显示不同的进度信息
-        let displayMessage = '';
-        switch (payload.phase) {
-          case 'preparing':
-            displayMessage = t('indexStatus.mmProgress.preparing', { prefix, pages: payload.totalPages });
-            break;
-          case 'summarizing':
-            // VL 摘要生成阶段 - 显示详细的每页进度
-            displayMessage = t('indexStatus.mmProgress.vlSummary', { prefix, indexed: payload.indexedPages, total: payload.totalPages, current: payload.currentPage });
-            break;
-          case 'text_embedding':
-            // 文本嵌入阶段
-            displayMessage = t('indexStatus.mmProgress.textEmbedding', { prefix, indexed: payload.indexedPages, total: payload.totalPages });
-            break;
-          case 'embedding':
-            // 通用嵌入阶段
-            displayMessage = t('indexStatus.mmProgress.embedding', { prefix, indexed: payload.indexedPages, total: payload.totalPages });
-            break;
-          case 'saving':
-            displayMessage = t('indexStatus.mmProgress.saving', { prefix, indexed: payload.indexedPages, total: payload.totalPages });
-            break;
-          case 'completed':
-            displayMessage = t('indexStatus.mmProgress.completed', { prefix, indexed: payload.indexedPages, skipped: payload.skippedPages });
-            break;
-          case 'failed':
-            displayMessage = t('indexStatus.mmProgress.failed', { prefix, message: payload.message });
-            break;
-          default:
-            displayMessage = payload.message;
-        }
-
-        // 更新原生多模态索引进度
-        setMmProgress(payload.progressPercent);
-        setMmMessage(displayMessage);
+        setMmIndexing(payload.phase !== 'completed' && payload.phase !== 'failed');
 
         if (payload.phase === 'completed') {
           // ★ 2026-02 修复：setTimeout 添加卸载保护
@@ -573,7 +568,7 @@ export const IndexStatusView: React.FC = () => {
 
   // ========== 数据透视：清除 OCR 并重做 ==========
   const handleClearOcrAndReindex = useCallback(async (resourceId: string) => {
-    setClearingOcr(true);
+    setClearingOcrIds((prev) => new Set(prev).add(resourceId));
     try {
       await clearResourceOcr(resourceId);
       showGlobalNotification('info', t('indexStatus.notification.ocrClearedReindexing'));
@@ -592,7 +587,11 @@ export const IndexStatusView: React.FC = () => {
       debugLog.error('[IndexStatusView] clearResourceOcr failed:', err);
       showGlobalNotification('error', t('indexStatus.notification.clearOcrFailed'), err instanceof Error ? err.message : t('indexStatus.notification.unknownError'));
     } finally {
-      setClearingOcr(false);
+      setClearingOcrIds((prev) => {
+        const next = new Set(prev);
+        next.delete(resourceId);
+        return next;
+      });
     }
   }, [loadData]);
 
@@ -603,36 +602,6 @@ export const IndexStatusView: React.FC = () => {
     setTextChunks([]);
   }, []);
 
-  // ========== 批量重新索引（使用后端批量 API，带进度事件）==========
-  const handleReindexAll = useCallback(async () => {
-    if (!summary) return;
-    if (batchIndexing) {
-      showGlobalNotification('warning', t('indexStatus.notification.pleaseWait'), t('indexStatus.notification.batchInProgress'));
-      return;
-    }
-
-    const pendingCount = summary.pendingCount + summary.failedCount;
-    if (pendingCount === 0) {
-      showGlobalNotification('info', t('indexStatus.notification.hint'), t('indexStatus.notification.noResourcesToIndex'));
-      return;
-    }
-
-    setBatchIndexing(true);
-    setBatchProgress(0);
-    setBatchMessage(t('indexStatus.notification.preparingBatch'));
-
-    try {
-      // 使用后端批量索引 API，进度通过事件更新
-      await batchIndexPending(pendingCount);
-      // 完成事件会在事件监听器中处理
-    } catch (err: unknown) {
-      setBatchIndexing(false);
-      setBatchProgress(0);
-      setBatchMessage('');
-      showGlobalNotification('error', t('indexStatus.notification.batchFailed'), err instanceof Error ? err.message : t('indexStatus.notification.unknownError'));
-    }
-  }, [summary, batchIndexing]);
-
   // ========== 一键索引（执行 OCR 文本索引，多模态索引仅在启用时执行）==========
   const handleUnifiedIndex = useCallback(async () => {
     if (!summary) return;
@@ -641,28 +610,40 @@ export const IndexStatusView: React.FC = () => {
       return;
     }
 
-    // 检查是否有需要索引的资源
-    const pendingTextCount = summary.pendingCount + summary.failedCount;
-    // ★ 多模态索引已禁用时不检查多模态资源
-    const mmResources = MULTIMODAL_INDEX_ENABLED ? summary.resources.filter(r => {
-      const isMmType = r.resourceType === 'textbook' || r.resourceType === 'exam' || r.resourceType === 'image' || r.resourceType === 'file';
-      const hasPreview = r.resourceType !== 'file' || r.hasOcr;
-      return isMmType && hasPreview && r.mmIndexState !== 'indexed' && r.mmIndexState !== 'disabled';
-    }) : [];
+    const pendingTextCount = summary.resources.filter(isPendingTextResource).length;
+    const mmResources = MULTIMODAL_INDEX_ENABLED
+      ? summary.resources.filter(isPendingMultimodalResource)
+      : [];
+    const pendingMmCount = mmResources.length;
+    const canRunImageIndex = imageIndexCapability === 'ready';
 
-    if (pendingTextCount === 0 && mmResources.length === 0) {
-      showGlobalNotification('info', t('indexStatus.notification.hint'), t('indexStatus.notification.allIndexed'));
+    if (pendingTextCount === 0 && pendingMmCount > 0 && !canRunImageIndex) {
+      showGlobalNotification(
+        'warning',
+        t('indexStatus.notification.hint'),
+        t(`indexStatus.progress.imageIndexCapability.${imageIndexCapability}`)
+      );
       return;
     }
 
-    // 先执行 OCR 文本索引
-    if (pendingTextCount > 0) {
+    // 先执行 OCR 文本索引。即使当前 UI 摘要显示 0，也让后端队列作为最终状态源，
+    // 避免筛选/旧摘要误报“全部已索引”。
+    if (pendingTextCount > 0 || mmResources.length === 0) {
       setBatchIndexing(true);
       setBatchProgress(0);
       setBatchMessage(t('indexStatus.notification.preparingOcrBatch'));
       let batchFailed = false;
       try {
-        await batchIndexPending(pendingTextCount);
+        await batchIndexPending(Math.max(pendingTextCount, 10));
+        setBatchIndexing(false);
+        setBatchProgress(100);
+        setBatchMessage(t('indexStatus.notification.batchCompleted'));
+        await loadData();
+        setTimeout(() => {
+          if (!mountedRef.current) return;
+          setBatchProgress(0);
+          setBatchMessage('');
+        }, 2000);
       } catch (err: unknown) {
         debugLog.error('[IndexStatusView] OCR 文本索引失败:', err);
         batchFailed = true;
@@ -686,8 +667,6 @@ export const IndexStatusView: React.FC = () => {
     // 然后执行原生多模态索引（仅在 MULTIMODAL_INDEX_ENABLED 时）
     if (mmResources.length > 0) {
       setMmIndexing(true);
-      setMmProgress(0);
-      setMmMessage(t('indexStatus.notification.mmIndexStarting', { count: mmResources.length }));
 
       let successCount = 0;
       let failCount = 0;
@@ -703,7 +682,6 @@ export const IndexStatusView: React.FC = () => {
           if (!sourceId) {
             debugLog.warn('[IndexStatusView] 资源缺少 sourceId，跳过索引:', resource.resourceId);
             skippedCount++;
-            setMmProgress(Math.round(((successCount + failCount + skippedCount) / total) * 100));
             return;
           }
 
@@ -715,120 +693,22 @@ export const IndexStatusView: React.FC = () => {
             showGlobalNotification('error', t('indexStatus.notification.indexFailed'), `${resource.name || sourceId}: ${errMsg}`);
             failCount++;
           }
-          setMmProgress(Math.round(((successCount + failCount + skippedCount) / total) * 100));
         })
       ));
 
       setMmIndexing(false);
-      setMmProgress(100);
       const resultMsg = failCount > 0
         ? t('indexStatus.notification.mmIndexCompletedWithFail', { success: successCount, fail: failCount })
         : t('indexStatus.notification.mmIndexCompletedSuccess', { count: successCount });
-      setMmMessage(resultMsg);
+      showGlobalNotification(failCount > 0 ? 'warning' : 'success', t('indexStatus.notification.batchCompleted'), resultMsg);
 
       if (skippedCount > 0) {
         showGlobalNotification('warning', t('indexStatus.notification.skippedNoSourceId', { count: skippedCount }));
       }
 
-      // ★ 2026-02 修复：setTimeout 添加卸载保护
-      setTimeout(() => {
-        if (!mountedRef.current) return;
-        setMmProgress(0);
-        setMmMessage('');
-        loadData();
-      }, 2000);
+      await loadData();
     }
   }, [summary, batchIndexing, mmIndexing, loadData]);
-
-  // ========== 原生多模态索引（PDF 按页图片索引）==========
-  // ★ 多模态索引已禁用时此函数不会被调用（按钮已隐藏），保留逻辑以便未来恢复
-  const handleMultimodalIndex = useCallback(async () => {
-    if (!MULTIMODAL_INDEX_ENABLED) return; // ★ 多模态索引已禁用
-    if (!summary) return;
-    if (mmIndexing) {
-      showGlobalNotification('warning', t('indexStatus.notification.pleaseWait'), t('indexStatus.notification.mmIndexInProgress'));
-      return;
-    }
-
-    // 筛选支持原生多模态索引的资源（教材、题目集、图片、文件）
-    const mmResources = summary.resources.filter(r => {
-      const isMmType = r.resourceType === 'textbook' || r.resourceType === 'exam' || r.resourceType === 'image' || r.resourceType === 'file';
-      const hasPreview = r.resourceType !== 'file' || r.hasOcr;
-      return isMmType && hasPreview;
-    });
-
-    if (mmResources.length === 0) {
-      showGlobalNotification('info', t('indexStatus.notification.hint'), t('indexStatus.notification.noMmResources'));
-      return;
-    }
-
-    setMmIndexing(true);
-    setMmProgress(0);
-    setMmMessage(t('indexStatus.notification.mmIndexStarting', { count: mmResources.length }));
-
-    let successCount = 0;
-    let failCount = 0;
-    let skippedCount = 0;
-    const total = mmResources.length;
-    const limit = pLimit(3);
-
-    await Promise.all(mmResources.map((resource) =>
-      limit(async () => {
-        // 图片类型使用 'image' 作为 sourceType，其他类型使用 resourceType
-        const sourceType: MMSourceType = resource.resourceType === 'image' ? 'image' : resource.resourceType as MMSourceType;
-
-        // 原生多模态索引优先使用 sourceId（业务ID）
-        const sourceId = resource.sourceId || resource.resourceId;
-        if (!sourceId) {
-          debugLog.warn('[IndexStatusView] 资源缺少 sourceId，跳过索引:', resource.resourceId);
-          skippedCount++;
-          setMmProgress(Math.round(((successCount + failCount + skippedCount) / total) * 100));
-          return;
-        }
-
-        try {
-          await multimodalRagService.vfsIndexResourceBySource(
-            sourceType,
-            sourceId,
-            undefined,
-            false
-          );
-          successCount++;
-        } catch (err: unknown) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          debugLog.error(`[IndexStatusView] 原生多模态索引失败: ${sourceId}`, err);
-          // 显示具体错误给用户
-          showGlobalNotification('error', t('indexStatus.notification.indexFailed'), `${resource.name || sourceId}: ${errMsg}`);
-          failCount++;
-        }
-        setMmProgress(Math.round(((successCount + failCount + skippedCount) / total) * 100));
-      })
-    ));
-
-    setMmIndexing(false);
-    setMmProgress(100);
-    const resultMsg = failCount > 0
-      ? t('indexStatus.notification.mmIndexCompletedWithFail', { success: successCount, fail: failCount })
-      : t('indexStatus.notification.mmIndexCompletedSuccess', { count: successCount });
-    setMmMessage(resultMsg);
-    if (failCount > 0) {
-      showGlobalNotification('warning', t('indexStatus.notification.mmIndexCompleted'), resultMsg);
-    } else {
-      showGlobalNotification('success', t('indexStatus.notification.mmIndexCompleted'), resultMsg);
-    }
-
-    if (skippedCount > 0) {
-      showGlobalNotification('warning', t('indexStatus.notification.skippedNoSourceId', { count: skippedCount }));
-    }
-
-    // ★ 2026-02 修复：setTimeout 添加卸载保护
-    setTimeout(() => {
-      if (!mountedRef.current) return;
-      setMmProgress(0);
-      setMmMessage('');
-      loadData();
-    }, 2000);
-  }, [summary, mmIndexing, loadData]);
 
   // ========== 重置所有索引状态 ==========
   const [resetting, setResetting] = useState(false);
@@ -954,11 +834,11 @@ export const IndexStatusView: React.FC = () => {
       disabled: [],
     };
 
+    const includeImageIndex = imageIndexCapability === 'ready';
     for (const resource of summary.resources) {
-      const state = resource.textIndexState as IndexState;
-      const effectiveState = resource.isStale && state === 'indexed' ? 'pending' : state;
-      if (groups[effectiveState]) {
-        groups[effectiveState].push(resource);
+      const state = resolveResourceDisplayState(resource, includeImageIndex);
+      if (groups[state]) {
+        groups[state].push(resource);
       } else {
         // ★ 2026-01 修复：未知状态放入 pending 组，避免资源丢失
         debugLog.warn(`[IndexStatusView] Unknown textIndexState: ${state}, resource: ${resource.resourceId}`);
@@ -967,33 +847,68 @@ export const IndexStatusView: React.FC = () => {
     }
 
     return groups;
-  }, [summary]);
+  }, [summary, imageIndexCapability]);
+
+  const displayedResources = selectedState === 'all'
+    ? summary?.resources ?? []
+    : groupedResources[selectedState] ?? [];
+  const groupedCount = (state: IndexState) => groupedResources[state]?.length ?? 0;
+  const displayIndexStats = useMemo(() => ({
+    total: summary?.resources.length ?? 0,
+    indexed: groupedResources.indexed?.length ?? 0,
+    pending: groupedResources.pending?.length ?? 0,
+    indexing: groupedResources.indexing?.length ?? 0,
+    failed: groupedResources.failed?.length ?? 0,
+    disabled: groupedResources.disabled?.length ?? 0,
+    stale: summary?.resources.filter(resource => resource.isStale).length ?? 0,
+  }), [summary, groupedResources]);
 
   // ========== 计算进度百分比 ==========
   const progressPercentage = useMemo(() => {
-    if (!summary || summary.totalResources === 0) return 0;
-    return (summary.indexedCount / summary.totalResources) * 100;
-  }, [summary]);
+    if (displayIndexStats.total === 0) return 0;
+    return (displayIndexStats.indexed / displayIndexStats.total) * 100;
+  }, [displayIndexStats]);
 
-  /** 综合进度：同时考虑文本和多模态索引（仅在多模态启用时） */
-  const overallProgressPercentage = useMemo(() => {
-    if (!summary) return 0;
-    // ★ 多模态索引已禁用时，综合进度等于纯文本进度
-    if (!MULTIMODAL_INDEX_ENABLED) {
-      if (summary.totalResources === 0) return 0;
-      return (summary.indexedCount / summary.totalResources) * 100;
-    }
-    // 文本索引部分
-    const textTotal = summary.totalResources;
-    const textDone = summary.indexedCount;
-    // 多模态索引部分（仅计算支持多模态的资源）
-    const mmTotal = summary.mmTotalResources;
-    const mmDone = summary.mmIndexedCount;
-    // 综合进度 = (文本已完成 + 多模态已完成) / (文本总数 + 多模态总数)
-    const totalTasks = textTotal + mmTotal;
-    if (totalTasks === 0) return 0;
-    return ((textDone + mmDone) / totalTasks) * 100;
-  }, [summary]);
+  const renderProgressMeta = (compact = false) => {
+    if (!summary) return null;
+    const imageIndexReady = imageIndexCapability === 'ready';
+    const imageIndexMessage = imageIndexReady
+      ? null
+      : t(`indexStatus.progress.imageIndexCapability.${imageIndexCapability}`);
+    const renderCount = (indexed: number, total: number) => (
+      <span className="grid grid-cols-[3ch_1ch_3ch_auto] items-center gap-x-1 text-xs leading-none text-muted-foreground tabular-nums">
+        <span className="text-right">{indexed}</span>
+        <span className="text-center">/</span>
+        <span className="text-left">{total}</span>
+        <span>{t('indexStatus.progress.items')}</span>
+      </span>
+    );
+
+    return (
+      <div className={cn(
+        "grid min-w-0 grid-cols-[14px_auto_1fr] items-center gap-x-2",
+        compact ? "gap-y-1" : "gap-y-1.5"
+      )}>
+        <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <span className={cn("shrink-0 font-medium leading-none", compact ? "text-sm" : "text-sm")}>{t('indexStatus.progress.textIndexProgress')}</span>
+        {renderCount(summary.indexedCount, summary.totalResources)}
+
+        {imageIndexReady ? (
+          <Image className="h-3.5 w-3.5 shrink-0 text-foreground" />
+        ) : (
+          <XCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/55" />
+        )}
+        <span className={cn("shrink-0 text-xs leading-none", imageIndexReady ? "font-medium text-foreground" : "text-muted-foreground/55")}>{t('indexStatus.progress.imageIndexProgress')}</span>
+        {imageIndexReady
+          ? renderCount(summary.mmIndexedCount, summary.mmTotalResources)
+          : (
+            <span className="min-w-0 truncate text-xs leading-none text-muted-foreground/55">
+              {imageIndexMessage}
+            </span>
+          )}
+      </div>
+    );
+  };
 
   // ========== 渲染状态徽章 ==========
   const renderStatBadge = (
@@ -1024,6 +939,7 @@ export const IndexStatusView: React.FC = () => {
     const isReindexing = reindexingIds.has(resource.resourceId);
     const isStale = resource.isStale;
     const isUnsupportedType = UNSUPPORTED_INDEX_TYPES.has(resource.resourceType);
+    const isClearingOcr = clearingOcrIds.has(resource.resourceId);
     // 有 indexError 的资源也应该可以重新索引
     const hasIndexError = !!resource.textIndexError;
     // ★ 2026-02 修复：空内容判断使用结构化条件替代字符串硬编码匹配
@@ -1396,10 +1312,10 @@ export const IndexStatusView: React.FC = () => {
                     variant="outline"
                     size="sm"
                     onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleClearOcrAndReindex(resource.resourceId); }}
-                    disabled={clearingOcr}
+                    disabled={isClearingOcr}
                     className="text-xs gap-1.5 text-destructive hover:text-destructive"
                   >
-                    {clearingOcr ? <CircleNotch className="h-3.5 w-3.5 animate-spin" /> : <Eraser className="h-3.5 w-3.5" />}
+                    {isClearingOcr ? <CircleNotch className="h-3.5 w-3.5 animate-spin" /> : <Eraser className="h-3.5 w-3.5" />}
                     清除 OCR 并重做
                   </NotionButton>
                 )}
@@ -1501,9 +1417,6 @@ export const IndexStatusView: React.FC = () => {
 
   if (!summary) return null;
 
-  // 需要处理的资源数量
-  const needsActionCount = summary.pendingCount + summary.failedCount + summary.staleCount;
-
   return (
     <div className="flex flex-col flex-1 min-h-0">
       {/* 顶部概览区 */}
@@ -1514,13 +1427,16 @@ export const IndexStatusView: React.FC = () => {
           <div className="flex items-center gap-3">
             {/* 进度环 - 紧凑 */}
             <ProgressRing
-              percentage={MULTIMODAL_INDEX_ENABLED && summary.mmTotalResources > 0 ? overallProgressPercentage : progressPercentage}
-              total={MULTIMODAL_INDEX_ENABLED && summary.mmTotalResources > 0 ? summary.totalResources + summary.mmTotalResources : summary.totalResources}
-              indexed={MULTIMODAL_INDEX_ENABLED && summary.mmTotalResources > 0 ? summary.indexedCount + summary.mmIndexedCount : summary.indexedCount}
+              percentage={progressPercentage}
+              total={displayIndexStats.total}
+              indexed={displayIndexStats.indexed}
               size={56}
               strokeWidth={6}
             />
             {/* 关键数字 - 紧凑两行 */}
+            <div className="min-w-[112px] shrink-0">
+              {renderProgressMeta(true)}
+            </div>
             <div className="flex-1 min-w-0 grid grid-cols-2 gap-x-3 gap-y-0.5">
               <div className="flex items-center gap-1.5 text-xs">
                 <Database className="h-3 w-3 text-muted-foreground shrink-0" />
@@ -1533,14 +1449,14 @@ export const IndexStatusView: React.FC = () => {
                 <span className="font-mono font-semibold">{dimensions.length > 0 ? dimensions[0].dimension : '-'}</span>
               </div>
               <div className="flex items-center gap-1.5 text-xs">
-                <WarningCircle className={cn('h-3 w-3 shrink-0', summary.failedCount > 0 ? 'text-red-500' : 'text-muted-foreground')} />
+                <WarningCircle className={cn('h-3 w-3 shrink-0', displayIndexStats.failed > 0 ? 'text-red-500' : 'text-muted-foreground')} />
                 <span className="text-muted-foreground shrink-0">{t('indexStatus.stats.errors')}</span>
-                <span className={cn('font-semibold tabular-nums', summary.failedCount > 0 && 'text-red-500')}>{summary.failedCount + summary.mmFailedCount}</span>
+                <span className={cn('font-semibold tabular-nums', displayIndexStats.failed > 0 && 'text-red-500')}>{displayIndexStats.failed}</span>
               </div>
               <div className="flex items-center gap-1.5 text-xs">
-                <Clock className={cn('h-3 w-3 shrink-0', summary.staleCount > 0 ? 'text-warning' : 'text-muted-foreground')} />
+                <Clock className={cn('h-3 w-3 shrink-0', displayIndexStats.stale > 0 ? 'text-warning' : 'text-muted-foreground')} />
                 <span className="text-muted-foreground shrink-0">{t('indexStatus.stats.stale')}</span>
-                <span className={cn('font-semibold tabular-nums', summary.staleCount > 0 && 'text-warning')}>{summary.staleCount}</span>
+                <span className={cn('font-semibold tabular-nums', displayIndexStats.stale > 0 && 'text-warning')}>{displayIndexStats.stale}</span>
               </div>
             </div>
           </div>
@@ -1600,79 +1516,21 @@ export const IndexStatusView: React.FC = () => {
               <Progress value={batchProgress} className="h-1.5" />
             </div>
           )}
-          {MULTIMODAL_INDEX_ENABLED && (mmIndexing || mmProgress > 0) && (
-            <div className="space-y-1 bg-purple-500/5 p-2 rounded-md">
-              <div className="flex items-center justify-between text-xs text-purple-600 dark:text-purple-400">
-                <span className="font-medium truncate">{mmMessage}</span>
-                <span className="font-mono tabular-nums shrink-0 ml-2">{mmProgress}%</span>
-              </div>
-              <Progress value={mmProgress} className="h-1.5 [&>div]:bg-purple-600" />
-            </div>
-          )}
         </div>
       ) : (
         /* ==================== 桌面端布局 ==================== */
         <div className="flex flex-row items-center gap-6 p-4 lg:p-6 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-          {/* ★ 2026-02 修复：环形进度图 - 多模态索引已禁用时只显示文本进度 */}
           <div className="flex items-center gap-4 lg:gap-6 shrink-0">
-            {/* 综合进度环（当有多模态资源时显示，且多模态已启用） */}
-            {MULTIMODAL_INDEX_ENABLED && summary.mmTotalResources > 0 ? (
-              <>
-                <div className="flex flex-col items-center gap-2">
-                  <ProgressRing
-                    percentage={overallProgressPercentage}
-                    total={summary.totalResources + summary.mmTotalResources}
-                    indexed={summary.indexedCount + summary.mmIndexedCount}
-                    size={80}
-                    strokeWidth={8}
-                  />
-                  <span className="text-xs font-medium text-muted-foreground">{t('indexStatus.progress.overallProgress')}</span>
-                </div>
-                <div className="h-16 w-px bg-border/50" />
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-3">
-                    <ProgressRing
-                      percentage={progressPercentage}
-                      total={summary.totalResources}
-                      indexed={summary.indexedCount}
-                      size={32}
-                      strokeWidth={3}
-                    />
-                    <div className="flex flex-col">
-                      <span className="text-xs font-medium">{t('indexStatus.progress.text')}</span>
-                      <span className="text-[10px] text-muted-foreground">{summary.indexedCount}/{summary.totalResources}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <ProgressRing
-                      percentage={summary.mmTotalResources > 0 ? (summary.mmIndexedCount / summary.mmTotalResources) * 100 : 0}
-                      total={summary.mmTotalResources}
-                      indexed={summary.mmIndexedCount}
-                      size={32}
-                      strokeWidth={3}
-                    />
-                    <div className="flex flex-col">
-                      <span className="text-xs font-medium">{t('indexStatus.progress.multimodal')}</span>
-                      <span className="text-[10px] text-muted-foreground">{summary.mmIndexedCount}/{summary.mmTotalResources}</span>
-                    </div>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="flex items-center gap-4">
-                <ProgressRing
-                  percentage={progressPercentage}
-                  total={summary.totalResources}
-                  indexed={summary.indexedCount}
-                  size={80}
-                  strokeWidth={8}
-                />
-                <div className="flex flex-col gap-1">
-                  <span className="text-sm font-medium">{t('indexStatus.progress.textIndexProgress')}</span>
-                  <span className="text-xs text-muted-foreground">{summary.indexedCount} / {summary.totalResources} {t('indexStatus.progress.items')}</span>
-                </div>
-              </div>
-            )}
+            <div className="flex items-center gap-4">
+              <ProgressRing
+                percentage={progressPercentage}
+                total={displayIndexStats.total}
+                indexed={displayIndexStats.indexed}
+                size={80}
+                strokeWidth={8}
+              />
+              {renderProgressMeta()}
+            </div>
           </div>
 
           {/* 中间信息区 */}
@@ -1712,43 +1570,43 @@ export const IndexStatusView: React.FC = () => {
 
               <div className={cn(
                 "p-2 lg:p-3 rounded-md flex flex-col justify-between gap-0.5 lg:gap-1 group transition-colors",
-                summary.failedCount + summary.mmFailedCount > 0 
+                displayIndexStats.failed > 0
                   ? "bg-red-500/5" 
                   : "bg-muted/30"
               )}>
                 <span className={cn(
                   "text-[10px] uppercase tracking-wider font-medium flex items-center gap-1.5",
-                  summary.failedCount + summary.mmFailedCount > 0 ? "text-red-600/80 dark:text-red-400/80" : "text-muted-foreground"
+                  displayIndexStats.failed > 0 ? "text-red-600/80 dark:text-red-400/80" : "text-muted-foreground"
                 )}>
                   <WarningCircle className="h-3 w-3" />
                   <span className="truncate">{t('indexStatus.stats.errors')}</span>
                 </span>
                 <span className={cn(
                   "text-base lg:text-lg font-semibold tabular-nums",
-                  summary.failedCount + summary.mmFailedCount > 0 ? "text-red-600 dark:text-red-400" : "text-foreground/90"
+                  displayIndexStats.failed > 0 ? "text-red-600 dark:text-red-400" : "text-foreground/90"
                 )}>
-                  {summary.failedCount + summary.mmFailedCount}
+                  {displayIndexStats.failed}
                 </span>
               </div>
 
               <div className={cn(
                 "p-2 lg:p-3 rounded-md flex flex-col justify-between gap-0.5 lg:gap-1 group transition-colors",
-                summary.staleCount > 0 
+                displayIndexStats.stale > 0
                   ? "bg-warning/5" 
                   : "bg-muted/30"
               )}>
                 <span className={cn(
                   "text-[10px] uppercase tracking-wider font-medium flex items-center gap-1.5",
-                  summary.staleCount > 0 ? "text-warning" : "text-muted-foreground"
+                  displayIndexStats.stale > 0 ? "text-warning" : "text-muted-foreground"
                 )}>
                   <Clock className="h-3 w-3" />
                   <span className="truncate">{t('indexStatus.stats.stale')}</span>
                 </span>
                 <span className={cn(
                   "text-base lg:text-lg font-semibold tabular-nums",
-                  summary.staleCount > 0 ? "text-warning" : "text-foreground/90"
+                  displayIndexStats.stale > 0 ? "text-warning" : "text-foreground/90"
                 )}>
-                  {summary.staleCount}
+                  {displayIndexStats.stale}
                 </span>
               </div>
             </div>
@@ -1775,16 +1633,6 @@ export const IndexStatusView: React.FC = () => {
                 </div>
               )}
 
-              {/* 原生多模态索引进度条 - ★ 多模态索引已禁用时隐藏 */}
-              {MULTIMODAL_INDEX_ENABLED && (mmIndexing || mmProgress > 0) && (
-                <div className="space-y-1.5 bg-purple-500/5 p-2 rounded-md">
-                  <div className="flex items-center justify-between text-xs text-purple-600 dark:text-purple-400">
-                    <span className="font-medium">{mmMessage}</span>
-                    <span className="font-mono tabular-nums">{mmProgress}%</span>
-                  </div>
-                  <Progress value={mmProgress} className="h-2 [&>div]:bg-purple-600" />
-                </div>
-              )}
             </div>
           </div>
 
@@ -1939,9 +1787,15 @@ export const IndexStatusView: React.FC = () => {
         </div>
         {!isMobile && (
           <div className="text-xs font-mono text-muted-foreground shrink-0 pl-2 md:pl-4 border-l border-border/50 whitespace-nowrap">
-            <span className="font-semibold text-foreground">{summary.resources.length}</span>
-            <span className="mx-1 text-muted-foreground/50">/</span>
-            <span>{summary.totalResources}</span>
+            {selectedState === 'all' && selectedType === 'all' ? (
+              <>
+                <span className="font-semibold text-foreground">{displayedResources.length}</span>
+                <span className="mx-1 text-muted-foreground/50">/</span>
+                <span>{displayIndexStats.total}</span>
+              </>
+            ) : (
+              <span className="font-semibold text-foreground">{displayedResources.length}</span>
+            )}
           </div>
         )}
       </div>
@@ -2106,10 +1960,10 @@ export const IndexStatusView: React.FC = () => {
                           variant="outline"
                           size="sm"
                           onClick={() => inspectingResourceId && handleClearOcrAndReindex(inspectingResourceId)}
-                          disabled={clearingOcr}
+                          disabled={!!inspectingResourceId && clearingOcrIds.has(inspectingResourceId)}
                           className="text-xs gap-1.5 text-destructive hover:text-destructive"
                         >
-                          {clearingOcr ? <CircleNotch className="h-3.5 w-3.5 animate-spin" /> : <Eraser className="h-3.5 w-3.5" />}
+                          {!!inspectingResourceId && clearingOcrIds.has(inspectingResourceId) ? <CircleNotch className="h-3.5 w-3.5 animate-spin" /> : <Eraser className="h-3.5 w-3.5" />}
                           {t('indexStatus.action.clearOcrAndReindex')}
                         </NotionButton>
                       </div>

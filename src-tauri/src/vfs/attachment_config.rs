@@ -9,7 +9,7 @@
 //! ## 配置存储
 //! 复用 `memory_config` 表，key 为 `attachment_root_folder_id`
 
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
@@ -93,6 +93,28 @@ impl AttachmentConfig {
         }
 
         // 2. 创建默认文件夹
+        let conn = self.db.get_conn_safe()?;
+        if let Some(folder_id) = conn
+            .query_row(
+                "SELECT id FROM folders
+                 WHERE parent_id IS NULL
+                   AND title = ?1
+                   AND deleted_at IS NULL
+                 ORDER BY created_at ASC
+                 LIMIT 1",
+                params![DEFAULT_FOLDER_TITLE],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+        {
+            self.set_root_folder_id(&folder_id)?;
+            info!(
+                "[Attachment::Config] Reusing existing attachment folder: {} ({})",
+                DEFAULT_FOLDER_TITLE, folder_id
+            );
+            return Ok(folder_id);
+        }
+
         let folder = VfsFolder::new(DEFAULT_FOLDER_TITLE.to_string(), None, None, None);
         VfsFolderRepo::create_folder(&self.db, &folder)?;
         self.set_root_folder_id(&folder.id)?;

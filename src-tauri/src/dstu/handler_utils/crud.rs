@@ -11,7 +11,7 @@ use crate::vfs::{
 };
 
 use super::{
-    essay_to_dstu_node, exam_to_dstu_node, file_to_dstu_node, mindmap_to_dstu_node,
+    active_file_to_dstu_node, essay_to_dstu_node, exam_to_dstu_node, mindmap_to_dstu_node,
     note_to_dstu_node, session_to_dstu_node, textbook_to_dstu_node, translation_to_dstu_node,
 };
 
@@ -111,7 +111,7 @@ pub async fn get_resource_by_type_and_id(
                         "[DSTU::crud] get_resource_by_type_and_id: SUCCESS - type=file, id={}",
                         id
                     );
-                    Ok(file.map(|f| file_to_dstu_node(&f)))
+                    Ok(file.and_then(|f| active_file_to_dstu_node(&f)))
                 }
                 Err(e) => {
                     log::error!("[DSTU::crud] get_resource_by_type_and_id: FAILED - type=file, id={}, error={}", id, e);
@@ -179,7 +179,7 @@ pub async fn fetch_resource_as_dstu_node(
             Err(e) => Err(e.to_string()),
         },
         "image" | "file" => match VfsFileRepo::get_file(vfs_db, &item.item_id) {
-            Ok(Some(f)) => Ok(Some(file_to_dstu_node(&f))),
+            Ok(Some(f)) => Ok(active_file_to_dstu_node(&f)),
             Ok(None) => Ok(None),
             Err(e) => Err(e.to_string()),
         },
