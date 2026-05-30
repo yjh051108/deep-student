@@ -282,7 +282,6 @@ export const PreviewRouter: React.FC<PreviewRouterProps> = ({
         <MindMapEmbed
           mindmapId={data.mindmapId}
           height={280}
-          expandLargeMaps={false}
           className={className}
           showOpenButton={true}
         />

@@ -372,6 +372,7 @@ function DesktopHeaderNavControls({
   upTitle,
   upLabel,
   collapsed,
+  showNewSession = true,
 }: {
   canGoBack: boolean;
   canGoForward: boolean;
@@ -389,6 +390,7 @@ function DesktopHeaderNavControls({
   upTitle?: string;
   upLabel?: string;
   collapsed: boolean;
+  showNewSession?: boolean;
 }) {
   return (
     <div

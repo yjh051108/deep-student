@@ -9,4 +9,8 @@ export function setGroupsCache(groups: SessionGroup[]): void {
   });
 }
 
+export function setGroupCache(group: SessionGroup): void {
+  groupCache.set(group.id, group);
+}
+
 export { groupCache };
