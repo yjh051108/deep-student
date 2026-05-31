@@ -822,7 +822,7 @@ impl VfsFileRepo {
             .to_string();
         let now_ms = chrono::Utc::now().timestamp_millis();
         let fi_updated = conn.execute(
-            "UPDATE folder_items SET deleted_at = ?1, updated_at = ?2 WHERE item_id = ?3 AND item_type IN ('file', 'image') AND deleted_at IS NULL",
+            "UPDATE folder_items SET deleted_at = ?1, updated_at = ?2 WHERE item_id = ?3 AND item_type IN ('file', 'image', 'attachment', 'textbook') AND deleted_at IS NULL",
             params![now_str, now_ms, file_id],
         )?;
 
@@ -888,7 +888,7 @@ impl VfsFileRepo {
         // ★ CONC-02 修复：恢复 folder_items 中的关联记录
         let now_ms = chrono::Utc::now().timestamp_millis();
         let fi_updated = conn.execute(
-            "UPDATE folder_items SET deleted_at = NULL, updated_at = ?1 WHERE item_id = ?2 AND item_type IN ('file', 'image') AND deleted_at IS NOT NULL",
+            "UPDATE folder_items SET deleted_at = NULL, updated_at = ?1 WHERE item_id = ?2 AND item_type IN ('file', 'image', 'attachment', 'textbook') AND deleted_at IS NOT NULL",
             params![now_ms, file_id],
         )?;
 

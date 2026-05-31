@@ -2053,7 +2053,7 @@ impl VfsAttachmentRepo {
 
         let now_ms = chrono::Utc::now().timestamp_millis();
         let fi_updated = conn.execute(
-            "UPDATE folder_items SET deleted_at = NULL, updated_at = ?1 WHERE item_id = ?2 AND item_type IN ('file', 'image') AND deleted_at IS NOT NULL",
+            "UPDATE folder_items SET deleted_at = NULL, updated_at = ?1 WHERE item_id = ?2 AND item_type IN ('file', 'image', 'attachment', 'textbook') AND deleted_at IS NOT NULL",
             params![now_ms, id],
         )?;
 

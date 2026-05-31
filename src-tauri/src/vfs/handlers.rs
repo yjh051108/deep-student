@@ -2037,6 +2037,7 @@ pub async fn vfs_get_attachment(
 pub async fn vfs_delete_attachment(
     attachment_id: String,
     vfs_db: State<'_, Arc<VfsDatabase>>,
+    lance_store: State<'_, Arc<crate::vfs::lance_store::VfsLanceStore>>,
 ) -> Result<(), String> {
     log::info!(
         "[VFS::handlers] vfs_delete_attachment: id={}",
@@ -2044,7 +2045,16 @@ pub async fn vfs_delete_attachment(
     );
 
     // 附件已经统一落在 files 表，删除入口以数据库存在性为准，兼容 file_/att_ 等历史 ID。
-    VfsAttachmentRepo::delete_attachment(&vfs_db, &attachment_id).map_err(|e| e.to_string())
+    // 这里复用 files 的完整删除路径，确保资源、folder_items 和 Lance/vector 索引一起清理。
+    let index_service = crate::vfs::index_service::VfsIndexService::new(Arc::clone(&vfs_db));
+    VfsFileRepo::delete_file_with_index_cleanup(
+        &vfs_db,
+        &attachment_id,
+        &index_service,
+        lance_store.as_ref(),
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 // ============================================================================
