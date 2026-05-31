@@ -95,6 +95,9 @@ describe('learning hub memory entry scope contract', () => {
     );
 
     expect(memoryView).toContain(': [GLOBAL_MEMORY_ROOT];');
+    expect(memoryView).toContain('const hasActiveTopicGroup = Boolean(topicGroupId?.trim());');
+    expect(memoryView).toContain('if (!hasActiveTopicGroup) return [GLOBAL_MEMORY_ROOT];');
+    expect(memoryView).toContain('const hasTopicMemoryScope = hasActiveTopicGroup && topicMemoryRoots(topicGroupId, topicGroupName).length > 0;');
     expect(memoryView).toContain(": t('memory.scope_global', '全局');");
     expect(memoryView).not.toContain(': [GLOBAL_MEMORY_ROOT, TOPIC_MEMORY_ROOT];');
     expect(memoryView).not.toContain("t('memory.scope_all_topics_global', '全局 + 所有课题')");

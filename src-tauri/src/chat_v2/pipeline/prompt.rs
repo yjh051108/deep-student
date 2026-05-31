@@ -121,9 +121,6 @@ impl ChatV2Pipeline {
 
         let global_profile = join_limited(&global_sections, 1200);
         let topic_profile = join_limited(&topic_sections, 1600);
-        if global_profile.is_none() && topic_profile.is_none() && topic_root.is_none() {
-            return None;
-        }
 
         Some(prompt_builder::MemoryPromptContext::new(
             options.group_name.clone().or(options.group_id.clone()),

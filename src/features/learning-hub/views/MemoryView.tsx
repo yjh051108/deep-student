@@ -215,22 +215,24 @@ export const MemoryView: React.FC<MemoryViewProps> = ({
   const [auditSuccessFilter, setAuditSuccessFilter] = useState<string>('');
   const [auditLogOffset, setAuditLogOffset] = useState(0);
   const [auditLoadError, setAuditLoadError] = useState<string | null>(null);
+  const hasActiveTopicGroup = Boolean(topicGroupId?.trim());
 
   const visibleMemoryFolderPaths = useMemo(() => {
     if (memoryScopeFilter === 'all') return [];
     if (memoryScopeFilter === 'global') return [GLOBAL_MEMORY_ROOT];
+    if (!hasActiveTopicGroup) return [GLOBAL_MEMORY_ROOT];
     const topicRoots = topicMemoryRoots(topicGroupId, topicGroupName);
     return topicRoots.length > 0
       ? [GLOBAL_MEMORY_ROOT, ...topicRoots]
       : [GLOBAL_MEMORY_ROOT];
-  }, [memoryScopeFilter, topicGroupId, topicGroupName]);
+  }, [hasActiveTopicGroup, memoryScopeFilter, topicGroupId, topicGroupName]);
   const memoryScopeContext = useMemo(() => ({
     groupId: topicGroupId,
     groupName: topicGroupName,
     adminAll: memoryScopeFilter === 'all',
   }), [memoryScopeFilter, topicGroupId, topicGroupName]);
 
-  const hasTopicMemoryScope = topicMemoryRoots(topicGroupId, topicGroupName).length > 0;
+  const hasTopicMemoryScope = hasActiveTopicGroup && topicMemoryRoots(topicGroupId, topicGroupName).length > 0;
   const primaryScopeLabel = hasTopicMemoryScope
     ? t('memory.scope_topic_global', '当前课题 + 全局')
     : t('memory.scope_global', '全局');
