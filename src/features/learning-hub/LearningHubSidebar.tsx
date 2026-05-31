@@ -1848,6 +1848,12 @@ export function LearningHubSidebar({
       const succeeded = deleteResults.length - failedResults.length;
       const failed = failedResults.length;
       const failedIds = failedResults.map(r => r.id);
+      const failedIdSet = new Set(failedIds);
+      const succeededResourceEntries = resourceEntries.filter(entry => !failedIdSet.has(entry.id));
+      for (const entry of succeededResourceEntries) {
+        useRecentStore.getState().removeRecentByIdentity(entry.id, entry.path);
+        pruneFinderResource(entry.id, entry.path);
+      }
 
       if (failed === 0) {
         // 全部成功
