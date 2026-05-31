@@ -67,6 +67,9 @@ describe('FinderFileList responsive grid contract', () => {
     expect(source).toContain("viewMode={mode === 'canvas' ? 'list' : viewMode}");
     expect(source).toContain("compact={mode === 'canvas'}");
     expect(source).toContain("onViewModeChange={setViewMode}");
+    expect(source).toContain("{!hideToolbarAndNav && (mode === 'canvas' || !isSmallScreen) && (");
+    expect(source).toContain("title={t('finder.toolbar.up', '上一级')}");
+    expect(source).toContain('onClick={goUp}');
     expect(source).toContain('className="study-shell-toolbar flex items-center gap-1.5 px-2 py-1 border-b shrink-0 min-w-0 overflow-visible"');
     expect(source).toContain('className="!h-7 !w-7 !p-0 shrink-0"');
     expect(quickAccessSource).toContain('fillContainer ?');
@@ -76,8 +79,12 @@ describe('FinderFileList responsive grid contract', () => {
     expect(desktopSource).toContain('w-full min-w-0 text-xs text-center');
     expect(desktopSource).not.toContain('max-w-[112px] text-xs text-center');
     expect(pageSource).toContain('setLocalSidebarCollapsed(false);');
-    expect(pageSource).toContain('minSize={hasOpenApp ? (sidebarCollapsed ? 8 : 20) : 15}');
-    expect(pageSource).not.toContain('setLocalSidebarCollapsed(true);');
+    expect(pageSource).toContain('minSize={hasOpenApp ? 20 : 15}');
+    expect(pageSource).toContain('collapsedSize={8}');
+    expect(pageSource).toContain('onCollapse={() => setLocalSidebarCollapsed(true)}');
+    expect(pageSource).toContain('onExpand={() => setLocalSidebarCollapsed(false)}');
+    expect(source).toContain("const showFinderCollapseRail = mode === 'fullscreen' && isCollapsed && hasOpenApp && Boolean(onToggleCollapse);");
+    expect(source).toContain('showFinderCollapseRail && "hidden"');
     expect(source).not.toContain('FILE_PANE_COLLAPSE_WIDTH');
     expect(source).not.toContain('filePaneCollapsed');
     expect(source).not.toContain('filePaneRef');

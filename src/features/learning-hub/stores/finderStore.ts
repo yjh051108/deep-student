@@ -338,6 +338,7 @@ export const useFinderStore = create<FinderState>()(
           lastSelectedId: null,
           searchQuery: '',
           isSearching: false,
+          _navigationRequestId: get()._navigationRequestId + 1,
           _currentRequestId: get()._currentRequestId + 1,
         });
       },
@@ -393,6 +394,7 @@ export const useFinderStore = create<FinderState>()(
             currentPath: history[newIndex],
             selectedIds: new Set(),
             lastSelectedId: null,
+            _navigationRequestId: get()._navigationRequestId + 1,
             _currentRequestId: get()._currentRequestId + 1,
           });
         }
@@ -407,6 +409,7 @@ export const useFinderStore = create<FinderState>()(
             currentPath: history[newIndex],
             selectedIds: new Set(),
             lastSelectedId: null,
+            _navigationRequestId: get()._navigationRequestId + 1,
             _currentRequestId: get()._currentRequestId + 1,
           });
         }

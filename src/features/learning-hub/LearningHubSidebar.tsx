@@ -2253,6 +2253,7 @@ export function LearningHubSidebar({
   }, [selectedIds, handleSelectAll, handleBatchDelete, handleClearSelection]);
 
   const shouldRenderDesktopQuickAccess = !isSmallScreen && mode !== 'canvas';
+  const showFinderCollapseRail = mode === 'fullscreen' && isCollapsed && hasOpenApp && Boolean(onToggleCollapse);
   const quickAccessNode = shouldRenderDesktopQuickAccess ? (
     <FinderQuickAccess
       collapsed={quickAccessPortalTarget ? false : effectiveQuickAccessCollapsed}
@@ -2287,6 +2288,21 @@ export function LearningHubSidebar({
 
       {/* 右侧：工具栏 + 文件列表（包裹拖拽导入区域） */}
       <div className="flex-1 min-w-0 min-h-0 overflow-hidden">
+        {showFinderCollapseRail && (
+          <div className="h-full w-full min-w-0 bg-muted/50 border-r border-[color:var(--shell-workspace-border)] flex items-start justify-center pt-3">
+            <NotionButton
+              variant="ghost"
+              size="icon"
+              iconOnly
+              className="!h-7 !w-7 !p-0 text-muted-foreground hover:text-foreground"
+              onClick={onToggleCollapse}
+              title={t('finder.quickAccess.expand', '展开')}
+              aria-label={t('finder.quickAccess.expand', '展开')}
+            >
+              <CaretRight className="w-4 h-4" />
+            </NotionButton>
+          </div>
+        )}
         <UnifiedDragDropZone
           zoneId="learning-hub-finder"
           onFilesDropped={handleFilesDrop}
@@ -2296,7 +2312,7 @@ export function LearningHubSidebar({
           maxFiles={20}
           maxFileSize={200 * 1024 * 1024}
           customOverlayText={t('finder.dragDrop.overlayText', '拖放文件到此处导入')}
-          className="h-full flex flex-col min-w-0 min-h-0 overflow-hidden"
+          className={cn("h-full flex flex-col min-w-0 min-h-0 overflow-hidden", showFinderCollapseRail && "hidden")}
         >
         {/* P1-20: 移动端顶部工具栏（搜索 + 新建文件夹 + 新建笔记 + 清空回收站） */}
         {isSmallScreen && !hideToolbarAndNav && (
@@ -2428,8 +2444,8 @@ export function LearningHubSidebar({
           </div>
         )}
 
-{/* ★ Canvas 模式导航栏：返回/前进 + 面包屑 */}
-        {mode === 'canvas' && !hideToolbarAndNav && (
+{/* ★ Finder 导航栏：返回/前进 + 向上 + 面包屑 */}
+        {!hideToolbarAndNav && (mode === 'canvas' || !isSmallScreen) && (
           <div className="study-shell-toolbar flex items-center gap-1.5 px-2 py-1 border-b shrink-0 min-w-0 overflow-visible">
             {/* 返回/前进按钮 */}
             <NotionButton

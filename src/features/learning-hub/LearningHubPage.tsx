@@ -560,6 +560,7 @@ export const LearningHubPage: React.FC = () => {
   // ========== 侧边栏收缩状态 ==========
   const globalLeftPanelCollapsed = useUIStore((state) => state.leftPanelCollapsed);
   const sidebarCollapsed = globalLeftPanelCollapsed || localSidebarCollapsed;
+  const sidebarPanelRef = useRef<ImperativePanelHandle>(null);
 
   // ★ 当 Topbar 按钮将 globalLeftPanelCollapsed 切换为 false（展开）时，
   // 同步重置 localSidebarCollapsed，否则 OR 条件会导致侧边栏无法展开
@@ -580,10 +581,14 @@ export const LearningHubPage: React.FC = () => {
     if (!collapsed && globalLeftPanelCollapsed) {
       useUIStore.getState().setLeftPanelCollapsed(false);
     }
+    if (collapsed) {
+      sidebarPanelRef.current?.collapse();
+    } else {
+      sidebarPanelRef.current?.expand();
+    }
   }, [globalLeftPanelCollapsed]);
 
   // 侧边栏面板引用
-  const sidebarPanelRef = useRef<ImperativePanelHandle>(null);
 
   // ========== 注册 OpenResourceHandler（供 DSTU openResource 使用） ==========
   useEffect(() => {
@@ -1046,7 +1051,11 @@ export const LearningHubPage: React.FC = () => {
         <Panel
           ref={sidebarPanelRef}
           defaultSize={25}
-          minSize={hasOpenApp ? (sidebarCollapsed ? 8 : 20) : 15}
+          minSize={hasOpenApp ? 20 : 15}
+          collapsible={hasOpenApp}
+          collapsedSize={8}
+          onCollapse={() => setLocalSidebarCollapsed(true)}
+          onExpand={() => setLocalSidebarCollapsed(false)}
           id="learning-hub-sidebar"
           order={1}
           className="h-full min-w-0 overflow-hidden"
