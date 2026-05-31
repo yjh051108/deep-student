@@ -19,11 +19,12 @@ import {
 } from '@phosphor-icons/react';
 import { NotionButton } from '@/components/ui/NotionButton';
 import { CustomScrollArea } from '@/components/custom-scroll-area';
-import { getMemoryTree, type FolderTreeNode } from '@/api/memoryApi';
+import { getMemoryTree, type FolderTreeNode, type MemoryScopeContext } from '@/api/memoryApi';
 
 interface MemoryTreePreviewProps {
   onNavigateToFolder?: (folderId: string) => void;
   rootPath?: string;
+  context?: MemoryScopeContext;
   className?: string;
 }
 
@@ -134,6 +135,7 @@ TreeNode.displayName = 'TreeNode';
 export const MemoryTreePreview: React.FC<MemoryTreePreviewProps> = React.memo(({
   onNavigateToFolder,
   rootPath,
+  context,
   className,
 }) => {
   const { t } = useTranslation('learningHub');
@@ -145,14 +147,14 @@ export const MemoryTreePreview: React.FC<MemoryTreePreviewProps> = React.memo(({
     setIsLoading(true);
     setError(null);
     try {
-      const data = await getMemoryTree(rootPath);
+      const data = await getMemoryTree(rootPath, context);
       setTreeData(data);
     } catch (e) {
       setError(t('memory.tree_load_error', '加载记忆树失败'));
     } finally {
       setIsLoading(false);
     }
-  }, [rootPath, t]);
+  }, [context, rootPath, t]);
 
   useEffect(() => { loadTree(); }, [loadTree]);
 

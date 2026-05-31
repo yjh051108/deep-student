@@ -53,10 +53,13 @@ describe('learning hub memory entry scope contract', () => {
     );
 
     expect(preview).toContain('rootPath?: string');
-    expect(preview).toContain('getMemoryTree(rootPath)');
+    expect(preview).toContain('context?: MemoryScopeContext');
+    expect(preview).toContain('getMemoryTree(rootPath, context)');
     expect(preview).not.toContain("getMemoryTree('全局')");
     expect(sidebar).toContain('memoryTreeRootPath');
+    expect(sidebar).toContain('const memoryScopeContext = useMemo(() => ({');
     expect(sidebar).toContain('rootPath={memoryTreeRootPath}');
+    expect(sidebar).toContain('context={memoryScopeContext}');
   });
 
   it('keeps all-memory admin access behind an explicit MemoryView management mode', () => {

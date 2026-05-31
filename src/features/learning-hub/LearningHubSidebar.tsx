@@ -262,6 +262,10 @@ export function LearningHubSidebar({
       .filter(Boolean);
     return segments.length > 0 ? segments.join('/') : undefined;
   }, [currentPath.breadcrumbs, memoryRootFolderId]);
+  const memoryScopeContext = useMemo(() => ({
+    groupId: topicGroupId,
+    groupName: topicGroupName,
+  }), [topicGroupId, topicGroupName]);
   const currentQuickAccessType = isInMemoryFolder ? 'memory' as QuickAccessType : baseQuickAccessType;
   const canCreateInCurrentView = viewCapabilities.canCreate;
   const hasResolvedCreateScope =
@@ -2668,6 +2672,7 @@ export function LearningHubSidebar({
           {isInMemoryFolder && memoryTreeView && mode !== 'canvas' ? (
             <MemoryTreePreview
               rootPath={memoryTreeRootPath}
+              context={memoryScopeContext}
               onNavigateToFolder={(folderId) => {
                 setMemoryTreeView(false);
                 enterFolder(folderId);
