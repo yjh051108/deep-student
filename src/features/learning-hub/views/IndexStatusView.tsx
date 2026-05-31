@@ -879,13 +879,6 @@ export const IndexStatusView: React.FC = () => {
     disabled: groupedDisplayRows.disabled?.length ?? 0,
     stale: summary?.resources.filter(resource => resource.isStale).length ?? 0,
   }), [summary, resolvedDisplayRows, groupedDisplayRows]);
-  const imageIndexStats = useMemo(() => {
-    const resources = summary?.resources.filter(resource => MULTIMODAL_RESOURCE_TYPES.has(resource.resourceType)) ?? [];
-    return {
-      total: resources.length,
-      indexed: resources.filter(resource => normalizeIndexState(resource.mmIndexState) === 'indexed').length,
-    };
-  }, [summary]);
 
   // ========== 计算进度百分比 ==========
   const progressPercentage = useMemo(() => {
@@ -896,9 +889,7 @@ export const IndexStatusView: React.FC = () => {
   const renderProgressMeta = (compact = false) => {
     if (!summary) return null;
     const imageIndexReady = imageIndexCapability === 'ready';
-    const imageIndexMessage = imageIndexReady
-      ? null
-      : t(`indexStatus.progress.imageIndexCapability.${imageIndexCapability}`);
+    const imageIndexMessage = t(`indexStatus.progress.imageIndexCapability.${imageIndexCapability}`);
     const renderCount = (indexed: number, total: number) => (
       <span className="grid grid-cols-[3ch_1ch_3ch_auto] items-center gap-x-1 text-xs leading-none text-muted-foreground tabular-nums">
         <span className="text-right">{indexed}</span>
@@ -918,18 +909,14 @@ export const IndexStatusView: React.FC = () => {
         {renderCount(displayIndexStats.indexed, displayIndexStats.total)}
 
         {imageIndexReady ? (
-          <Image className="h-3.5 w-3.5 shrink-0 text-foreground" />
+          <Image className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         ) : (
           <XCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/55" />
         )}
-        <span className={cn("shrink-0 text-xs leading-none", imageIndexReady ? "font-medium text-foreground" : "text-muted-foreground/55")}>{t('indexStatus.progress.imageIndexProgress')}</span>
-        {imageIndexReady
-          ? renderCount(imageIndexStats.indexed, imageIndexStats.total)
-          : (
-            <span className="min-w-0 truncate text-xs leading-none text-muted-foreground/55">
-              {imageIndexMessage}
-            </span>
-          )}
+        <span className={cn("shrink-0 text-xs leading-none", imageIndexReady ? "text-muted-foreground" : "text-muted-foreground/55")}>{t('indexStatus.progress.imageIndexProgress')}</span>
+        <span className={cn("min-w-0 truncate text-xs leading-none", imageIndexReady ? "text-muted-foreground" : "text-muted-foreground/55")}>
+          {imageIndexReady ? t('indexStatus.progress.imageIncludedInOverall', '已计入整体进度') : imageIndexMessage}
+        </span>
       </div>
     );
   };

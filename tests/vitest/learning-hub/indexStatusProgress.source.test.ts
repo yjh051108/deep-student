@@ -9,10 +9,17 @@ describe('IndexStatusView progress display contract', () => {
   );
 
   it('does not render a separate multimodal progress bar after aggregate status is complete', () => {
+    expect(source).not.toContain('imageIndexStats');
     expect(source).not.toContain('mmProgress');
     expect(source).not.toContain('mmMessage');
     expect(source).not.toContain('[&>div]:bg-purple-600');
     expect(source).not.toContain('bg-purple-500/5 p-2 rounded-md');
+  });
+
+  it('keeps image index capability as metadata instead of a second progress count', () => {
+    expect(source).toContain("t('indexStatus.progress.imageIncludedInOverall'");
+    expect(source).toContain('renderCount(displayIndexStats.indexed, displayIndexStats.total)');
+    expect(source).not.toContain('renderCount(imageIndexStats.indexed, imageIndexStats.total)');
   });
 
   it('uses multimodal progress events only to lock indexing and refresh aggregate status', () => {
