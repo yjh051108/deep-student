@@ -36,6 +36,8 @@ describe('VFS attachment delete contract', () => {
 
     expect(handlerBody).toContain('VfsFileRepo::delete_file_with_index_cleanup(');
     expect(handlerBody).toContain('lance_store.as_ref()');
+    expect(handlerBody).toContain('file_delete_watch_targets(&vfs_db, &attachment_id)');
+    expect(handlerBody).toContain('for (event_path, id, item_type) in event_targets');
     expect(handlerBody).not.toContain('VfsAttachmentRepo::delete_attachment(&vfs_db, &attachment_id)');
   });
 
@@ -47,6 +49,21 @@ describe('VFS attachment delete contract', () => {
 
     expect(handlerBody).toContain('VfsFileRepo::delete_file_with_index_cleanup(');
     expect(handlerBody).not.toContain('attachment_id.starts_with("att_")');
+  });
+
+  it('emits DSTU delete events from native file delete commands', () => {
+    const fileDeleteBody = handlerSource.slice(
+      handlerSource.indexOf('pub async fn vfs_delete_file'),
+      handlerSource.indexOf('#[derive(Debug, Clone, Serialize)]', handlerSource.indexOf('pub async fn vfs_delete_file'))
+    );
+
+    expect(handlerSource).toContain('fn file_delete_watch_targets(');
+    expect(handlerSource).toContain('SELECT f.file_name, f.resource_id, r.source_id');
+    expect(handlerSource).toContain('SELECT item_type, item_id, folder_id');
+    expect(handlerSource).toContain('VfsFolderRepo::build_folder_path_with_conn(&conn, id)');
+    expect(fileDeleteBody).toContain('file_delete_watch_targets(&vfs_db, &file_id)');
+    expect(fileDeleteBody).toContain('emit_watch_event(');
+    expect(fileDeleteBody).toContain('DstuWatchEvent::deleted(event_path).with_resource(id, item_type)');
   });
 
   it('handles legacy file-backed folder item types when deleting or restoring files', () => {

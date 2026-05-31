@@ -714,12 +714,13 @@ export function watch(path: string, callback: (event: DstuWatchEvent) => void): 
  */
 export async function deleteMany(paths: string[]): Promise<Result<number>> {
   try {
-    // 1. 执行批量删除（先操作后端）
+    // 1. 删除前收集真实节点 ID，避免删除后只能从路径反推缓存键
+    const nodeIds = await collectNodeIdsForInvalidation(paths);
+
+    // 2. 执行批量删除
     const result = await invoke<number>('dstu_delete_many', { paths });
 
-    // 2. [FIX-D002] Invalidate cache after operation succeeds
-    // Collect node IDs, use path as fallback if get fails
-    const nodeIds = await collectNodeIdsForInvalidation(paths);
+    // 3. 操作成功后再失效缓存，失败时保留原缓存
     if (nodeIds.length > 0) {
       await invalidateMultipleCachesWithLogging(nodeIds, 'deleteMany[post]');
     }

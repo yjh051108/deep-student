@@ -18,9 +18,11 @@
 
 use std::sync::Arc;
 
-use tauri::State;
+use tauri::{State, Window};
 use tracing::{error, info, warn};
 
+use crate::dstu::handler_utils::emit_watch_event;
+use crate::dstu::types::DstuWatchEvent;
 use crate::vfs::{
     folder_errors, FolderResourcesResult, FolderTreeNode, VfsDatabase, VfsFolder, VfsFolderItem,
     VfsFolderRepo, MAX_FOLDER_TITLE_LENGTH, MAX_INJECT_RESOURCES,
@@ -88,6 +90,152 @@ fn validate_string_input(s: &str, field_name: &str, max_len: usize) -> Result<()
         return Err(format!("{} 长度超过限制", field_name));
     }
     Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct FolderDeleteWatchTarget {
+    pub path: String,
+    pub id: String,
+    pub item_type: String,
+}
+
+fn normalize_watch_path(path: Option<String>, fallback_id: &str) -> String {
+    let raw = path
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+        .unwrap_or_else(|| fallback_id.to_string());
+    if raw.starts_with('/') {
+        raw
+    } else {
+        format!("/{raw}")
+    }
+}
+
+fn is_file_backed_folder_item(item_type: &str) -> bool {
+    matches!(item_type, "file" | "image" | "attachment" | "textbook")
+}
+
+fn canonical_file_id_for_folder_item(
+    conn: &rusqlite::Connection,
+    item_id: &str,
+) -> Option<String> {
+    conn.query_row(
+        r#"
+        SELECT f.id
+        FROM files f
+        LEFT JOIN resources r ON r.id = f.resource_id
+        WHERE f.id = ?1 OR f.resource_id = ?1 OR r.source_id = ?1
+        ORDER BY CASE WHEN f.id = ?1 THEN 0 ELSE 1 END
+        LIMIT 1
+        "#,
+        rusqlite::params![item_id],
+        |row| row.get::<_, String>(0),
+    )
+    .ok()
+}
+
+fn collect_folder_delete_watch_targets(
+    vfs_db: &VfsDatabase,
+    folder_id: &str,
+) -> Result<Vec<FolderDeleteWatchTarget>, String> {
+    let conn = vfs_db.get_conn_safe().map_err(|e| e.to_string())?;
+    collect_folder_delete_watch_targets_with_conn(&conn, folder_id)
+}
+
+pub(crate) fn collect_folder_delete_watch_targets_with_conn(
+    conn: &rusqlite::Connection,
+    folder_id: &str,
+) -> Result<Vec<FolderDeleteWatchTarget>, String> {
+    let mut targets = Vec::new();
+
+    let mut stmt = conn
+        .prepare(
+            r#"
+            WITH RECURSIVE all_folders AS (
+                SELECT id FROM folders WHERE id = ?1 AND deleted_at IS NULL
+                UNION ALL
+                SELECT f.id FROM folders f
+                INNER JOIN all_folders af ON f.parent_id = af.id
+                WHERE f.deleted_at IS NULL
+            )
+            SELECT id
+            FROM all_folders
+            "#,
+        )
+        .map_err(|e| e.to_string())?;
+
+    let folder_rows = stmt
+        .query_map(rusqlite::params![folder_id], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+
+    for row in folder_rows {
+        let id = row.map_err(|e| e.to_string())?;
+        let folder_path = VfsFolderRepo::build_folder_path_with_conn(&conn, &id).ok();
+        targets.push(FolderDeleteWatchTarget {
+            path: normalize_watch_path(folder_path, &id),
+            id,
+            item_type: "folder".to_string(),
+        });
+    }
+
+    let mut stmt = conn
+        .prepare(
+            r#"
+            WITH RECURSIVE all_folders AS (
+                SELECT id FROM folders WHERE id = ?1 AND deleted_at IS NULL
+                UNION ALL
+                SELECT f.id FROM folders f
+                INNER JOIN all_folders af ON f.parent_id = af.id
+                WHERE f.deleted_at IS NULL
+            )
+            SELECT id, folder_id, item_type, item_id, sort_order,
+                   CASE typeof(created_at) WHEN 'text' THEN CAST(strftime('%s', created_at) AS INTEGER) * 1000 ELSE created_at END,
+                   cached_path
+            FROM folder_items
+            WHERE folder_id IN (SELECT id FROM all_folders) AND deleted_at IS NULL
+            "#,
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map(rusqlite::params![folder_id], |row| {
+            let folder_item = VfsFolderItem {
+                id: row.get(0)?,
+                folder_id: row.get(1)?,
+                item_type: row.get(2)?,
+                item_id: row.get(3)?,
+                sort_order: row.get(4)?,
+                created_at: row.get(5)?,
+                cached_path: row.get(6)?,
+            };
+            let path = VfsFolderRepo::build_resource_path_with_conn(&conn, &folder_item)
+                .ok()
+                .or_else(|| folder_item.cached_path.clone());
+            Ok(FolderDeleteWatchTarget {
+                path: normalize_watch_path(path, &folder_item.item_id),
+                id: folder_item.item_id,
+                item_type: folder_item.item_type,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    for row in rows {
+        let target = row.map_err(|e| e.to_string())?;
+        if is_file_backed_folder_item(&target.item_type) {
+            if let Some(file_id) = canonical_file_id_for_folder_item(&conn, &target.id) {
+                if file_id != target.id {
+                    targets.push(FolderDeleteWatchTarget {
+                        path: target.path.clone(),
+                        id: file_id,
+                        item_type: target.item_type.clone(),
+                    });
+                }
+            }
+        }
+        targets.push(target);
+    }
+
+    Ok(targets)
 }
 
 /// 验证颜色格式是否合法
@@ -325,6 +473,7 @@ pub async fn dstu_folder_rename(
 pub async fn dstu_folder_delete(
     vfs_db: State<'_, Arc<VfsDatabase>>,
     folder_id: String,
+    window: Window,
 ) -> Result<(), String> {
     info!(
         "[DSTU::folder_handlers] dstu_folder_delete: folder_id={}",
@@ -333,7 +482,8 @@ pub async fn dstu_folder_delete(
 
     let vfs_db = vfs_db.inner().clone();
 
-    tokio::task::spawn_blocking(move || {
+    let deleted_targets = tokio::task::spawn_blocking(move || {
+        let watch_targets = collect_folder_delete_watch_targets(&vfs_db, &folder_id)?;
         // 软删除文件夹，级联软删除子文件夹和内容项（设置 deleted_at）
         match VfsFolderRepo::delete_folder(&vfs_db, &folder_id) {
             Ok(()) => {
@@ -341,7 +491,7 @@ pub async fn dstu_folder_delete(
                     "[DSTU::folder_handlers] dstu_folder_delete: SUCCESS - folder_id={}",
                     folder_id
                 );
-                Ok(())
+                Ok(watch_targets)
             }
             Err(e) => {
                 error!(
@@ -353,7 +503,16 @@ pub async fn dstu_folder_delete(
         }
     })
     .await
-    .map_err(|e| format!("Task join error: {}", e))?
+    .map_err(|e| format!("Task join error: {}", e))??;
+
+    for target in deleted_targets {
+        emit_watch_event(
+            &window,
+            DstuWatchEvent::deleted(target.path).with_resource(target.id, target.item_type),
+        );
+    }
+
+    Ok(())
 }
 
 /// 移动文件夹

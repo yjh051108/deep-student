@@ -12,10 +12,12 @@ use std::sync::Arc;
 
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, State, Window};
 
 use crate::chat_v2::repo::ChatV2Repo;
 use crate::chat_v2::types::PersistStatus;
+use crate::dstu::handler_utils::emit_watch_event;
+use crate::dstu::types::DstuWatchEvent;
 use crate::llm_manager::ApiConfig;
 use crate::utils::unicode::sanitize_unicode;
 use crate::vfs::attachment_config::AttachmentConfig;
@@ -238,6 +240,110 @@ fn image_needs_compression_with_conn(
         .ok()
         .flatten()
         .is_none()
+}
+
+fn normalize_dstu_watch_path(path: Option<String>, fallback_id: &str) -> String {
+    let raw = path
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+        .unwrap_or_else(|| fallback_id.to_string());
+    if raw.starts_with('/') {
+        raw
+    } else {
+        format!("/{raw}")
+    }
+}
+
+fn file_delete_watch_targets(vfs_db: &VfsDatabase, file_id: &str) -> Vec<(String, String, String)> {
+    let Some(conn) = vfs_db.get_conn_safe().ok() else {
+        return vec![(
+            normalize_dstu_watch_path(None, file_id),
+            file_id.to_string(),
+            "file".to_string(),
+        )];
+    };
+
+    let file_row = conn
+        .query_row(
+            r#"
+            SELECT f.file_name, f.resource_id, r.source_id
+            FROM files f
+            LEFT JOIN resources r ON r.id = f.resource_id
+            WHERE f.id = ?1
+            "#,
+            rusqlite::params![file_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
+        )
+        .optional()
+        .ok()
+        .flatten();
+
+    let Some((file_name, resource_id, source_id)) = file_row else {
+        return vec![(
+            normalize_dstu_watch_path(None, file_id),
+            file_id.to_string(),
+            "file".to_string(),
+        )];
+    };
+
+    let mut aliases = vec![file_id.to_string()];
+    for alias in [resource_id, source_id].into_iter().flatten() {
+        if !aliases.iter().any(|existing| existing == &alias) {
+            aliases.push(alias);
+        }
+    }
+    while aliases.len() < 3 {
+        aliases.push(String::new());
+    }
+
+    let mut targets = Vec::new();
+    if let Ok(mut stmt) = conn.prepare(
+        r#"
+        SELECT item_type, item_id, folder_id
+        FROM folder_items
+        WHERE item_id IN (?1, ?2, ?3) AND deleted_at IS NULL
+        ORDER BY updated_at DESC, created_at DESC
+        "#,
+    ) {
+        if let Ok(rows) = stmt.query_map(
+            rusqlite::params![aliases[0], aliases[1], aliases[2]],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
+        ) {
+            for row in rows.flatten() {
+                let (item_type, item_id, folder_id) = row;
+                let folder_path = folder_id
+                    .as_deref()
+                    .and_then(|id| VfsFolderRepo::build_folder_path_with_conn(&conn, id).ok());
+                let path = folder_path
+                    .filter(|p| !p.trim().is_empty())
+                    .map(|folder| format!("{}/{}", folder, file_name))
+                    .unwrap_or_else(|| file_name.clone());
+                targets.push((normalize_dstu_watch_path(Some(path), &item_id), item_id, item_type));
+            }
+        }
+    }
+
+    if !targets.iter().any(|(_, id, _)| id == file_id) {
+        targets.push((
+            normalize_dstu_watch_path(Some(file_name), file_id),
+            file_id.to_string(),
+            "file".to_string(),
+        ));
+    }
+
+    targets
 }
 
 /// 获取资源类型的大文件限制（字节）
@@ -2044,6 +2150,7 @@ pub async fn vfs_delete_attachment(
     attachment_id: String,
     vfs_db: State<'_, Arc<VfsDatabase>>,
     lance_store: State<'_, Arc<crate::vfs::lance_store::VfsLanceStore>>,
+    window: Window,
 ) -> Result<(), String> {
     log::info!(
         "[VFS::handlers] vfs_delete_attachment: id={}",
@@ -2053,6 +2160,7 @@ pub async fn vfs_delete_attachment(
     // 附件已经统一落在 files 表，删除入口以数据库存在性为准，兼容 file_/att_ 等历史 ID。
     // 这里复用 files 的完整删除路径，确保资源、folder_items 和 Lance/vector 索引一起清理。
     let index_service = crate::vfs::index_service::VfsIndexService::new(Arc::clone(&vfs_db));
+    let event_targets = file_delete_watch_targets(&vfs_db, &attachment_id);
     VfsFileRepo::delete_file_with_index_cleanup(
         &vfs_db,
         &attachment_id,
@@ -2060,7 +2168,15 @@ pub async fn vfs_delete_attachment(
         lance_store.as_ref(),
     )
     .await
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+
+    for (event_path, id, item_type) in event_targets {
+        emit_watch_event(
+            &window,
+            DstuWatchEvent::deleted(event_path).with_resource(id, item_type),
+        );
+    }
+    Ok(())
 }
 
 // ============================================================================
@@ -2703,6 +2819,7 @@ pub async fn vfs_delete_file(
     file_id: String,
     vfs_db: State<'_, Arc<VfsDatabase>>,
     lance_store: State<'_, Arc<crate::vfs::lance_store::VfsLanceStore>>,
+    window: Window,
 ) -> Result<(), String> {
     use crate::vfs::index_service::VfsIndexService;
     use crate::vfs::repos::VfsFileRepo;
@@ -2712,6 +2829,7 @@ pub async fn vfs_delete_file(
     }
 
     let index_service = VfsIndexService::new(Arc::clone(&vfs_db));
+    let event_targets = file_delete_watch_targets(&vfs_db, &file_id);
 
     VfsFileRepo::delete_file_with_index_cleanup(
         &vfs_db,
@@ -2720,7 +2838,15 @@ pub async fn vfs_delete_file(
         lance_store.as_ref(),
     )
     .await
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+
+    for (event_path, id, item_type) in event_targets {
+        emit_watch_event(
+            &window,
+            DstuWatchEvent::deleted(event_path).with_resource(id, item_type),
+        );
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize)]

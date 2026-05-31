@@ -11,6 +11,18 @@ describe('learning hub delete state contract', () => {
     resolve(process.cwd(), 'src/features/learning-hub/stores/recentStore.ts'),
     'utf-8'
   );
+  const folderHandlersSource = readFileSync(
+    resolve(process.cwd(), 'src-tauri/src/dstu/folder_handlers.rs'),
+    'utf-8'
+  );
+  const dstuApiSource = readFileSync(
+    resolve(process.cwd(), 'src/dstu/api.ts'),
+    'utf-8'
+  );
+  const dstuHandlersSource = readFileSync(
+    resolve(process.cwd(), 'src-tauri/src/dstu/handlers.rs'),
+    'utf-8'
+  );
 
   it('removes deleted resources from visible finder state and recent state by id or path', () => {
     expect(recentStoreSource).toContain('removeRecentByIdentity');
@@ -29,5 +41,35 @@ describe('learning hub delete state contract', () => {
     expect(sidebarSource).toContain('const deletePath = resourcePath ?? `/${resource.id}`');
     expect(sidebarSource).toContain('const deleteResult = await dstu.delete(deletePath)');
     expect(sidebarSource).not.toContain('let deletePath = resource.path');
+  });
+
+  it('emits delete events for folder cascades instead of leaving recent ghosts', () => {
+    const folderDeleteBody = folderHandlersSource.slice(
+      folderHandlersSource.indexOf('pub async fn dstu_folder_delete'),
+      folderHandlersSource.indexOf('/// 移动文件夹', folderHandlersSource.indexOf('pub async fn dstu_folder_delete'))
+    );
+
+    expect(folderHandlersSource).toContain('fn collect_folder_delete_watch_targets(');
+    expect(folderHandlersSource).toContain('SELECT id\n            FROM all_folders');
+    expect(folderHandlersSource).toContain('VfsFolderRepo::build_folder_path_with_conn(&conn, &id)');
+    expect(folderHandlersSource).toContain('VfsFolderRepo::build_resource_path_with_conn(&conn, &folder_item)');
+    expect(folderHandlersSource).toContain('fn canonical_file_id_for_folder_item(');
+    expect(folderHandlersSource).toContain('f.id = ?1 OR f.resource_id = ?1 OR r.source_id = ?1');
+    expect(folderDeleteBody).toContain('collect_folder_delete_watch_targets(&vfs_db, &folder_id)');
+    expect(folderDeleteBody).toContain('DstuWatchEvent::deleted(target.path).with_resource(target.id, target.item_type)');
+    expect(dstuHandlersSource).toContain('collect_folder_delete_watch_targets_with_conn(&conn, id)');
+    expect(dstuHandlersSource).toContain('DstuWatchEvent::deleted(target.path).with_resource(target.id, target.item_type)');
+    expect(dstuHandlersSource).toContain('let success_count = parsed_items.len();');
+    expect(dstuHandlersSource).toContain('let mut emitted_events = HashSet::new();');
+  });
+
+  it('collects batch delete cache keys before the backend removes nodes', () => {
+    const deleteManyBody = dstuApiSource.slice(
+      dstuApiSource.indexOf('export async function deleteMany'),
+      dstuApiSource.indexOf('/**\n * 批量恢复已删除的资源', dstuApiSource.indexOf('export async function deleteMany'))
+    );
+
+    expect(deleteManyBody.indexOf('const nodeIds = await collectNodeIdsForInvalidation(paths);'))
+      .toBeLessThan(deleteManyBody.indexOf("invoke<number>('dstu_delete_many'"));
   });
 });

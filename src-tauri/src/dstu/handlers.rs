@@ -2,13 +2,14 @@
 //!
 //! 提供 DSTU 访达协议层的所有 Tauri 命令
 
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use rusqlite::OptionalExtension;
 use serde_json::Value;
 use tauri::{State, Window};
 
 use super::error::DstuError;
+use super::folder_handlers::collect_folder_delete_watch_targets_with_conn;
 
 /// 记录并跳过迭代中的错误，避免静默丢弃
 fn log_and_skip_err<T, E: std::fmt::Display>(result: std::result::Result<T, E>) -> Option<T> {
@@ -1431,14 +1432,32 @@ pub async fn dstu_delete(
         })
     });
 
+    let folder_delete_targets = if matches!(resource_type.as_str(), "folders" | "folder") {
+        vfs_db
+            .get_conn_safe()
+            .map_err(|e| e.to_string())
+            .and_then(|conn| collect_folder_delete_watch_targets_with_conn(&conn, &id))?
+    } else {
+        Vec::new()
+    };
+
     // 使用辅助函数执行删除
     delete_resource_by_type(&vfs_db, &resource_type, &id)?;
 
-    // 发射删除事件：path 保持真实资源路径，id 用于前端精确清理派生状态
-    emit_watch_event(
-        &window,
-        DstuWatchEvent::deleted(&path).with_resource(id.clone(), resource_type.clone()),
-    );
+    if folder_delete_targets.is_empty() {
+        // 发射删除事件：path 保持真实资源路径，id 用于前端精确清理派生状态
+        emit_watch_event(
+            &window,
+            DstuWatchEvent::deleted(&path).with_resource(id.clone(), resource_type.clone()),
+        );
+    } else {
+        for target in folder_delete_targets {
+            emit_watch_event(
+                &window,
+                DstuWatchEvent::deleted(target.path).with_resource(target.id, target.item_type),
+            );
+        }
+    }
 
     // ★ P1 修复：删除成功后异步清理向量索引
     if let Some(rid) = resource_id {
@@ -5044,9 +5063,24 @@ pub async fn dstu_delete_many(
             let mut deleted = Vec::with_capacity(items_for_delete.len());
 
             for (path, resource_type, id) in &items_for_delete {
+                let folder_delete_targets =
+                    if matches!(resource_type.as_str(), "folders" | "folder") {
+                        collect_folder_delete_watch_targets_with_conn(&conn, id)?
+                    } else {
+                        Vec::new()
+                    };
+
                 // 使用支持外部事务的删除函数
                 delete_resource_by_type_with_conn(&conn, resource_type, id)?;
-                deleted.push((path.clone(), resource_type.clone(), id.clone()));
+                if folder_delete_targets.is_empty() {
+                    deleted.push((path.clone(), resource_type.clone(), id.clone()));
+                } else {
+                    deleted.extend(
+                        folder_delete_targets
+                            .into_iter()
+                            .map(|target| (target.path, target.item_type, target.id)),
+                    );
+                }
             }
 
             Ok(deleted)
@@ -5073,8 +5107,12 @@ pub async fn dstu_delete_many(
     .map_err(|e| format!("Task join error: {}", e))??;
 
     // 事务成功后，发射所有删除事件
-    let success_count = deleted_items.len();
+    let success_count = parsed_items.len();
+    let mut emitted_events = HashSet::new();
     for (path, resource_type, id) in deleted_items {
+        if !emitted_events.insert((id.clone(), resource_type.clone(), path.clone())) {
+            continue;
+        }
         emit_watch_event(
             &window,
             DstuWatchEvent::deleted(&path).with_resource(id, resource_type),
