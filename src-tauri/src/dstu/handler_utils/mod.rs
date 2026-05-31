@@ -34,7 +34,7 @@ pub use node_converters::{
 // 重导出 CRUD 辅助函数
 pub use crud::{
     fallback_lookup_uuid_resource, fetch_resource_as_dstu_node, get_resource_by_type_and_id,
-    get_resource_folder_path,
+    get_resource_folder_path, is_hidden_by_deleted_folder_mapping,
 };
 
 // 重导出列表辅助函数

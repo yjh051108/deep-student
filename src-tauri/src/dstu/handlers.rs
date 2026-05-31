@@ -43,6 +43,7 @@ use super::handler_utils::{
     // CRUD 辅助函数
     get_resource_by_type_and_id,
     infer_resource_type_from_id,
+    is_hidden_by_deleted_folder_mapping,
     is_uuid_format, // UUID 格式检测
     item_type_to_dstu_node_type,
     // 列表辅助函数
@@ -422,6 +423,17 @@ pub async fn dstu_get(
         }
     };
 
+    if !matches!(resource_type.as_str(), "folders" | "folder")
+        && is_hidden_by_deleted_folder_mapping(&vfs_db, &id)?
+    {
+        log::info!(
+            "[DSTU::handlers] dstu_get: hidden by deleted folder mapping - type={}, id={}",
+            resource_type,
+            id
+        );
+        return Ok(None);
+    }
+
     // 根据类型直接查找资源
     let node = match resource_type.as_str() {
         "notes" => match VfsNoteRepo::get_note(&vfs_db, &id) {
@@ -496,16 +508,12 @@ pub async fn dstu_get(
             }
         }
         "folders" => {
-            match crate::vfs::VfsFolderRepo::get_folder(&vfs_db, &id) {
-                Ok(Some(folder)) => {
-                    let folder_path = build_simple_resource_path(&folder.id);
-                    Some(DstuNode::folder(&folder.id, &folder_path, &folder.title))
-                }
-                Ok(None) => {
-                    // UUID 格式但不是文件夹时，尝试回退查找其他资源类型
+            match crate::vfs::VfsFolderRepo::folder_exists(&vfs_db, &id) {
+                Ok(false) => {
+                    // UUID 格式但不是可见文件夹时，尝试回退查找其他资源类型
                     // 这是为了兼容从旧数据库迁移的资源（如教材可能使用 UUID 作为 ID）
                     if is_uuid_format(&id) {
-                        log::info!("[DSTU::handlers] dstu_get: folder not found for UUID, trying fallback lookup, id={}", id);
+                        log::info!("[DSTU::handlers] dstu_get: active folder not found for UUID, trying fallback lookup, id={}", id);
                         fallback_lookup_uuid_resource(&vfs_db, &id)
                     } else {
                         None
@@ -513,12 +521,27 @@ pub async fn dstu_get(
                 }
                 Err(e) => {
                     log::error!(
-                        "[DSTU::handlers] dstu_get: FAILED - get_folder error, id={}, error={}",
+                        "[DSTU::handlers] dstu_get: FAILED - folder_exists error, id={}, error={}",
                         id,
                         e
                     );
                     return Err(e.to_string());
                 }
+                Ok(true) => match crate::vfs::VfsFolderRepo::get_folder(&vfs_db, &id) {
+                    Ok(Some(folder)) => {
+                        let folder_path = build_simple_resource_path(&folder.id);
+                        Some(DstuNode::folder(&folder.id, &folder_path, &folder.title))
+                    }
+                    Ok(None) => None,
+                    Err(e) => {
+                        log::error!(
+                            "[DSTU::handlers] dstu_get: FAILED - get_folder error, id={}, error={}",
+                            id,
+                            e
+                        );
+                        return Err(e.to_string());
+                    }
+                },
             }
         }
         "mindmaps" => match VfsMindMapRepo::get_mindmap(&vfs_db, &id) {
@@ -5745,6 +5768,12 @@ pub async fn dstu_get_resource_by_path(
         // 根据资源类型获取详情
         let resource_type = parsed.resource_type.as_deref().unwrap_or("unknown");
 
+        if resource_type != "folder"
+            && is_hidden_by_deleted_folder_mapping(&vfs_db, resource_id)?
+        {
+            return Ok(None);
+        }
+
         match resource_type {
             "note" => match VfsNoteRepo::get_note(&vfs_db, resource_id) {
                 Ok(Some(note)) => Ok(Some(note_to_dstu_node(&note))),
@@ -5771,14 +5800,18 @@ pub async fn dstu_get_resource_by_path(
                 Ok(None) => Ok(None),
                 Err(e) => Err(e.to_string()),
             },
-            "folder" => match crate::vfs::VfsFolderRepo::get_folder(&vfs_db, resource_id) {
-                Ok(Some(folder)) => Ok(Some(DstuNode::folder(
-                    &folder.id,
-                    &parsed.full_path,
-                    &folder.title,
-                ))),
-                Ok(None) => Ok(None),
+            "folder" => match crate::vfs::VfsFolderRepo::folder_exists(&vfs_db, resource_id) {
+                Ok(false) => Ok(None),
                 Err(e) => Err(e.to_string()),
+                Ok(true) => match crate::vfs::VfsFolderRepo::get_folder(&vfs_db, resource_id) {
+                    Ok(Some(folder)) => Ok(Some(DstuNode::folder(
+                        &folder.id,
+                        &parsed.full_path,
+                        &folder.title,
+                    ))),
+                    Ok(None) => Ok(None),
+                    Err(e) => Err(e.to_string()),
+                },
             },
             _ => {
                 log::warn!(

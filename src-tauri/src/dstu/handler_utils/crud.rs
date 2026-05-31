@@ -4,6 +4,8 @@
 
 use std::sync::Arc;
 
+use rusqlite::params;
+
 use crate::dstu::types::DstuNode;
 use crate::vfs::{
     repos::VfsMindMapRepo, VfsDatabase, VfsEssayRepo, VfsExamRepo, VfsFileRepo, VfsNoteRepo,
@@ -18,6 +20,33 @@ use super::{
 // ============================================================================
 // 辅助函数
 // ============================================================================
+
+pub fn is_hidden_by_deleted_folder_mapping(
+    vfs_db: &Arc<VfsDatabase>,
+    item_id: &str,
+) -> Result<bool, String> {
+    let conn = vfs_db.get_conn_safe().map_err(|e| e.to_string())?;
+    let (total_mappings, active_mappings): (i64, i64) = conn
+        .query_row(
+            r#"
+            SELECT
+                COUNT(*),
+                COALESCE(SUM(CASE
+                    WHEN fi.deleted_at IS NULL
+                     AND (fi.folder_id IS NULL OR f.deleted_at IS NULL)
+                    THEN 1 ELSE 0
+                END), 0)
+            FROM folder_items fi
+            LEFT JOIN folders f ON f.id = fi.folder_id
+            WHERE fi.item_id = ?1
+            "#,
+            params![item_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|e| e.to_string())?;
+
+    Ok(total_mappings > 0 && active_mappings == 0)
+}
 
 /// 根据类型和 ID 获取资源
 pub async fn get_resource_by_type_and_id(
@@ -202,6 +231,53 @@ pub async fn get_resource_folder_path(
 ) -> Result<String, String> {
     crate::vfs::ref_handlers::get_resource_path_internal(vfs_db, source_id)
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vfs::{VfsFolder, VfsFolderItem, VfsFolderRepo};
+    use tempfile::TempDir;
+
+    fn setup_test_db() -> (TempDir, Arc<VfsDatabase>) {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let db = Arc::new(VfsDatabase::new(temp_dir.path()).expect("create vfs db"));
+        (temp_dir, db)
+    }
+
+    #[test]
+    fn deleted_folder_mapping_hides_otherwise_active_resource() {
+        let (_temp_dir, db) = setup_test_db();
+        let folder = VfsFolder::new("Attachments".to_string(), None, None, None);
+        VfsFolderRepo::create_folder(&db, &folder).expect("create folder");
+        let file =
+            VfsFileRepo::create_file(&db, "sha1", "ghost.png", 10, "image", None, None, None)
+                .expect("create file");
+        let item = VfsFolderItem::new(Some(folder.id.clone()), "file".to_string(), file.id.clone());
+        VfsFolderRepo::add_item_to_folder(&db, &item).expect("add item");
+
+        assert!(!is_hidden_by_deleted_folder_mapping(&db, &file.id).expect("visible"));
+
+        VfsFolderRepo::delete_folder(&db, &folder.id).expect("delete folder");
+
+        assert!(is_hidden_by_deleted_folder_mapping(&db, &file.id).expect("hidden"));
+    }
+
+    #[test]
+    fn root_or_unassigned_resources_remain_visible() {
+        let (_temp_dir, db) = setup_test_db();
+        let unassigned =
+            VfsFileRepo::create_file(&db, "sha2", "loose.pdf", 10, "document", None, None, None)
+                .expect("create unassigned file");
+        let root =
+            VfsFileRepo::create_file(&db, "sha3", "root.pdf", 10, "document", None, None, None)
+                .expect("create root file");
+        let item = VfsFolderItem::new(None, "file".to_string(), root.id.clone());
+        VfsFolderRepo::add_item_to_folder(&db, &item).expect("add root item");
+
+        assert!(!is_hidden_by_deleted_folder_mapping(&db, &unassigned.id).expect("unassigned"));
+        assert!(!is_hidden_by_deleted_folder_mapping(&db, &root.id).expect("root"));
+    }
 }
 
 /// UUID 格式 ID 回退查找

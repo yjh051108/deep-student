@@ -15,6 +15,7 @@ use crate::vfs::{
 use super::{
     exam_to_dstu_node, file_to_dstu_node, get_resource_folder_path, mindmap_to_dstu_node,
     note_to_dstu_node, session_to_dstu_node, textbook_to_dstu_node, translation_to_dstu_node,
+    is_hidden_by_deleted_folder_mapping,
 };
 
 /// 按类型列出资源，但返回文件夹路径（智能文件夹模式）
@@ -55,6 +56,9 @@ pub async fn list_resources_by_type_with_folder_path(
                     }
                 };
                 for note in notes {
+                    if is_hidden_by_deleted_folder_mapping(vfs_db, &note.id)? {
+                        continue;
+                    }
                     let folder_path = get_resource_folder_path(vfs_db, &note.id).await?;
                     let mut node = note_to_dstu_node(&note);
                     // P1-10: 写回真实文件夹路径
@@ -89,6 +93,9 @@ pub async fn list_resources_by_type_with_folder_path(
                     let note_tags: std::collections::HashSet<String> =
                         note.tags.iter().map(|t| t.trim().to_lowercase()).collect();
                     if !required_tags.iter().all(|t| note_tags.contains(t)) {
+                        continue;
+                    }
+                    if is_hidden_by_deleted_folder_mapping(vfs_db, &note.id)? {
                         continue;
                     }
                     if skipped < offset {
@@ -126,6 +133,9 @@ pub async fn list_resources_by_type_with_folder_path(
                 }
             };
             for tb in textbooks {
+                if is_hidden_by_deleted_folder_mapping(vfs_db, &tb.id)? {
+                    continue;
+                }
                 let folder_path = get_resource_folder_path(vfs_db, &tb.id).await?;
                 let mut node = textbook_to_dstu_node(&tb);
                 // P1-10: 写回真实文件夹路径
@@ -147,6 +157,9 @@ pub async fn list_resources_by_type_with_folder_path(
                 }
             };
             for exam in exams {
+                if is_hidden_by_deleted_folder_mapping(vfs_db, &exam.id)? {
+                    continue;
+                }
                 let folder_path = get_resource_folder_path(vfs_db, &exam.id).await?;
                 let mut node = exam_to_dstu_node(&exam);
                 // P1-10: 写回真实文件夹路径
@@ -168,6 +181,9 @@ pub async fn list_resources_by_type_with_folder_path(
                 }
             };
             for tr in translations {
+                if is_hidden_by_deleted_folder_mapping(vfs_db, &tr.id)? {
+                    continue;
+                }
                 let folder_path = get_resource_folder_path(vfs_db, &tr.id).await?;
                 let mut node = translation_to_dstu_node(&tr);
                 // P1-10: 写回真实文件夹路径
@@ -184,6 +200,9 @@ pub async fn list_resources_by_type_with_folder_path(
                 }
             };
             for session in sessions {
+                if is_hidden_by_deleted_folder_mapping(vfs_db, &session.id)? {
+                    continue;
+                }
                 let folder_path = get_resource_folder_path(vfs_db, &session.id).await?;
                 let mut node = session_to_dstu_node(&session);
                 // P1-10: 写回真实文件夹路径
@@ -205,6 +224,9 @@ pub async fn list_resources_by_type_with_folder_path(
                 }
             };
             for file in files {
+                if is_hidden_by_deleted_folder_mapping(vfs_db, &file.id)? {
+                    continue;
+                }
                 let folder_path = get_resource_folder_path(vfs_db, &file.id).await?;
                 let mut node = file_to_dstu_node(&file);
                 node.path = folder_path;
@@ -225,6 +247,9 @@ pub async fn list_resources_by_type_with_folder_path(
                 }
             };
             for file in files {
+                if is_hidden_by_deleted_folder_mapping(vfs_db, &file.id)? {
+                    continue;
+                }
                 let folder_path = get_resource_folder_path(vfs_db, &file.id).await?;
                 let mut node = file_to_dstu_node(&file);
                 node.path = folder_path;
@@ -249,6 +274,9 @@ pub async fn list_resources_by_type_with_folder_path(
                 }
             };
             for mm in mindmaps {
+                if is_hidden_by_deleted_folder_mapping(vfs_db, &mm.id)? {
+                    continue;
+                }
                 let folder_path = get_resource_folder_path(vfs_db, &mm.id).await?;
                 let mut node = mindmap_to_dstu_node(&mm);
                 node.path = folder_path;
@@ -278,7 +306,9 @@ pub async fn list_unassigned_notes(
 
     let mut results = Vec::new();
     for note in all_notes {
-        if !assigned_ids.contains(&note.id) {
+        if !assigned_ids.contains(&note.id)
+            && !is_hidden_by_deleted_folder_mapping(vfs_db, &note.id)?
+        {
             results.push(note_to_dstu_node(&note));
         }
     }
@@ -304,7 +334,9 @@ pub async fn list_unassigned_textbooks(
 
     let mut results = Vec::new();
     for textbook in all_textbooks {
-        if !assigned_ids.contains(&textbook.id) {
+        if !assigned_ids.contains(&textbook.id)
+            && !is_hidden_by_deleted_folder_mapping(vfs_db, &textbook.id)?
+        {
             results.push(textbook_to_dstu_node(&textbook));
         }
     }
@@ -330,7 +362,9 @@ pub async fn list_unassigned_exams(
 
     let mut results = Vec::new();
     for exam in all_exams {
-        if !assigned_ids.contains(&exam.id) {
+        if !assigned_ids.contains(&exam.id)
+            && !is_hidden_by_deleted_folder_mapping(vfs_db, &exam.id)?
+        {
             results.push(exam_to_dstu_node(&exam));
         }
     }
@@ -353,7 +387,9 @@ pub async fn list_unassigned_translations(
 
     let mut results = Vec::new();
     for translation in all_translations {
-        if !assigned_ids.contains(&translation.id) {
+        if !assigned_ids.contains(&translation.id)
+            && !is_hidden_by_deleted_folder_mapping(vfs_db, &translation.id)?
+        {
             results.push(translation_to_dstu_node(&translation));
         }
     }
@@ -379,7 +415,9 @@ pub async fn list_unassigned_essays(
 
     let mut results = Vec::new();
     for session in all_sessions {
-        if !assigned_ids.contains(&session.id) {
+        if !assigned_ids.contains(&session.id)
+            && !is_hidden_by_deleted_folder_mapping(vfs_db, &session.id)?
+        {
             results.push(session_to_dstu_node(&session));
         }
     }
