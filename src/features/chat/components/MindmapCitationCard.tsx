@@ -61,6 +61,7 @@ export const MindmapCitationCard: React.FC<MindmapCitationCardProps> = ({
         // MindMapEmbed 内部会自动从版本元数据获取父导图 ID 进行导航
         showOpenButton
         displayTitle={displayTitle}
+        compactErrorFallback
       />
     </div>
   );

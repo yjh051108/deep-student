@@ -104,6 +104,7 @@ const MemoizedBlock = memo<MemoizedBlockProps>(({
         <MarkdownRenderer
           content={block.raw}
           isStreaming={isActive && isStreaming}
+          deferRichEmbeds={isStreaming}
           onLinkClick={onLinkClick}
           extraRemarkPlugins={extraRemarkPlugins}
           onCitationClick={onCitationClick}
@@ -117,6 +118,7 @@ const MemoizedBlock = memo<MemoizedBlockProps>(({
   if (prev.block.isComplete && next.block.isComplete && prev.block.raw === next.block.raw) {
     return (
       prev.isNew === next.isNew &&
+      prev.isStreaming === next.isStreaming &&
       prev.onLinkClick === next.onLinkClick &&
       prev.extraRemarkPlugins === next.extraRemarkPlugins
     );

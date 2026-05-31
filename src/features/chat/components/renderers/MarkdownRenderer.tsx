@@ -124,6 +124,8 @@ interface MarkdownRendererProps {
   className?: string;
   // 当处于流式输出时，禁止触发 mermaid 运行
   isStreaming?: boolean;
+  // 整条消息仍在流式输出时，延迟挂载 ReactFlow 等重型内嵌预览
+  deferRichEmbeds?: boolean;
   // 可选的链接点击处理函数
   onLinkClick?: (url: string) => void;
   extraRemarkPlugins?: any[];
@@ -450,6 +452,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({
   content,
   className = '',
   isStreaming = false,
+  deferRichEmbeds = false,
   onLinkClick,
   extraRemarkPlugins = EMPTY_REMARK_PLUGINS,
   enableCitations,
@@ -705,6 +708,14 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({
               // ★ 2026-02 修复：读取 LLM 提供的标题信息，在加载期间显示
               const rawTitle = props['data-mindmap-title'] as string | undefined;
               const displayTitle = rawTitle ? decodeURIComponent(rawTitle) : undefined;
+              if (isStreaming || deferRichEmbeds) {
+                return (
+                  <span className="mindmap-citation-placeholder">
+                    {displayTitle || mindmapId || mindmapVersionId || '思维导图'}
+                  </span>
+                );
+              }
+
               return (
                 <MindmapCitationCard
                   mindmapId={mindmapId}

@@ -54,6 +54,8 @@ export interface MindMapEmbedProps {
   showOpenButton?: boolean;
   /** 外部传入的显示标题（加载期间 fallback 显示） */
   displayTitle?: string;
+  /** 预览不可用时是否使用紧凑错误态；聊天气泡内避免留下大空框 */
+  compactErrorFallback?: boolean;
 }
 
 interface LoadState {
@@ -325,6 +327,7 @@ export const MindMapEmbed: React.FC<MindMapEmbedProps> = ({
   onOpen,
   showOpenButton = true,
   displayTitle,
+  compactErrorFallback = false,
 }) => {
   const { t } = useTranslation('mindmap');
   const [state, setState] = useState<LoadState>({
@@ -507,6 +510,27 @@ export const MindMapEmbed: React.FC<MindMapEmbedProps> = ({
 
   // 渲染错误状态
   if (state.error) {
+    if (compactErrorFallback) {
+      return (
+        <button
+          type="button"
+          onClick={handleOpen}
+          disabled={!showOpenButton}
+          className={cn(
+            'inline-flex max-w-full items-center gap-2 rounded-md px-2.5 py-1.5',
+            'bg-destructive/5 border border-destructive/20 text-destructive',
+            showOpenButton ? 'cursor-pointer hover:bg-destructive/10' : 'cursor-default',
+            className
+          )}
+        >
+          <WarningCircle size={16} className="shrink-0" />
+          <span className="truncate text-sm">
+            {displayTitle || state.metadata?.title || state.error}
+          </span>
+        </button>
+      );
+    }
+
     return (
       <div
         className={cn(
