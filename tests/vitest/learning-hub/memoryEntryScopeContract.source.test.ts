@@ -58,6 +58,7 @@ describe('learning hub memory entry scope contract', () => {
     expect(preview).not.toContain("getMemoryTree('全局')");
     expect(sidebar).toContain('memoryTreeRootPath');
     expect(sidebar).toContain('const memoryScopeContext = useMemo(() => ({');
+    expect(sidebar).toContain("adminAll: mode !== 'canvas'");
     expect(sidebar).toContain('rootPath={memoryTreeRootPath}');
     expect(sidebar).toContain('context={memoryScopeContext}');
   });

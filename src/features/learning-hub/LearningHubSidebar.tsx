@@ -265,7 +265,8 @@ export function LearningHubSidebar({
   const memoryScopeContext = useMemo(() => ({
     groupId: topicGroupId,
     groupName: topicGroupName,
-  }), [topicGroupId, topicGroupName]);
+    adminAll: mode !== 'canvas',
+  }), [mode, topicGroupId, topicGroupName]);
   const currentQuickAccessType = isInMemoryFolder ? 'memory' as QuickAccessType : baseQuickAccessType;
   const canCreateInCurrentView = viewCapabilities.canCreate;
   const hasResolvedCreateScope =

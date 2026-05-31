@@ -19,6 +19,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 
 use super::executor::{ExecutionContext, ToolExecutor, ToolSensitivity};
+use super::memory_executor::MemoryToolExecutor;
 use super::resource_scope;
 use super::strip_tool_namespace;
 use crate::chat_v2::events::event_types;
@@ -1217,10 +1218,7 @@ impl BuiltinRetrievalExecutor {
                 std::sync::Arc::clone(&lance_store),
                 std::sync::Arc::clone(llm_manager),
             );
-            let scoped_memory_folders = crate::memory::visible_scope_roots(
-                ctx.group_id.as_deref(),
-                ctx.group_name.as_deref(),
-            );
+            let scoped_memory_folders = MemoryToolExecutor::visible_scope_roots_for_context(ctx);
 
             let memory_top_k = (top_k / 2).max(3).min(10);
 

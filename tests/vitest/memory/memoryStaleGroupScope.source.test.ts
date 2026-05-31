@@ -89,6 +89,7 @@ describe('memory and resource scope stale group contract', () => {
     expect(memoryExecutorSource).toContain('fn load_active_group_scope');
     expect(memoryExecutorSource).toContain('fn load_active_session_scope');
     expect(memoryExecutorSource).toContain('fn effective_topic_scope');
+    expect(memoryExecutorSource).toContain('pub(crate) fn visible_scope_roots_for_context');
     expect(memoryExecutorSource).toContain('PersistStatus::Active');
     expect(memoryExecutorSource).toContain('ctx.chat_v2_db.is_some()');
 
@@ -138,6 +139,7 @@ describe('memory and resource scope stale group contract', () => {
     expect(retrievalSource).toContain('resource_scope::current_topic_folder_roots(ctx)');
     expect(retrievalSource).toContain('resource_scope::folder_is_within_roots(');
     expect(retrievalSource).toContain('resource_scope::ensure_item_in_scope(');
+    expect(retrievalSource).toContain('MemoryToolExecutor::visible_scope_roots_for_context(ctx)');
     expect(retrievalSource).toContain('self.scoped_filters(ctx, vfs_db, explicit_folder_ids, explicit_resource_ids)?');
   });
 });

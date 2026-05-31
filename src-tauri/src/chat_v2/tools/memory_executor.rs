@@ -92,7 +92,7 @@ impl MemoryToolExecutor {
         )
     }
 
-    fn visible_scope_roots(ctx: &ExecutionContext) -> Vec<String> {
+    pub(crate) fn visible_scope_roots_for_context(ctx: &ExecutionContext) -> Vec<String> {
         let effective_scope = Self::effective_topic_scope(ctx);
         crate::memory::visible_scope_roots(
             effective_scope
@@ -102,6 +102,10 @@ impl MemoryToolExecutor {
                 .as_ref()
                 .map(|scope| scope.group_name.as_str()),
         )
+    }
+
+    fn visible_scope_roots(ctx: &ExecutionContext) -> Vec<String> {
+        Self::visible_scope_roots_for_context(ctx)
     }
 
     fn scoped_folder_path(
