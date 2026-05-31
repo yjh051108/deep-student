@@ -106,4 +106,19 @@ describe('learning hub memory entry scope contract', () => {
     expect(memoryView).not.toContain(': [GLOBAL_MEMORY_ROOT, TOPIC_MEMORY_ROOT];');
     expect(memoryView).not.toContain("t('memory.scope_all_topics_global', '全局 + 所有课题')");
   });
+
+  it('keeps all-memory MemoryView mode read-only', () => {
+    const memoryView = readFileSync(
+      resolve(process.cwd(), 'src/features/learning-hub/views/MemoryView.tsx'),
+      'utf-8'
+    );
+
+    expect(memoryView).toContain("const canMutateMemory = memoryScopeFilter !== 'all';");
+    expect(memoryView).toContain('if (!canMutateMemory) return;');
+    expect(memoryView).toContain('{canMutateMemory && !isCreatingInline && !batchMode && (');
+    expect(memoryView).toContain('{canMutateMemory && batchMode && (');
+    expect(memoryView).toContain('canMutate={canMutateMemory}');
+    expect(memoryView).toContain('{canMutate && (');
+    expect(memoryView).toContain('<ArrowSquareOut size={12} />编辑器');
+  });
 });

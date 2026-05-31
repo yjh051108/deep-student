@@ -238,6 +238,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({
     : t('memory.scope_global', '全局');
   const effectiveNewMemoryScope: MemoryScopeValue = hasTopicMemoryScope ? newMemoryScope : 'global';
   const effectiveBatchImportScope: MemoryScopeValue = hasTopicMemoryScope ? batchImportScope : 'global';
+  const canMutateMemory = memoryScopeFilter !== 'all';
 
   useEffect(() => {
     if (!hasTopicMemoryScope) {
@@ -245,6 +246,16 @@ export const MemoryView: React.FC<MemoryViewProps> = ({
       setBatchImportScope('global');
     }
   }, [hasTopicMemoryScope]);
+
+  useEffect(() => {
+    if (!canMutateMemory) {
+      setBatchMode(false);
+      setSelectedIds(new Set());
+      setIsCreatingInline(false);
+      setIsBatchImporting(false);
+      setEditingMemoryId(null);
+    }
+  }, [canMutateMemory]);
 
   // ========== 加载配置和记忆列表 ==========
   const loadConfig = useCallback(async () => {
@@ -377,6 +388,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({
 
   // ========== 创建记忆 ==========
   const handleCreateMemory = useCallback(async () => {
+    if (!canMutateMemory) return;
     if (!newMemoryTitle.trim() || !newMemoryContent.trim()) {
       showGlobalNotification('error', t('memory.empty_content', '标题和内容不能为空'));
       return;
@@ -427,7 +439,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [newMemoryTitle, newMemoryContent, newMemoryType, newMemoryPurpose, effectiveNewMemoryScope, hasTopicMemoryScope, topicGroupId, topicGroupName, t, loadMemories]);
+  }, [canMutateMemory, newMemoryTitle, newMemoryContent, newMemoryType, newMemoryPurpose, effectiveNewMemoryScope, hasTopicMemoryScope, topicGroupId, topicGroupName, t, loadMemories]);
 
   const handleCancelCreate = useCallback(() => {
     setIsCreatingInline(false);
@@ -468,6 +480,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({
   }, []);
 
   const handleBatchImport = useCallback(async () => {
+    if (!canMutateMemory) return;
     const items = parseBatchImportItems(batchImportText);
     if (items.length === 0) {
       showGlobalNotification('error', t('memory.batch_import_empty', '请先粘贴要导入的内容'));
@@ -513,7 +526,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [batchImportPurpose, batchImportText, batchImportType, effectiveBatchImportScope, topicGroupId, topicGroupName, handleCancelBatchImport, loadMemories, parseBatchImportItems, t]);
+  }, [canMutateMemory, batchImportPurpose, batchImportText, batchImportType, effectiveBatchImportScope, topicGroupId, topicGroupName, handleCancelBatchImport, loadMemories, parseBatchImportItems, t]);
 
   // ========== 内联展开预览 ==========
   const handleToggleExpand = useCallback(async (noteId: string) => {
@@ -585,6 +598,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({
 
   // ★ 修复风险3：删除记忆
   const handleDeleteMemory = useCallback(async (noteId: string) => {
+    if (!canMutateMemory) return;
     if (!unifiedConfirm(t('memory.delete_confirm', '确定要删除这条记忆吗？'))) return;
 
     setIsLoading(true);
@@ -603,10 +617,11 @@ export const MemoryView: React.FC<MemoryViewProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [t, loadMemories, expandedMemoryId, memoryScopeContext]);
+  }, [canMutateMemory, t, loadMemories, expandedMemoryId, memoryScopeContext]);
 
   // ========== 批量删除 ==========
   const handleBatchDelete = useCallback(async () => {
+    if (!canMutateMemory) return;
     if (selectedIds.size === 0) return;
     if (!unifiedConfirm(t('memory.batch_delete_confirm', `确定要删除选中的 ${selectedIds.size} 条记忆吗？`))) return;
 
@@ -631,7 +646,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [selectedIds, t, loadMemories, expandedMemoryId, memoryScopeContext]);
+  }, [canMutateMemory, selectedIds, t, loadMemories, expandedMemoryId, memoryScopeContext]);
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds(prev => {
@@ -1008,14 +1023,16 @@ export const MemoryView: React.FC<MemoryViewProps> = ({
         <div className="w-px h-5 bg-border/50" />
 
         {/* 操作 */}
-        <NotionButton
-          variant="ghost" size="icon" iconOnly
-          onClick={() => { setBatchMode(!batchMode); setSelectedIds(new Set()); }}
-          className={cn(batchMode && 'text-primary bg-primary/10')}
-          aria-label="batch"
-        >
-          <CheckSquare size={16} />
-        </NotionButton>
+        {canMutateMemory && (
+          <NotionButton
+            variant="ghost" size="icon" iconOnly
+            onClick={() => { setBatchMode(!batchMode); setSelectedIds(new Set()); }}
+            className={cn(batchMode && 'text-primary bg-primary/10')}
+            aria-label="batch"
+          >
+            <CheckSquare size={16} />
+          </NotionButton>
+        )}
         <NotionButton variant="ghost" size="icon" iconOnly onClick={handleExportMemories} disabled={isLoading} aria-label="export">
           <Download size={16} />
         </NotionButton>
@@ -1040,7 +1057,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({
         >
           <ClockCounterClockwise size={16} />
         </NotionButton>
-        {!isCreatingInline && !batchMode && (
+        {canMutateMemory && !isCreatingInline && !batchMode && (
           <>
             <NotionButton variant="ghost" size="sm" onClick={() => setIsBatchImporting(true)} className="text-emerald-600 hover:bg-emerald-500/10">
               <ListPlus size={16} />
@@ -1052,7 +1069,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({
             </NotionButton>
           </>
         )}
-        {batchMode && (
+        {canMutateMemory && batchMode && (
           <>
             <NotionButton
               variant="ghost" size="sm"
@@ -1575,6 +1592,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({
                   onSaveEdit={handleSaveEdit}
                   onCancelEdit={handleCancelEdit}
                   isLoading={isLoading}
+                  canMutate={canMutateMemory}
                   depth={0}
                   isRoot
                 />
@@ -1662,6 +1680,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({
                           onDeleteNote={handleDeleteMemory}
                           onOpenInEditor={handleOpenInEditor}
                           isLoading={isLoading}
+                          canMutate={canMutateMemory}
                           className="mx-3 mb-2"
                         />
                       )}
@@ -1675,9 +1694,11 @@ export const MemoryView: React.FC<MemoryViewProps> = ({
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
               <MemoryIcon size={40} className="mb-3 opacity-40" />
               <span className="text-sm mb-2">{t('memory.empty', '暂无记忆')}</span>
-              <NotionButton variant="ghost" size="sm" onClick={() => setIsCreatingInline(true)} className="text-primary hover:underline !p-0 !h-auto">
-                {t('memory.create_first', '创建第一条记忆')}
-              </NotionButton>
+              {canMutateMemory && (
+                <NotionButton variant="ghost" size="sm" onClick={() => setIsCreatingInline(true)} className="text-primary hover:underline !p-0 !h-auto">
+                  {t('memory.create_first', '创建第一条记忆')}
+                </NotionButton>
+              )}
             </div>
           ) : viewMode === 'list' ? (
             // 记忆列表 - 内联展开布局 + 批量选择 + 内联编辑
@@ -1746,7 +1767,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({
                           )}
                         </div>
                       </div>
-                      {!batchMode && (
+                      {!batchMode && canMutateMemory && (
                         <NotionButton variant="ghost" size="icon" iconOnly className="!p-1.5 text-muted-foreground/0 group-hover:text-muted-foreground group-focus-within:text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10" onClick={(event) => { event.stopPropagation(); handleDeleteMemory(memory.id); }} aria-label="delete">
                           <Trash size={14} />
                         </NotionButton>
@@ -1767,6 +1788,7 @@ export const MemoryView: React.FC<MemoryViewProps> = ({
                         onDeleteNote={handleDeleteMemory}
                         onOpenInEditor={handleOpenInEditor}
                         isLoading={isLoading}
+                        canMutate={canMutateMemory}
                         className="mx-3 mb-2"
                       />
                     )}
@@ -1844,6 +1866,7 @@ interface MemoryTreeNodeProps {
   onSaveEdit: () => void;
   onCancelEdit: () => void;
   isLoading: boolean;
+  canMutate: boolean;
   depth: number;
   isRoot?: boolean;
 }
@@ -1852,7 +1875,7 @@ const MemoryTreeNode: React.FC<MemoryTreeNodeProps> = React.memo(({
   node, expandedFolders, noteTitleMap, onToggleFolder, onClickNote, onDeleteNote, onOpenInEditor,
   expandedMemoryId, expandedContent, isLoadingContent,
   editingMemoryId, editContent, onEditContentChange, onStartEdit, onSaveEdit, onCancelEdit,
-  isLoading, depth, isRoot,
+  isLoading, canMutate, depth, isRoot,
 }) => {
   const isFolderExpanded = isRoot || expandedFolders.has(node.folder.id);
   const hasChildren = node.children.length > 0 || node.items.length > 0;
@@ -1906,6 +1929,7 @@ const MemoryTreeNode: React.FC<MemoryTreeNodeProps> = React.memo(({
               onSaveEdit={onSaveEdit}
               onCancelEdit={onCancelEdit}
               isLoading={isLoading}
+              canMutate={canMutate}
               depth={isRoot ? depth : depth + 1}
             />
           ))}
@@ -1946,14 +1970,16 @@ const MemoryTreeNode: React.FC<MemoryTreeNodeProps> = React.memo(({
                     {meta?.isImportant && (
                       <Star size={12} className="text-amber-500 flex-shrink-0" weight="fill" />
                     )}
-                    <NotionButton
-                      variant="ghost" size="icon" iconOnly
-                      className="!p-1 text-muted-foreground/0 group-hover:text-muted-foreground group-focus-within:text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10"
-                      onClick={(e) => { e.stopPropagation(); onDeleteNote(noteId); }}
-                      aria-label="delete"
-                    >
-                      <Trash size={12} />
-                    </NotionButton>
+                    {canMutate && (
+                      <NotionButton
+                        variant="ghost" size="icon" iconOnly
+                        className="!p-1 text-muted-foreground/0 group-hover:text-muted-foreground group-focus-within:text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10"
+                        onClick={(e) => { e.stopPropagation(); onDeleteNote(noteId); }}
+                        aria-label="delete"
+                      >
+                        <Trash size={12} />
+                      </NotionButton>
+                    )}
                   </div>
 
                   {isNoteExpanded && (
@@ -1971,6 +1997,7 @@ const MemoryTreeNode: React.FC<MemoryTreeNodeProps> = React.memo(({
                       onDeleteNote={onDeleteNote}
                       onOpenInEditor={onOpenInEditor}
                       isLoading={isLoading}
+                      canMutate={canMutate}
                       className="mx-3 mb-1"
                     />
                   )}
@@ -2001,6 +2028,7 @@ interface MemoryExpandPanelProps {
   onDeleteNote: (noteId: string) => void;
   onOpenInEditor: (noteId: string, title: string) => void;
   isLoading: boolean;
+  canMutate: boolean;
   className?: string;
 }
 
@@ -2008,7 +2036,7 @@ const MemoryExpandPanel: React.FC<MemoryExpandPanelProps> = React.memo(({
   noteId, noteTitle, isLoadingContent, expandedContent,
   editingMemoryId, editContent, onEditContentChange,
   onStartEdit, onSaveEdit, onCancelEdit,
-  onDeleteNote, onOpenInEditor, isLoading, className,
+  onDeleteNote, onOpenInEditor, isLoading, canMutate, className,
 }) => {
   const isEditing = editingMemoryId === noteId;
 
@@ -2055,18 +2083,22 @@ const MemoryExpandPanel: React.FC<MemoryExpandPanelProps> = React.memo(({
           )}
           <div className="flex items-center justify-between px-3 py-1.5 border-t border-border/30 bg-muted/20">
             <div className="flex items-center gap-1.5">
-              <NotionButton variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onDeleteNote(noteId); }} className="text-rose-500 hover:bg-rose-500/10 !h-auto !px-2 !py-1 text-xs">
-                <Trash size={12} />删除
-              </NotionButton>
-              {!isEditing && (
+              {canMutate && (
+                <NotionButton variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onDeleteNote(noteId); }} className="text-rose-500 hover:bg-rose-500/10 !h-auto !px-2 !py-1 text-xs">
+                  <Trash size={12} />删除
+                </NotionButton>
+              )}
+              {canMutate && !isEditing && (
                 <NotionButton variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onStartEdit(noteId, expandedContent.content || ''); }} className="text-muted-foreground hover:bg-[var(--interactive-hover)] !h-auto !px-2 !py-1 text-xs">
                   <PencilSimple size={12} />编辑
                 </NotionButton>
               )}
             </div>
-            <NotionButton variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onOpenInEditor(noteId, noteTitle); }} className="text-primary bg-primary/10 hover:bg-primary/15 !h-auto !px-2 !py-1 text-xs font-medium">
-              <ArrowSquareOut size={12} />编辑器
-            </NotionButton>
+            {canMutate && (
+              <NotionButton variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onOpenInEditor(noteId, noteTitle); }} className="text-primary bg-primary/10 hover:bg-primary/15 !h-auto !px-2 !py-1 text-xs font-medium">
+                <ArrowSquareOut size={12} />编辑器
+              </NotionButton>
+            )}
           </div>
         </>
       ) : null}

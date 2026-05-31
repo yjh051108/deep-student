@@ -130,6 +130,17 @@ impl MemoryToolExecutor {
         MemoryScope::from_arg(call.arguments.get("scope").and_then(|v| v.as_str()))
     }
 
+    fn parse_write_scope(call: &ToolCall, ctx: &ExecutionContext) -> Result<MemoryScope, String> {
+        if call.arguments.get("scope").is_some() {
+            return Self::parse_scope(call);
+        }
+        if Self::topic_memory_root(ctx).is_some() {
+            Ok(MemoryScope::Topic)
+        } else {
+            Ok(MemoryScope::Global)
+        }
+    }
+
     fn ensure_writable_scope(ctx: &ExecutionContext, scope: MemoryScope) -> Result<(), String> {
         if matches!(scope, MemoryScope::Topic) && Self::topic_memory_root(ctx).is_none() {
             Err("当前会话不属于任何课题，无法写入课题记忆；请使用 scope='global'".to_string())
@@ -435,7 +446,7 @@ impl MemoryToolExecutor {
             .get("folder")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
-        let scope = Self::parse_scope(call)?;
+        let scope = Self::parse_write_scope(call, ctx)?;
         if note_id.is_none() {
             Self::ensure_writable_scope(ctx, scope)?;
         }
@@ -617,16 +628,14 @@ impl MemoryToolExecutor {
             .get("folder")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
-        let scope = Self::parse_scope(call)?;
+        let scope = Self::parse_write_scope(call, ctx)?;
         let has_explicit_scope = call.arguments.get("scope").is_some();
-        let effective_scope = if !has_explicit_scope
-            && folder.is_some()
-            && Self::topic_memory_root(ctx).is_none()
-        {
-            MemoryScope::Global
-        } else {
-            scope
-        };
+        let effective_scope =
+            if !has_explicit_scope && folder.is_some() && Self::topic_memory_root(ctx).is_none() {
+                MemoryScope::Global
+            } else {
+                scope
+            };
         let scoped_folder = if folder.is_some() {
             Self::scoped_folder_path(ctx, effective_scope, folder.as_deref()).map(|path| vec![path])
         } else {
@@ -848,7 +857,7 @@ impl MemoryToolExecutor {
             .and_then(|v| v.as_str())
             .ok_or("Missing 'content' parameter")?;
         let folder = call.arguments.get("folder").and_then(|v| v.as_str());
-        let scope = Self::parse_scope(call)?;
+        let scope = Self::parse_write_scope(call, ctx)?;
         Self::ensure_writable_scope(ctx, scope)?;
         let scoped_folder = Self::scoped_folder_path(ctx, scope, folder);
         let memory_type = Self::parse_memory_type(
@@ -1048,7 +1057,7 @@ impl MemoryToolExecutor {
                 .and_then(|v| v.as_str())
                 .map(|scope| MemoryScope::from_arg(Some(scope)))
                 .transpose()?
-                .unwrap_or(Self::parse_scope(call)?);
+                .unwrap_or(Self::parse_write_scope(call, ctx)?);
             Self::ensure_writable_scope(ctx, item_scope)?;
             let scoped_folder = Self::scoped_folder_path(ctx, item_scope, folder);
             let memory_type = Self::parse_memory_type(

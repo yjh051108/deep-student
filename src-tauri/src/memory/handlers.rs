@@ -125,8 +125,8 @@ fn scoped_visible_paths(
             .map(|name| !name.trim().is_empty())
             .unwrap_or(false)
     {
-        let chat_db = chat_db
-            .ok_or_else(|| "memory topic reads require chat database state".to_string())?;
+        let chat_db =
+            chat_db.ok_or_else(|| "memory topic reads require chat database state".to_string())?;
         let (resolved_group_id, resolved_group_name) =
             resolve_active_memory_topic(chat_db, group_id)?;
         Ok(Some(crate::memory::readable_scope_roots(
@@ -173,8 +173,7 @@ fn scoped_read_paths(
         .map(|path| path.trim().to_string())
         .filter(|path| !path.is_empty());
 
-    let Some(visible_roots) =
-        scoped_visible_paths(Some(chat_db), group_id, group_name, admin_all)?
+    let Some(visible_roots) = scoped_visible_paths(Some(chat_db), group_id, group_name, admin_all)?
     else {
         if explicit_paths.is_empty() {
             return Ok(single_path.map(|path| vec![path]));
@@ -204,8 +203,7 @@ fn validate_note_visible(
     group_name: Option<&str>,
     admin_all: Option<bool>,
 ) -> Result<(), String> {
-    let Some(visible_roots) =
-        scoped_visible_paths(Some(chat_db), group_id, group_name, admin_all)?
+    let Some(visible_roots) = scoped_visible_paths(Some(chat_db), group_id, group_name, admin_all)?
     else {
         return Ok(());
     };
@@ -222,7 +220,10 @@ fn scoped_mutation_roots(
     admin_all: Option<bool>,
 ) -> Result<Option<Vec<String>>, String> {
     if admin_all.unwrap_or(false) {
-        return Ok(None);
+        return Err(
+            "admin_all memory access is read-only; mutations require a concrete topic or global scope"
+                .to_string(),
+        );
     }
     if group_id.map(|id| !id.trim().is_empty()).unwrap_or(false)
         || group_name
@@ -246,15 +247,18 @@ fn validate_note_mutable(
     group_id: Option<&str>,
     group_name: Option<&str>,
     admin_all: Option<bool>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let Some(visible_roots) = scoped_mutation_roots(chat_db, group_id, group_name, admin_all)?
     else {
-        return Ok(());
+        return service
+            .get_note_folder_path(note_id)
+            .map_err(|e| e.to_string());
     };
     let folder_path = service
         .get_note_folder_path(note_id)
         .map_err(|e| e.to_string())?;
-    validate_memory_path_visible(&folder_path, &visible_roots)
+    validate_memory_path_visible(&folder_path, &visible_roots)?;
+    Ok(folder_path)
 }
 
 fn validate_memory_mutation_path_visible(
@@ -298,6 +302,36 @@ fn scoped_maintenance_paths(
         .unwrap_or_default()
 }
 
+fn push_unique_path(paths: &mut Vec<String>, path: String) {
+    if !paths.iter().any(|existing| existing == &path) {
+        paths.push(path);
+    }
+}
+
+fn reject_admin_all_mutation(admin_all: Option<bool>) -> Result<(), String> {
+    if admin_all.unwrap_or(false) {
+        Err(
+            "admin_all memory access is read-only; mutations require a concrete topic or global scope"
+                .to_string(),
+        )
+    } else {
+        Ok(())
+    }
+}
+
+fn default_write_scope(
+    scope: Option<&str>,
+    group_id: Option<&str>,
+) -> Result<crate::memory::MemoryScope, String> {
+    match scope {
+        Some(raw) => crate::memory::MemoryScope::from_arg(Some(raw)),
+        None if group_id.map(|id| !id.trim().is_empty()).unwrap_or(false) => {
+            Ok(crate::memory::MemoryScope::Topic)
+        }
+        None => Ok(crate::memory::MemoryScope::Global),
+    }
+}
+
 fn resolve_memory_write_folder(
     chat_db: &ChatV2Database,
     folder_path: Option<&str>,
@@ -306,13 +340,7 @@ fn resolve_memory_write_folder(
     group_name: Option<&str>,
     admin_all: Option<bool>,
 ) -> Result<Option<String>, String> {
-    if admin_all.unwrap_or(false) {
-        return Ok(folder_path
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-            .map(String::from)
-            .or(Some(crate::memory::GLOBAL_MEMORY_FOLDER.to_string())));
-    }
+    reject_admin_all_mutation(admin_all)?;
 
     if group_id.map(|id| id.trim().is_empty()).unwrap_or(true)
         && group_name
@@ -892,9 +920,10 @@ pub async fn memory_batch_delete(
     let mut succeeded = 0usize;
     let mut failed = 0usize;
     let mut errors: Vec<String> = Vec::new();
+    let mut maintenance_paths: Vec<String> = Vec::new();
 
     for note_id in &note_ids {
-        if let Err(e) = validate_note_mutable(
+        let source_folder = match validate_note_mutable(
             chat_db.inner().as_ref(),
             &service,
             note_id,
@@ -902,14 +931,20 @@ pub async fn memory_batch_delete(
             group_name.as_deref(),
             admin_all,
         ) {
-            failed += 1;
-            if errors.len() < 5 {
-                errors.push(format!("{}: {}", note_id, e));
+            Ok(path) => path,
+            Err(e) => {
+                failed += 1;
+                if errors.len() < 5 {
+                    errors.push(format!("{}: {}", note_id, e));
+                }
+                continue;
             }
-            continue;
-        }
+        };
         match service.delete(note_id).await {
-            Ok(()) => succeeded += 1,
+            Ok(()) => {
+                succeeded += 1;
+                push_unique_path(&mut maintenance_paths, source_folder);
+            }
             Err(e) => {
                 failed += 1;
                 if errors.len() < 5 {
@@ -920,14 +955,7 @@ pub async fn memory_batch_delete(
     }
 
     if succeeded > 0 {
-        service.spawn_post_write_maintenance_for_paths(scoped_maintenance_paths(
-            &service,
-            None,
-            None,
-            group_id.as_deref(),
-            group_name.as_deref(),
-            admin_all,
-        ));
+        service.spawn_post_write_maintenance_for_paths(maintenance_paths);
     }
 
     Ok(BatchOperationResult {
@@ -956,6 +984,7 @@ pub async fn memory_batch_move(
     let mut succeeded = 0usize;
     let mut failed = 0usize;
     let mut errors: Vec<String> = Vec::new();
+    let mut maintenance_paths = vec![target_folder_path.clone()];
     validate_memory_mutation_path_visible(
         chat_db.inner().as_ref(),
         &target_folder_path,
@@ -965,7 +994,7 @@ pub async fn memory_batch_move(
     )?;
 
     for note_id in &note_ids {
-        if let Err(e) = validate_note_mutable(
+        let source_folder = match validate_note_mutable(
             chat_db.inner().as_ref(),
             &service,
             note_id,
@@ -973,14 +1002,20 @@ pub async fn memory_batch_move(
             group_name.as_deref(),
             admin_all,
         ) {
-            failed += 1;
-            if errors.len() < 5 {
-                errors.push(format!("{}: {}", note_id, e));
+            Ok(path) => path,
+            Err(e) => {
+                failed += 1;
+                if errors.len() < 5 {
+                    errors.push(format!("{}: {}", note_id, e));
+                }
+                continue;
             }
-            continue;
-        }
+        };
         match service.move_to_folder(note_id, &target_folder_path) {
-            Ok(()) => succeeded += 1,
+            Ok(()) => {
+                succeeded += 1;
+                push_unique_path(&mut maintenance_paths, source_folder);
+            }
             Err(e) => {
                 failed += 1;
                 if errors.len() < 5 {
@@ -991,14 +1026,7 @@ pub async fn memory_batch_move(
     }
 
     if succeeded > 0 {
-        service.spawn_post_write_maintenance_for_paths(scoped_maintenance_paths(
-            &service,
-            None,
-            Some(&target_folder_path),
-            group_id.as_deref(),
-            group_name.as_deref(),
-            admin_all,
-        ));
+        service.spawn_post_write_maintenance_for_paths(maintenance_paths);
     }
 
     Ok(BatchOperationResult {
@@ -1023,7 +1051,7 @@ pub async fn memory_move_to_folder(
     chat_db: State<'_, Arc<ChatV2Database>>,
 ) -> Result<(), String> {
     let service = get_memory_service(&vfs_db, &lance_store, &llm_manager);
-    validate_note_mutable(
+    let source_folder = validate_note_mutable(
         chat_db.inner().as_ref(),
         &service,
         &note_id,
@@ -1041,14 +1069,9 @@ pub async fn memory_move_to_folder(
     service
         .move_to_folder(&note_id, &target_folder_path)
         .map_err(|e| e.to_string())?;
-    service.spawn_post_write_maintenance_for_paths(scoped_maintenance_paths(
-        &service,
-        None,
-        Some(&target_folder_path),
-        group_id.as_deref(),
-        group_name.as_deref(),
-        admin_all,
-    ));
+    let mut maintenance_paths = vec![target_folder_path];
+    push_unique_path(&mut maintenance_paths, source_folder);
+    service.spawn_post_write_maintenance_for_paths(maintenance_paths);
     Ok(())
 }
 
@@ -1112,7 +1135,7 @@ pub async fn memory_delete(
     chat_db: State<'_, Arc<ChatV2Database>>,
 ) -> Result<(), String> {
     let service = get_memory_service(&vfs_db, &lance_store, &llm_manager);
-    validate_note_mutable(
+    let source_folder = validate_note_mutable(
         chat_db.inner().as_ref(),
         &service,
         &note_id,
@@ -1121,14 +1144,7 @@ pub async fn memory_delete(
         admin_all,
     )?;
     service.delete(&note_id).await.map_err(|e| e.to_string())?;
-    service.spawn_post_write_maintenance_for_paths(scoped_maintenance_paths(
-        &service,
-        None,
-        None,
-        group_id.as_deref(),
-        group_name.as_deref(),
-        admin_all,
-    ));
+    service.spawn_post_write_maintenance_for_paths(vec![source_folder]);
     Ok(())
 }
 
@@ -1313,6 +1329,7 @@ pub async fn memory_write_smart(
     scope: Option<String>,
     group_id: Option<String>,
     group_name: Option<String>,
+    admin_all: Option<bool>,
     title: String,
     content: String,
     memory_type: Option<String>,
@@ -1324,6 +1341,7 @@ pub async fn memory_write_smart(
     chat_db: State<'_, Arc<ChatV2Database>>,
 ) -> Result<SmartWriteOutput, String> {
     let _ = group_name.as_deref();
+    reject_admin_all_mutation(admin_all)?;
     if title.trim().is_empty() {
         return Err("标题不能为空".to_string());
     }
@@ -1334,11 +1352,7 @@ pub async fn memory_write_smart(
     let service = get_memory_service(&vfs_db, &lance_store, &llm_manager);
     let mem_type = parse_memory_type(memory_type.as_deref())?;
     let purpose = parse_memory_purpose(memory_purpose.as_deref())?;
-    let memory_scope = scope
-        .as_deref()
-        .map(|s| crate::memory::MemoryScope::from_arg(Some(s)))
-        .transpose()?
-        .unwrap_or(crate::memory::MemoryScope::Topic);
+    let memory_scope = default_write_scope(scope.as_deref(), group_id.as_deref())?;
     let scoped_folder = match memory_scope {
         crate::memory::MemoryScope::Global => Some(crate::memory::join_memory_folder_paths(
             crate::memory::GLOBAL_MEMORY_FOLDER,
@@ -1388,6 +1402,7 @@ pub async fn memory_write_batch(
     default_scope: Option<String>,
     group_id: Option<String>,
     group_name: Option<String>,
+    admin_all: Option<bool>,
     default_memory_type: Option<String>,
     default_memory_purpose: Option<String>,
     vfs_db: State<'_, Arc<VfsDatabase>>,
@@ -1396,6 +1411,7 @@ pub async fn memory_write_batch(
     chat_db: State<'_, Arc<ChatV2Database>>,
 ) -> Result<MemoryBatchWriteOutput, String> {
     let _ = group_name.as_deref();
+    reject_admin_all_mutation(admin_all)?;
     if items.is_empty() {
         return Ok(MemoryBatchWriteOutput {
             total: 0,
@@ -1416,11 +1432,7 @@ pub async fn memory_write_batch(
         .transpose()?
         .unwrap_or(super::service::MemoryType::Study);
     let default_purpose = parse_memory_purpose(default_memory_purpose.as_deref())?;
-    let parsed_default_scope = default_scope
-        .as_deref()
-        .map(|s| crate::memory::MemoryScope::from_arg(Some(s)))
-        .transpose()?
-        .unwrap_or(crate::memory::MemoryScope::Topic);
+    let parsed_default_scope = default_write_scope(default_scope.as_deref(), group_id.as_deref())?;
     let resolved_topic = if parsed_default_scope == crate::memory::MemoryScope::Topic
         || items.iter().any(|item| {
             item.scope

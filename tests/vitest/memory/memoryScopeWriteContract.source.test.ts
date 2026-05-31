@@ -103,6 +103,64 @@ describe('memory write scope contract', () => {
     }
   });
 
+  it('keeps admin-all memory access read-only for mutation handlers', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src-tauri/src/memory/handlers.rs'),
+      'utf-8'
+    );
+
+    expect(source).toContain('admin_all memory access is read-only');
+    const mutationStart = source.indexOf('fn scoped_mutation_roots(');
+    const mutationEnd = source.indexOf('\nfn validate_note_mutable(', mutationStart);
+    const mutationHelper = source.slice(mutationStart, mutationEnd);
+    expect(mutationHelper).not.toContain('return Ok(None);');
+    const writeFolderStart = source.indexOf('fn resolve_memory_write_folder(');
+    const writeFolderEnd = source.indexOf('\nfn resolve_active_memory_topic(', writeFolderStart);
+    const writeFolderHelper = source.slice(writeFolderStart, writeFolderEnd);
+    expect(writeFolderHelper).not.toContain('or(Some(crate::memory::GLOBAL_MEMORY_FOLDER.to_string()))');
+    expect(source).toContain('fn reject_admin_all_mutation(');
+    expect(source).toContain('admin_all: Option<bool>,\n    title: String,');
+    expect(source).toContain('admin_all: Option<bool>,\n    default_memory_type: Option<String>,');
+    expect(source).toContain('reject_admin_all_mutation(admin_all)?;');
+  });
+
+  it('defaults topicless smart and batch writes to global scope', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src-tauri/src/memory/handlers.rs'),
+      'utf-8'
+    );
+    const memoryExecutor = readFileSync(
+      resolve(process.cwd(), 'src-tauri/src/chat_v2/tools/memory_executor.rs'),
+      'utf-8'
+    );
+
+    expect(source).toContain('fn default_write_scope(');
+    expect(source).toContain('None => Ok(crate::memory::MemoryScope::Global)');
+    expect(source).toContain('default_write_scope(scope.as_deref(), group_id.as_deref())?');
+    expect(source).toContain('default_write_scope(default_scope.as_deref(), group_id.as_deref())?');
+    expect(memoryExecutor).toContain('fn parse_write_scope(');
+    expect(memoryExecutor).toContain('Ok(MemoryScope::Global)');
+    expect(memoryExecutor).toContain('Self::parse_write_scope(call, ctx)?');
+    const smartStart = memoryExecutor.indexOf('async fn execute_write_smart');
+    const smartEnd = memoryExecutor.indexOf('\n    async fn execute_write_batch', smartStart);
+    const smartBody = memoryExecutor.slice(smartStart, smartEnd);
+    expect(smartBody).toContain('Self::parse_write_scope(call, ctx)?');
+    expect(smartBody).not.toContain('let scope = Self::parse_scope(call)?;');
+  });
+
+  it('uses the verified source folder when delete and move trigger memory maintenance', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src-tauri/src/memory/handlers.rs'),
+      'utf-8'
+    );
+
+    expect(source).toContain('fn push_unique_path(');
+    expect(source).toContain('let source_folder = validate_note_mutable(');
+    expect(source).toContain('service.spawn_post_write_maintenance_for_paths(vec![source_folder]);');
+    expect(source).toContain('push_unique_path(&mut maintenance_paths, source_folder);');
+    expect(source).not.toContain('None,\n        None,\n        group_id.as_deref(),\n        group_name.as_deref(),\n        admin_all,\n    ));\n    Ok(())');
+  });
+
   it('keeps admin-all profile reads on the all-memory path instead of falling back to global only', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src-tauri/src/memory/handlers.rs'),

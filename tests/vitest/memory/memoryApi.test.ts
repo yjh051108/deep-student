@@ -123,6 +123,7 @@ describe('memoryApi', () => {
       expect(mockInvoke).toHaveBeenCalledWith('memory_search', {
         query: '深色主题',
         topK: undefined,
+        folderPath: undefined,
       });
       expect(result).toHaveLength(1);
       expect(result[0].noteTitle).toBe('用户偏好');
@@ -136,6 +137,7 @@ describe('memoryApi', () => {
       expect(mockInvoke).toHaveBeenCalledWith('memory_search', {
         query: '测试',
         topK: 20,
+        folderPath: undefined,
       });
     });
   });
