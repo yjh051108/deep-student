@@ -59,12 +59,6 @@ export function getEffectiveReadyModes(
     return mediaType === 'pdf' ? ['text'] : ['image'];
   }
 
-  // 图片附件：image 模式在上传完成后即可用（原始数据已就位），
-  // 无论后端 readyModes 是否已返回都应乐观包含 'image'
-  if (mediaType === 'image' && (attachment.status === 'processing' || attachment.status === 'ready')) {
-    return ['image'];
-  }
-
   return undefined;
 }
 

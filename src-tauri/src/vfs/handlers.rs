@@ -1578,8 +1578,6 @@ pub async fn vfs_upload_attachment(
                 }
                 _ => {
                     // 没有处理状态，设置初始值，需要启动处理
-                    // ★ P0 架构改造：初始 ready_modes 不再包含 image
-                    // image 模式必须等到压缩完成后才就绪
                     if is_pdf {
                         // PDF: text 在上传时已提取完成，image 需要等页面压缩
                         let text_ready = result
@@ -1601,11 +1599,11 @@ pub async fn vfs_upload_attachment(
                             true,
                         )
                     } else {
-                        // 图片: 需要等压缩完成后 image 才就绪
+                        // 图片: 原图已写入 VFS，image 模式立即可用；压缩只是后续优化
                         (
                             Some("image_compression".to_string()),
                             Some(10.0),
-                            Some(vec![]),
+                            Some(vec!["image".to_string()]),
                             true,
                         )
                     }
@@ -1630,6 +1628,13 @@ pub async fn vfs_upload_attachment(
 
     if needs_compression && processing_status.as_deref() != Some("error") {
         needs_processing = true;
+    }
+
+    if is_image && processing_status.as_deref() != Some("error") {
+        let modes = ready_modes.get_or_insert_with(Vec::new);
+        if !modes.iter().any(|mode| mode == "image") {
+            modes.push("image".to_string());
+        }
     }
 
     if is_image && ocr_config.enabled && ocr_config.ocr_images {
@@ -1696,7 +1701,7 @@ pub async fn vfs_upload_attachment(
         } else if is_image {
             processing_status = Some("image_compression".to_string());
             processing_percent = Some(10.0);
-            ready_modes = Some(vec![]);
+            ready_modes = Some(vec!["image".to_string()]);
         }
     }
 

@@ -85,4 +85,20 @@ describe('areAttachmentInjectModesReady', () => {
 
     expect(areAttachmentInjectModesReady(attachment)).toBe(true);
   });
+
+  it('does not invent image readiness when backend processing status omits readyModes', () => {
+    const attachment = createAttachment({
+      status: 'processing',
+      injectModes: { image: ['image'] },
+      processingStatus: {
+        stage: 'image_compression',
+        readyModes: [],
+        percent: 10,
+        mediaType: 'image',
+      },
+    });
+
+    expect(areAttachmentInjectModesReady(attachment)).toBe(false);
+    expect(getMissingInjectModesForAttachment(attachment)).toEqual(['image']);
+  });
 });
