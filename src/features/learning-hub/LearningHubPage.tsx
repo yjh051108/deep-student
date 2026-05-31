@@ -93,6 +93,11 @@ const inferResourceTypeFromFileName = (fileName: string): ResourceType => {
   return 'file';
 };
 
+const getDstuResourceIdFromPath = (path?: string | null): string | null => {
+  const segments = path?.split('/').filter(Boolean);
+  return segments?.[segments.length - 1] ?? null;
+};
+
 /**
  * Learning Hub 全屏页面组件
  *
@@ -241,9 +246,7 @@ export const LearningHubPage: React.FC = () => {
       }
 
       const affectedPath = event.path || event.oldPath;
-      if (!affectedPath) return;
-
-      const affectedResourceId = affectedPath.split('/').filter(Boolean).pop();
+      const affectedResourceId = event.id ?? getDstuResourceIdFromPath(affectedPath);
       if (!affectedResourceId) return;
       const wasActiveTabAffected = tabsRef.current.some(
         tab => tab.resourceId === affectedResourceId && tab.tabId === activeTabIdRef.current
