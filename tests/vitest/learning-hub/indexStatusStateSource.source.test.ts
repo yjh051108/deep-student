@@ -29,7 +29,16 @@ describe('Index status state source contract', () => {
     expect(viewSource).not.toContain("stateFilter: selectedState === 'all' ? undefined : selectedState");
   });
 
-  it('derives one-click workload from the same visible resource rows', () => {
+  it('loads every index status page before deriving visible rows or one-click workload', () => {
+    expect(viewSource).toContain('const getCompleteIndexStatus = async (');
+    expect(viewSource).toContain('while (resources.length < firstPage.totalResources)');
+    expect(viewSource).toContain('offset: resources.length');
+    expect(viewSource).toContain('resources.push(...page.resources)');
+    expect(viewSource).toContain('getCompleteIndexStatus({');
+    expect(viewSource).not.toContain('limit: 200');
+  });
+
+  it('derives one-click workload from the complete loaded resource set', () => {
     expect(viewSource).toContain('const pendingTextCount = summary.resources.filter(isPendingTextResource).length;');
     expect(viewSource).toContain('const pendingMmCount = mmResources.length;');
     expect(viewSource).not.toContain('const pendingTextCount = summary.pendingCount + summary.failedCount;');

@@ -72,6 +72,7 @@ import {
   getResourceTextChunks,
   type ResourceIndexStatusSummary as IndexStatusSummary,
   type ResourceIndexStatus,
+  type GetIndexStatusParams,
   type ResourceOcrInfo,
   type TextChunkInfo,
   type VfsEmbeddingDimension,
@@ -165,6 +166,34 @@ interface DisplayIndexRow {
   mmState: IndexState;
   hasImageIndex: boolean;
 }
+
+const INDEX_STATUS_PAGE_SIZE = 500;
+
+const getCompleteIndexStatus = async (
+  params: Omit<GetIndexStatusParams, 'limit' | 'offset'>
+): Promise<IndexStatusSummary> => {
+  const firstPage = await getAllIndexStatus({
+    ...params,
+    limit: INDEX_STATUS_PAGE_SIZE,
+    offset: 0,
+  });
+  const resources = [...firstPage.resources];
+
+  while (resources.length < firstPage.totalResources) {
+    const page = await getAllIndexStatus({
+      ...params,
+      limit: INDEX_STATUS_PAGE_SIZE,
+      offset: resources.length,
+    });
+    if (page.resources.length === 0) break;
+    resources.push(...page.resources);
+  }
+
+  return {
+    ...firstPage,
+    resources,
+  };
+};
 
 // ============================================================================
 // 环形进度图组件
@@ -302,9 +331,8 @@ export const IndexStatusView: React.FC = () => {
       // disabled 资源的重置现在需要用户通过"重置状态"按钮显式操作
 
       const [data, dims, multimodalCapability] = await Promise.all([
-        getAllIndexStatus({
+        getCompleteIndexStatus({
           resourceType: selectedType === 'all' ? undefined : selectedType,
-          limit: 200,
         }),
         listDimensions(),
         invoke<MultimodalIndexCapability>('vfs_get_multimodal_index_capability').catch(() => ({
