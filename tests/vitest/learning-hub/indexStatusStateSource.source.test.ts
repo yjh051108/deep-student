@@ -29,6 +29,10 @@ describe('Index status state source contract', () => {
   it('recognizes VL embedding model assignment as multimodal index capability fallback', () => {
     expect(handlerSource).toContain('vfs_get_multimodal_index_capability');
     expect(handlerSource).toContain('get_vl_embedding_model_config().await');
+    expect(handlerSource).toContain('fn is_usable_vl_embedding_config(config: &ApiConfig) -> bool');
+    expect(handlerSource).toContain('Ok(config) if is_usable_vl_embedding_config(&config)');
+    expect(handlerSource).toContain('vl_embedding_capability_accepts_explicit_embedding_assignment_without_multimodal_flag');
+    expect(handlerSource).toContain('vl_embedding_capability_rejects_disabled_non_embedding_or_reranker_configs');
     expect(ragExtensionSource).toContain('get_setting("embedding.default_multimodal_model_config_id")');
     expect(ragExtensionSource).toContain('.get_model_assignments()');
     expect(ragExtensionSource).toContain('assignments.vl_embedding_model_config_id');

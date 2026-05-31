@@ -666,14 +666,7 @@ export const IndexStatusView: React.FC = () => {
       try {
         await batchIndexPending();
         setBatchIndexing(false);
-        setBatchProgress(100);
-        setBatchMessage(t('indexStatus.notification.batchCompleted'));
         await loadData();
-        setTimeout(() => {
-          if (!mountedRef.current) return;
-          setBatchProgress(0);
-          setBatchMessage('');
-        }, 2000);
       } catch (err: unknown) {
         debugLog.error('[IndexStatusView] OCR 文本索引失败:', err);
         batchFailed = true;

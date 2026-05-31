@@ -16,6 +16,7 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::chat_v2::repo::ChatV2Repo;
 use crate::chat_v2::types::PersistStatus;
+use crate::llm_manager::ApiConfig;
 use crate::utils::unicode::sanitize_unicode;
 use crate::vfs::attachment_config::AttachmentConfig;
 use crate::vfs::database::VfsDatabase;
@@ -4105,17 +4106,16 @@ pub struct MultimodalIndexCapability {
     pub reason: Option<String>,
 }
 
+fn is_usable_vl_embedding_config(config: &ApiConfig) -> bool {
+    config.enabled && config.is_embedding && !config.is_reranker
+}
+
 #[tauri::command]
 pub async fn vfs_get_multimodal_index_capability(
     llm_manager: State<'_, Arc<crate::llm_manager::LLMManager>>,
 ) -> Result<MultimodalIndexCapability, String> {
     match llm_manager.get_vl_embedding_model_config().await {
-        Ok(config)
-            if config.enabled
-                && config.is_embedding
-                && config.is_multimodal
-                && !config.is_reranker =>
-        {
+        Ok(config) if is_usable_vl_embedding_config(&config) => {
             Ok(MultimodalIndexCapability {
                 status: "ready".to_string(),
                 ready: true,
@@ -4131,7 +4131,7 @@ pub async fn vfs_get_multimodal_index_capability(
             model_config_id: Some(config.id),
             model_name: Some(config.name),
             model: Some(config.model),
-            reason: Some("默认多模态模型不是可用的 VL Embedding 配置".to_string()),
+            reason: Some("默认多模态模型不是可用的 Embedding 配置".to_string()),
         }),
         Err(err) => Ok(MultimodalIndexCapability {
             status: "notConfigured".to_string(),
@@ -8039,6 +8039,44 @@ mod tests {
         let folder = VfsFolder::new(title.to_string(), parent_id, None, None);
         VfsFolderRepo::create_folder(db, &folder).expect("create folder");
         folder
+    }
+
+    fn api_config_for_vl_embedding(
+        enabled: bool,
+        is_embedding: bool,
+        is_reranker: bool,
+        is_multimodal: bool,
+    ) -> ApiConfig {
+        ApiConfig {
+            id: "cfg_vl".to_string(),
+            name: "VL Embedding".to_string(),
+            model: "vl-embedding".to_string(),
+            enabled,
+            is_embedding,
+            is_reranker,
+            is_multimodal,
+            ..ApiConfig::default()
+        }
+    }
+
+    #[test]
+    fn vl_embedding_capability_accepts_explicit_embedding_assignment_without_multimodal_flag() {
+        let config = api_config_for_vl_embedding(true, true, false, false);
+
+        assert!(is_usable_vl_embedding_config(&config));
+    }
+
+    #[test]
+    fn vl_embedding_capability_rejects_disabled_non_embedding_or_reranker_configs() {
+        let cases = [
+            api_config_for_vl_embedding(false, true, false, true),
+            api_config_for_vl_embedding(true, false, false, true),
+            api_config_for_vl_embedding(true, true, true, true),
+        ];
+
+        for config in cases {
+            assert!(!is_usable_vl_embedding_config(&config));
+        }
     }
 
     fn eval_display_state_sql(

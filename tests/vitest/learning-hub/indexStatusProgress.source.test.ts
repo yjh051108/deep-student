@@ -46,4 +46,16 @@ describe('IndexStatusView progress display contract', () => {
     expect(source).toContain('return;');
     expect(source).not.toContain('pendingTextCount > 0 || displayWorkCount === 0');
   });
+
+  it('lets backend progress events own batch completion progress and message', () => {
+    const invokeSuccessBlock = source.slice(
+      source.indexOf('await batchIndexPending();'),
+      source.indexOf('} catch (err: unknown)', source.indexOf('await batchIndexPending();'))
+    );
+
+    expect(invokeSuccessBlock).toContain('setBatchIndexing(false);');
+    expect(invokeSuccessBlock).toContain('await loadData();');
+    expect(invokeSuccessBlock).not.toContain('setBatchProgress(100)');
+    expect(invokeSuccessBlock).not.toContain("setBatchMessage(t('indexStatus.notification.batchCompleted'))");
+  });
 });
