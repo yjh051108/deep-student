@@ -21,10 +21,11 @@ describe('Index status state source contract', () => {
   it('groups visible rows by combined text and image index state', () => {
     expect(viewSource).toContain('resolveResourceDisplayState');
     expect(viewSource).toContain("const states = [textState, normalizeIndexState(resource.mmIndexState)]");
-    expect(viewSource).toContain('groupedCount');
+    expect(viewSource).toContain('const resolvedDisplayRows = useMemo<DisplayIndexRow[]>');
+    expect(viewSource).toContain('const groupedDisplayRows = useMemo(() =>');
     expect(viewSource).toContain('displayIndexStats');
-    expect(viewSource).toContain('indexed: groupedResources.indexed?.length ?? 0');
-    expect(viewSource).toContain('displayedResources');
+    expect(viewSource).toContain('indexed: groupedDisplayRows.indexed?.length ?? 0');
+    expect(viewSource).toContain('const displayedRows = selectedState ===');
     expect(viewSource).not.toContain("stateFilter: selectedState === 'all' ? undefined : selectedState");
   });
 

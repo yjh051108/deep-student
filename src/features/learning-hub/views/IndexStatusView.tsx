@@ -158,6 +158,14 @@ const resolveResourceDisplayState = (
   return DISPLAY_STATE_PRIORITY.find(state => states.includes(state)) ?? textState;
 };
 
+interface DisplayIndexRow {
+  resource: ResourceIndexStatus;
+  displayState: IndexState;
+  textState: IndexState;
+  mmState: IndexState;
+  hasImageIndex: boolean;
+}
+
 // ============================================================================
 // 环形进度图组件
 // ============================================================================
@@ -823,10 +831,21 @@ export const IndexStatusView: React.FC = () => {
   }, []);
 
   // ========== 计算分组数据 ==========
-  const groupedResources = useMemo(() => {
-    if (!summary) return {};
-    
-    const groups: Record<string, ResourceIndexStatus[]> = {
+  const resolvedDisplayRows = useMemo<DisplayIndexRow[]>(() => {
+    if (!summary) return [];
+
+    const includeImageIndex = imageIndexCapability === 'ready';
+    return summary.resources.map((resource) => ({
+      resource,
+      displayState: resolveResourceDisplayState(resource, includeImageIndex),
+      textState: normalizeIndexState(resource.textIndexState),
+      mmState: normalizeIndexState(resource.mmIndexState),
+      hasImageIndex: includeImageIndex && MULTIMODAL_RESOURCE_TYPES.has(resource.resourceType),
+    }));
+  }, [summary, imageIndexCapability]);
+
+  const groupedDisplayRows = useMemo(() => {
+    const groups: Record<IndexState, DisplayIndexRow[]> = {
       pending: [],
       indexing: [],
       failed: [],
@@ -834,34 +853,32 @@ export const IndexStatusView: React.FC = () => {
       disabled: [],
     };
 
-    const includeImageIndex = imageIndexCapability === 'ready';
-    for (const resource of summary.resources) {
-      const state = resolveResourceDisplayState(resource, includeImageIndex);
+    for (const row of resolvedDisplayRows) {
+      const state = row.displayState;
       if (groups[state]) {
-        groups[state].push(resource);
+        groups[state].push(row);
       } else {
         // ★ 2026-01 修复：未知状态放入 pending 组，避免资源丢失
-        debugLog.warn(`[IndexStatusView] Unknown textIndexState: ${state}, resource: ${resource.resourceId}`);
-        groups.pending.push(resource);
+        debugLog.warn(`[IndexStatusView] Unknown displayState: ${state}, resource: ${row.resource.resourceId}`);
+        groups.pending.push(row);
       }
     }
 
     return groups;
-  }, [summary, imageIndexCapability]);
+  }, [resolvedDisplayRows]);
 
-  const displayedResources = selectedState === 'all'
-    ? summary?.resources ?? []
-    : groupedResources[selectedState] ?? [];
-  const groupedCount = (state: IndexState) => groupedResources[state]?.length ?? 0;
+  const displayedRows = selectedState === 'all'
+    ? resolvedDisplayRows
+    : groupedDisplayRows[selectedState] ?? [];
   const displayIndexStats = useMemo(() => ({
-    total: summary?.resources.length ?? 0,
-    indexed: groupedResources.indexed?.length ?? 0,
-    pending: groupedResources.pending?.length ?? 0,
-    indexing: groupedResources.indexing?.length ?? 0,
-    failed: groupedResources.failed?.length ?? 0,
-    disabled: groupedResources.disabled?.length ?? 0,
+    total: resolvedDisplayRows.length,
+    indexed: groupedDisplayRows.indexed?.length ?? 0,
+    pending: groupedDisplayRows.pending?.length ?? 0,
+    indexing: groupedDisplayRows.indexing?.length ?? 0,
+    failed: groupedDisplayRows.failed?.length ?? 0,
+    disabled: groupedDisplayRows.disabled?.length ?? 0,
     stale: summary?.resources.filter(resource => resource.isStale).length ?? 0,
-  }), [summary, groupedResources]);
+  }), [summary, resolvedDisplayRows, groupedDisplayRows]);
   const imageIndexStats = useMemo(() => {
     const resources = summary?.resources.filter(resource => MULTIMODAL_RESOURCE_TYPES.has(resource.resourceType)) ?? [];
     return {
@@ -937,8 +954,9 @@ export const IndexStatusView: React.FC = () => {
   };
 
   // ========== 渲染资源行 ==========
-  const renderResourceRow = (resource: ResourceIndexStatus) => {
-    const state = resolveResourceDisplayState(resource, imageIndexCapability === 'ready');
+  const renderResourceRow = (row: DisplayIndexRow) => {
+    const { resource } = row;
+    const state = row.displayState;
     const stateConfig = STATE_CONFIG[state] || STATE_CONFIG.pending;
     const StateIcon = stateConfig.icon;
     const typeConfig = RESOURCE_TYPE_CONFIG[resource.resourceType] || RESOURCE_TYPE_CONFIG.file;
@@ -1796,12 +1814,12 @@ export const IndexStatusView: React.FC = () => {
           <div className="text-xs font-mono text-muted-foreground shrink-0 pl-2 md:pl-4 border-l border-border/50 whitespace-nowrap">
             {selectedState === 'all' && selectedType === 'all' ? (
               <>
-                <span className="font-semibold text-foreground">{displayedResources.length}</span>
+                <span className="font-semibold text-foreground">{displayedRows.length}</span>
                 <span className="mx-1 text-muted-foreground/50">/</span>
                 <span>{displayIndexStats.total}</span>
               </>
             ) : (
-              <span className="font-semibold text-foreground">{displayedResources.length}</span>
+              <span className="font-semibold text-foreground">{displayedRows.length}</span>
             )}
           </div>
         )}
@@ -1809,7 +1827,7 @@ export const IndexStatusView: React.FC = () => {
 
       {/* 分组资源列表 */}
       <CustomScrollArea className="flex-1">
-        {summary.resources.length === 0 ? (
+        {resolvedDisplayRows.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
             <Database className="h-10 w-10 mb-3 opacity-40" />
             <p className="text-sm">{t('indexStatus.empty.noMatchingResources')}</p>
@@ -1819,8 +1837,8 @@ export const IndexStatusView: React.FC = () => {
           // 分组显示模式
           <div className="divide-y divide-border/30">
             {(['pending', 'indexing', 'failed', 'indexed', 'disabled'] as IndexState[]).map((state) => {
-              const resources = groupedResources[state] || [];
-              if (resources.length === 0) return null;
+              const rows = groupedDisplayRows[state] || [];
+              if (rows.length === 0) return null;
               
               const config = STATE_CONFIG[state];
               const Icon = config.icon;
@@ -1837,13 +1855,13 @@ export const IndexStatusView: React.FC = () => {
                     )}
                     <Icon className={cn('h-4 w-4', config.color)} />
                     <span className={config.color}>{t(config.labelKey)}</span>
-                    <span className="text-muted-foreground font-normal">({resources.length})</span>
+                    <span className="text-muted-foreground font-normal">({rows.length})</span>
                   </NotionButton>
                   
                   {/* 分组内容 */}
                   {isExpanded && (
                     <div className="bg-background/50">
-                      {resources.map(renderResourceRow)}
+                      {rows.map(renderResourceRow)}
                     </div>
                   )}
                 </div>
@@ -1853,7 +1871,7 @@ export const IndexStatusView: React.FC = () => {
         ) : (
           // 单状态筛选模式
           <div className="divide-y divide-border/30">
-            {displayedResources.map(renderResourceRow)}
+            {displayedRows.map(renderResourceRow)}
           </div>
         )}
       </CustomScrollArea>
