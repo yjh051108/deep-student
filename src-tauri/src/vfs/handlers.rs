@@ -2026,7 +2026,7 @@ pub async fn vfs_get_attachment(
         return Err(format!("Invalid attachment ID format: {}", attachment_id));
     }
 
-    VfsAttachmentRepo::get_by_id(&vfs_db, &attachment_id).map_err(|e| e.to_string())
+    VfsAttachmentRepo::get_active_by_id(&vfs_db, &attachment_id).map_err(|e| e.to_string())
 }
 
 /// 软删除附件
@@ -2667,7 +2667,7 @@ pub async fn vfs_get_file(
         return Err(format!("Invalid file ID format: {}", file_id));
     }
 
-    VfsFileRepo::get_file(&vfs_db, &file_id).map_err(|e| e.to_string())
+    VfsFileRepo::get_active_file(&vfs_db, &file_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2739,15 +2739,16 @@ pub async fn vfs_get_file_content(
 
     let conn = vfs_db.get_conn_safe().map_err(|e| e.to_string())?;
 
-    let file = match VfsFileRepo::get_file_with_conn(&conn, &file_id).map_err(|e| e.to_string())? {
-        Some(f) => f,
-        None => {
-            return Ok(VfsFileContentResult {
-                content: None,
-                found: false,
-            })
-        }
-    };
+    let file =
+        match VfsFileRepo::get_active_file_with_conn(&conn, &file_id).map_err(|e| e.to_string())? {
+            Some(f) => f,
+            None => {
+                return Ok(VfsFileContentResult {
+                    content: None,
+                    found: false,
+                })
+            }
+        };
 
     if let Some(ref blob_hash) = file.blob_hash {
         let blobs_dir = vfs_db.blobs_dir();
@@ -2900,12 +2901,22 @@ pub async fn vfs_get_pdf_page_image(
     let resource = VfsResourceRepo::get_resource_with_conn(&conn, &resource_id)
         .map_err(|e| format!("获取资源失败: {}", e))?
         .ok_or_else(|| format!("资源不存在: {}", resource_id))?;
+    let resource_is_active: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM resources WHERE id = ?1 AND deleted_at IS NULL)",
+            rusqlite::params![&resource_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("检查资源状态失败: {}", e))?;
+    if !resource_is_active {
+        return Err(format!("资源不存在: {}", resource_id));
+    }
 
     // 2. 根据 source_table 查询 preview_json
     let preview_json_str: Option<String> = match resource.source_table.as_deref() {
         Some("textbooks") => conn
             .query_row(
-                "SELECT preview_json FROM files WHERE resource_id = ?1",
+                "SELECT preview_json FROM files WHERE resource_id = ?1 AND status = 'active' AND deleted_at IS NULL",
                 rusqlite::params![&resource_id],
                 |row| row.get(0),
             )
@@ -2913,7 +2924,7 @@ pub async fn vfs_get_pdf_page_image(
             .map_err(|e| format!("查询教材 preview_json 失败: {}", e))?,
         Some("files") => conn
             .query_row(
-                "SELECT preview_json FROM files WHERE resource_id = ?1",
+                "SELECT preview_json FROM files WHERE resource_id = ?1 AND status = 'active' AND deleted_at IS NULL",
                 rusqlite::params![&resource_id],
                 |row| row.get(0),
             )
@@ -6742,6 +6753,7 @@ pub async fn vfs_list_pending_pdf_processing(
         FROM files
         WHERE mime_type = 'application/pdf'
           AND status = 'active'
+          AND deleted_at IS NULL
           AND (processing_status = 'pending' OR processing_status IS NULL)
         ORDER BY created_at DESC
         LIMIT ?1
@@ -7610,7 +7622,7 @@ pub async fn vfs_get_resource_ocr_info(
 
     let resource_type: String = conn
         .query_row(
-            "SELECT type FROM resources WHERE id = ?1",
+            "SELECT type FROM resources WHERE id = ?1 AND deleted_at IS NULL",
             rusqlite::params![resource_id],
             |row| row.get(0),
         )
@@ -7618,7 +7630,7 @@ pub async fn vfs_get_resource_ocr_info(
 
     let ocr_text: Option<String> = conn
         .query_row(
-            "SELECT ocr_text FROM resources WHERE id = ?1",
+            "SELECT ocr_text FROM resources WHERE id = ?1 AND deleted_at IS NULL",
             rusqlite::params![resource_id],
             |row| row.get(0),
         )
@@ -7627,7 +7639,7 @@ pub async fn vfs_get_resource_ocr_info(
 
     let file_info: Option<(Option<String>, Option<String>)> = conn
         .query_row(
-            "SELECT extracted_text, ocr_pages_json FROM files WHERE resource_id = ?1",
+            "SELECT extracted_text, ocr_pages_json FROM files WHERE resource_id = ?1 AND status = 'active' AND deleted_at IS NULL",
             rusqlite::params![resource_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
@@ -7635,7 +7647,7 @@ pub async fn vfs_get_resource_ocr_info(
         .or_else(|| {
             let source_id: Option<String> = conn
                 .query_row(
-                    "SELECT source_id FROM resources WHERE id = ?1",
+                    "SELECT source_id FROM resources WHERE id = ?1 AND deleted_at IS NULL",
                     rusqlite::params![resource_id],
                     |row| row.get(0),
                 )
@@ -7643,7 +7655,7 @@ pub async fn vfs_get_resource_ocr_info(
                 .flatten();
             source_id.and_then(|sid| {
                 conn.query_row(
-                    "SELECT extracted_text, ocr_pages_json FROM files WHERE id = ?1",
+                    "SELECT extracted_text, ocr_pages_json FROM files WHERE id = ?1 AND status = 'active' AND deleted_at IS NULL",
                     rusqlite::params![sid],
                     |row| Ok((row.get(0)?, row.get(1)?)),
                 )
@@ -8056,7 +8068,11 @@ mod tests {
 
     fn eval_display_contract(
         include_image_index: bool,
-    ) -> (Vec<(String, String)>, (i32, i32, i32, i32, i32), Vec<String>) {
+    ) -> (
+        Vec<(String, String)>,
+        (i32, i32, i32, i32, i32),
+        Vec<String>,
+    ) {
         let conn = rusqlite::Connection::open_in_memory().expect("open memory db");
         conn.execute(
             "CREATE TABLE resources (
@@ -8091,7 +8107,9 @@ mod tests {
         let row_states = conn
             .prepare(&row_query)
             .expect("prepare row query")
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
             .expect("query rows")
             .collect::<Result<Vec<_>, _>>()
             .expect("collect rows");

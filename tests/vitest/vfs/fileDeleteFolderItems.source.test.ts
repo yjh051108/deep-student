@@ -62,7 +62,10 @@ describe("VfsFileRepo folder item deletion contract", () => {
       "VfsFileRepo::delete_file_with_conn(conn, id)?;",
     );
     expect(attachmentSource).toContain(
-      "UPDATE folder_items SET deleted_at = NULL, updated_at = ?1 WHERE item_id = ?2 AND item_type IN ('file', 'image', 'attachment', 'textbook') AND deleted_at IS NOT NULL",
+      "VfsFileRepo::restore_file_with_conn(conn, id)?;",
+    );
+    expect(attachmentSource).not.toContain(
+      "UPDATE folder_items SET deleted_at = NULL",
     );
   });
 

@@ -535,6 +535,11 @@ impl VfsFileRepo {
         Self::get_file_with_conn(&conn, file_id)
     }
 
+    pub fn get_active_file(db: &VfsDatabase, file_id: &str) -> VfsResult<Option<VfsFile>> {
+        let conn = db.get_conn_safe()?;
+        Self::get_active_file_with_conn(&conn, file_id)
+    }
+
     pub fn get_file_with_conn(conn: &Connection, file_id: &str) -> VfsResult<Option<VfsFile>> {
         let mut stmt = conn.prepare(
             r#"
@@ -547,6 +552,31 @@ impl VfsFileRepo {
                    compressed_blob_hash
             FROM files
             WHERE id = ?1
+            "#,
+        )?;
+
+        let file = stmt
+            .query_row(params![file_id], Self::row_to_file)
+            .optional()?;
+
+        Ok(file)
+    }
+
+    pub fn get_active_file_with_conn(
+        conn: &Connection,
+        file_id: &str,
+    ) -> VfsResult<Option<VfsFile>> {
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT id, resource_id, blob_hash, sha256, file_name, original_path, size, page_count,
+                   "type", mime_type, tags_json, is_favorite, last_opened_at, last_page, bookmarks_json,
+                   cover_key, extracted_text, preview_json, ocr_pages_json, description,
+                   status, created_at, updated_at, deleted_at,
+                   processing_status, processing_progress, processing_error,
+                   processing_started_at, processing_completed_at,
+                   compressed_blob_hash
+            FROM files
+            WHERE id = ?1 AND status = 'active' AND deleted_at IS NULL
             "#,
         )?;
 
@@ -874,7 +904,7 @@ impl VfsFileRepo {
             .to_string();
 
         let updated = conn.execute(
-            "UPDATE files SET status = 'active', deleted_at = NULL, updated_at = ?1 WHERE id = ?2 AND status = 'deleted'",
+            "UPDATE files SET status = 'active', deleted_at = NULL, updated_at = ?1 WHERE id = ?2 AND (status = 'deleted' OR deleted_at IS NOT NULL)",
             params![now, file_id],
         )?;
 
@@ -1190,7 +1220,7 @@ impl VfsFileRepo {
                    processing_started_at, processing_completed_at,
                    compressed_blob_hash
             FROM files
-            WHERE status = 'deleted'
+            WHERE status = 'deleted' OR deleted_at IS NOT NULL
             ORDER BY deleted_at DESC
             LIMIT ?1 OFFSET ?2
         "#;
@@ -1262,7 +1292,7 @@ impl VfsFileRepo {
         blobs_dir: &Path,
         file_id: &str,
     ) -> VfsResult<Option<String>> {
-        let file = match Self::get_file_with_conn(conn, file_id)? {
+        let file = match Self::get_active_file_with_conn(conn, file_id)? {
             Some(file) => file,
             None => return Ok(None),
         };
@@ -1462,11 +1492,11 @@ impl VfsFileRepo {
             file_id
         );
 
-        let file = match Self::get_file_with_conn(conn, file_id)? {
+        let file = match Self::get_active_file_with_conn(conn, file_id)? {
             Some(f) => f,
             None => {
                 tracing::info!(
-                    "[PDF_DEBUG] VfsFileRepo: file not found in files table, file_id={}",
+                    "[PDF_DEBUG] VfsFileRepo: active file not found in files table, file_id={}",
                     file_id
                 );
                 return Ok(None);
@@ -1623,7 +1653,7 @@ impl VfsFileRepo {
     ) -> VfsResult<Vec<Option<String>>> {
         let ocr_json: Option<String> = conn
             .query_row(
-                "SELECT ocr_pages_json FROM files WHERE id = ?1",
+                "SELECT ocr_pages_json FROM files WHERE id = ?1 AND status = 'active' AND deleted_at IS NULL",
                 params![file_id],
                 |row| row.get(0),
             )
@@ -1698,7 +1728,7 @@ impl VfsFileRepo {
 
     pub fn purge_deleted_files_with_conn(conn: &Connection, blobs_dir: &Path) -> VfsResult<usize> {
         let file_ids: Vec<String> = conn
-            .prepare("SELECT id FROM files WHERE status = 'deleted'")?
+            .prepare("SELECT id FROM files WHERE status = 'deleted' OR deleted_at IS NOT NULL")?
             .query_map([], |row| row.get(0))?
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -1826,6 +1856,7 @@ impl VfsFileRepo {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vfs::repos::blob_repo::VfsBlobRepo;
     use tempfile::TempDir;
 
     fn setup_test_db() -> (TempDir, VfsDatabase) {
@@ -1995,6 +2026,45 @@ mod tests {
     }
 
     #[test]
+    fn test_deleted_file_is_hidden_from_active_and_content_reads() {
+        let (_temp_dir, db) = setup_test_db();
+        let blob = VfsBlobRepo::store_blob(
+            &db,
+            b"deleted file content should be hidden",
+            Some("text/plain"),
+            Some("txt"),
+        )
+        .unwrap();
+
+        let file = VfsFileRepo::create_file(
+            &db,
+            "sha-hidden",
+            "hidden.txt",
+            blob.size,
+            "file",
+            Some("text/plain"),
+            Some(&blob.hash),
+            None,
+        )
+        .unwrap();
+
+        assert!(VfsFileRepo::get_active_file(&db, &file.id)
+            .unwrap()
+            .is_some());
+        assert!(VfsFileRepo::get_content(&db, &file.id).unwrap().is_some());
+        VfsFileRepo::delete_file(&db, &file.id).expect("Delete should succeed");
+
+        assert!(VfsFileRepo::get_file(&db, &file.id).unwrap().is_some());
+        assert!(VfsFileRepo::get_active_file(&db, &file.id)
+            .unwrap()
+            .is_none());
+        assert!(VfsFileRepo::get_content(&db, &file.id).unwrap().is_none());
+
+        let deleted = VfsFileRepo::list_deleted_files(&db, 10, 0).unwrap();
+        assert!(deleted.iter().any(|item| item.id == file.id));
+    }
+
+    #[test]
     fn test_soft_delete_and_restore() {
         let (_temp_dir, db) = setup_test_db();
 
@@ -2040,5 +2110,40 @@ mod tests {
             )
             .unwrap();
         assert!(resource_deleted_at.is_none());
+    }
+
+    #[test]
+    fn test_restore_file_accepts_deleted_at_only_rows() {
+        let (_temp_dir, db) = setup_test_db();
+
+        let file = VfsFileRepo::create_file(
+            &db,
+            "sha-deleted-at-only",
+            "legacy.txt",
+            8,
+            "file",
+            None,
+            None,
+            None,
+        )
+        .expect("Create should succeed");
+
+        let conn = db.get_conn_safe().unwrap();
+        conn.execute(
+            "UPDATE files SET deleted_at = ?1 WHERE id = ?2",
+            params!["2026-05-30T00:00:00.000Z", file.id],
+        )
+        .unwrap();
+
+        let deleted = VfsFileRepo::list_deleted_files(&db, 10, 0).unwrap();
+        assert!(deleted.iter().any(|item| item.id == file.id));
+
+        VfsFileRepo::restore_file(&db, &file.id).expect("Restore should succeed");
+
+        let restored = VfsFileRepo::get_active_file(&db, &file.id)
+            .expect("Get should succeed")
+            .expect("File should be active again");
+        assert_eq!(restored.status, "active");
+        assert!(restored.deleted_at.is_none());
     }
 }

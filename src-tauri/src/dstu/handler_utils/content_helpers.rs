@@ -34,7 +34,7 @@ fn resolve_file_id_for_read(conn: &rusqlite::Connection, raw_id: &str) -> Option
     // 1) 优先当作 files.id 读取（file_xxx / att_xxx）
     let direct_file_id: Option<String> = conn
         .query_row(
-            "SELECT id FROM files WHERE id = ?1 LIMIT 1",
+            "SELECT id FROM files WHERE id = ?1 AND status = 'active' AND deleted_at IS NULL LIMIT 1",
             params![raw_id],
             |row| row.get(0),
         )
@@ -48,7 +48,7 @@ fn resolve_file_id_for_read(conn: &rusqlite::Connection, raw_id: &str) -> Option
     // 2) raw_id 可能是 resources.id
     let by_resource_id: Option<String> = conn
         .query_row(
-            "SELECT id FROM files WHERE resource_id = ?1 LIMIT 1",
+            "SELECT id FROM files WHERE resource_id = ?1 AND status = 'active' AND deleted_at IS NULL LIMIT 1",
             params![raw_id],
             |row| row.get(0),
         )
@@ -72,7 +72,7 @@ fn resolve_file_id_for_read(conn: &rusqlite::Connection, raw_id: &str) -> Option
     if let Some(resource_id) = mapped_resource_id {
         return conn
             .query_row(
-                "SELECT id FROM files WHERE resource_id = ?1 LIMIT 1",
+                "SELECT id FROM files WHERE resource_id = ?1 AND status = 'active' AND deleted_at IS NULL LIMIT 1",
                 params![resource_id],
                 |row| row.get(0),
             )
@@ -175,8 +175,8 @@ pub fn get_content_by_type(
 
             // 获取数据库连接
             let conn = vfs_db.get_conn_safe().map_err(|e| e.to_string())?;
-            let resolved_file_id =
-                resolve_file_id_for_read(&conn, id).unwrap_or_else(|| id.to_string());
+            let resolved_file_id = resolve_file_id_for_read(&conn, id)
+                .ok_or_else(|| DstuError::not_found(id).to_string())?;
 
             // 获取文件名用于错误提示和解析
             let file_name = VfsFileRepo::get_file(vfs_db, &resolved_file_id)
@@ -362,12 +362,14 @@ pub fn get_content_by_type(
                 id
             );
             let conn = vfs_db.get_conn_safe().map_err(|e| e.to_string())?;
+            let resolved_file_id = resolve_file_id_for_read(&conn, id)
+                .ok_or_else(|| DstuError::not_found(id).to_string())?;
             if let Some(ocr_text) =
-                crate::vfs::ref_handlers::get_image_ocr_text_with_conn(&conn, id)
+                crate::vfs::ref_handlers::get_image_ocr_text_with_conn(&conn, &resolved_file_id)
             {
                 return Ok(format!("<image_ocr id=\"{}\">{}</image_ocr>", id, ocr_text));
             }
-            match VfsFileRepo::get_content(vfs_db, id) {
+            match VfsFileRepo::get_content(vfs_db, &resolved_file_id) {
                 Ok(Some(base64_content)) => {
                     log::info!("[DSTU::content_helpers] get_content_by_type: SUCCESS - type=image, id={}, len={}", id, base64_content.len());
                     Ok(base64_content)
@@ -418,11 +420,10 @@ pub fn get_file_total_pages(
     match resource_type {
         "textbooks" | "textbook" | "files" | "file" => {
             let conn = vfs_db.get_conn_safe().ok()?;
-            let resolved_file_id =
-                resolve_file_id_for_read(&conn, id).unwrap_or_else(|| id.to_string());
+            let resolved_file_id = resolve_file_id_for_read(&conn, id)?;
             let ocr_json: Option<String> = conn
                 .query_row(
-                    "SELECT ocr_pages_json FROM files WHERE id = ?1 OR resource_id = ?1 ORDER BY CASE WHEN id = ?1 THEN 0 ELSE 1 END LIMIT 1",
+                    "SELECT ocr_pages_json FROM files WHERE (id = ?1 OR resource_id = ?1) AND status = 'active' AND deleted_at IS NULL ORDER BY CASE WHEN id = ?1 THEN 0 ELSE 1 END LIMIT 1",
                     params![resolved_file_id],
                     |row| row.get(0),
                 )
@@ -463,13 +464,13 @@ pub fn get_content_by_type_paged(
     match resource_type {
         "textbooks" | "textbook" | "files" | "file" => {
             let conn = vfs_db.get_conn_safe().map_err(|e| e.to_string())?;
-            let resolved_file_id =
-                resolve_file_id_for_read(&conn, id).unwrap_or_else(|| id.to_string());
+            let resolved_file_id = resolve_file_id_for_read(&conn, id)
+                .ok_or_else(|| DstuError::not_found(id).to_string())?;
 
             // 尝试从 ocr_pages_json 获取页级数据
             let ocr_json: Option<String> = conn
                 .query_row(
-                    "SELECT ocr_pages_json FROM files WHERE id = ?1 OR resource_id = ?1 ORDER BY CASE WHEN id = ?1 THEN 0 ELSE 1 END LIMIT 1",
+                    "SELECT ocr_pages_json FROM files WHERE (id = ?1 OR resource_id = ?1) AND status = 'active' AND deleted_at IS NULL ORDER BY CASE WHEN id = ?1 THEN 0 ELSE 1 END LIMIT 1",
                     params![resolved_file_id],
                     |row| row.get(0),
                 )

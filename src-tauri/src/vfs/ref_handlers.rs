@@ -576,10 +576,14 @@ fn resolve_single_ref_with_conn(
     };
 
     // 查询资源是否存在
-    let exists_sql = format!(
-        "SELECT 1 FROM {} WHERE id = ?1 AND deleted_at IS NULL",
-        table_name
-    );
+    let exists_sql = if table_name == "files" {
+        "SELECT 1 FROM files WHERE id = ?1 AND status = 'active' AND deleted_at IS NULL".to_string()
+    } else {
+        format!(
+            "SELECT 1 FROM {} WHERE id = ?1 AND deleted_at IS NULL",
+            table_name
+        )
+    };
     let exists: bool = conn
         .query_row(&exists_sql, params![normalized_source_id], |_| Ok(true))
         .unwrap_or(false);
@@ -1274,7 +1278,8 @@ pub fn get_image_ocr_text_with_conn(conn: &Connection, source_id: &str) -> Optio
     let check_files_sql = r#"
         SELECT a.id, a.resource_id, a.file_name
         FROM files a
-        WHERE a.id = ?1 OR a.resource_id = ?1
+        WHERE (a.id = ?1 OR a.resource_id = ?1)
+          AND a.status = 'active' AND a.deleted_at IS NULL
         ORDER BY CASE WHEN a.id = ?1 THEN 0 ELSE 1 END
         LIMIT 1
     "#;
@@ -1304,7 +1309,8 @@ pub fn get_image_ocr_text_with_conn(conn: &Connection, source_id: &str) -> Optio
         SELECT r.id, r.ocr_text IS NOT NULL AS has_ocr, LENGTH(r.ocr_text) AS ocr_len
         FROM files a
         JOIN resources r ON a.resource_id = r.id
-        WHERE a.id = ?1 OR a.resource_id = ?1
+        WHERE (a.id = ?1 OR a.resource_id = ?1)
+          AND a.status = 'active' AND a.deleted_at IS NULL AND r.deleted_at IS NULL
         ORDER BY CASE WHEN a.id = ?1 THEN 0 ELSE 1 END
         LIMIT 1
     "#;
@@ -1334,7 +1340,8 @@ pub fn get_image_ocr_text_with_conn(conn: &Connection, source_id: &str) -> Optio
         SELECT r.ocr_text
         FROM files a
         JOIN resources r ON a.resource_id = r.id
-        WHERE a.id = ?1 OR a.resource_id = ?1
+        WHERE (a.id = ?1 OR a.resource_id = ?1)
+          AND a.status = 'active' AND a.deleted_at IS NULL AND r.deleted_at IS NULL
         ORDER BY CASE WHEN a.id = ?1 THEN 0 ELSE 1 END
         LIMIT 1
     "#;
@@ -1382,7 +1389,8 @@ pub fn get_extracted_text_with_conn(conn: &Connection, source_id: &str) -> Optio
     let sql = r#"
         SELECT extracted_text
         FROM files
-        WHERE id = ?1 OR resource_id = ?1
+        WHERE (id = ?1 OR resource_id = ?1)
+          AND status = 'active' AND deleted_at IS NULL
         ORDER BY CASE WHEN id = ?1 THEN 0 ELSE 1 END
         LIMIT 1
     "#;
@@ -1401,7 +1409,8 @@ pub fn get_ocr_pages_text_with_conn(conn: &Connection, source_id: &str) -> Optio
     let sql = r#"
         SELECT ocr_pages_json
         FROM files
-        WHERE id = ?1 OR resource_id = ?1
+        WHERE (id = ?1 OR resource_id = ?1)
+          AND status = 'active' AND deleted_at IS NULL
         ORDER BY CASE WHEN id = ?1 THEN 0 ELSE 1 END
         LIMIT 1
     "#;
@@ -1513,7 +1522,7 @@ fn resolve_source_id_by_resource_id(conn: &Connection, resource_id: &str) -> Opt
 fn get_attachment_type_with_conn(conn: &Connection, source_id: &str) -> VfsResourceType {
     let result: Option<String> = conn
         .query_row(
-            "SELECT type FROM files WHERE id = ?1 AND deleted_at IS NULL",
+            "SELECT type FROM files WHERE id = ?1 AND status = 'active' AND deleted_at IS NULL",
             params![source_id],
             |row| row.get(0),
         )
@@ -1641,7 +1650,8 @@ fn get_file_multimodal_blocks_with_conn(
     let sql = r#"
         SELECT preview_json, ocr_pages_json, file_name
         FROM files
-        WHERE id = ?1 OR resource_id = ?1
+        WHERE (id = ?1 OR resource_id = ?1)
+          AND status = 'active' AND deleted_at IS NULL
         ORDER BY CASE WHEN id = ?1 THEN 0 ELSE 1 END
         LIMIT 1
     "#;
@@ -1935,12 +1945,26 @@ mod tests {
                 file_name TEXT NOT NULL,
                 extracted_text TEXT,
                 ocr_pages_json TEXT,
-                resource_id TEXT
+                resource_id TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+                deleted_at TEXT
             )
             "#,
             [],
         )
         .expect("Failed to create files table");
+
+        conn.execute(
+            r#"
+            CREATE TABLE resources (
+                id TEXT PRIMARY KEY,
+                ocr_text TEXT,
+                deleted_at TEXT
+            )
+            "#,
+            [],
+        )
+        .expect("Failed to create resources table");
 
         conn
     }
@@ -1961,6 +1985,30 @@ mod tests {
             params![id, file_name, extracted_text, ocr_pages_json],
         )
         .expect("Failed to insert test file");
+    }
+
+    fn soft_delete_test_file(conn: &Connection, id: &str) {
+        conn.execute(
+            "UPDATE files SET status = 'deleted', deleted_at = ?1 WHERE id = ?2",
+            params!["2026-05-30T00:00:00.000Z", id],
+        )
+        .expect("Failed to soft delete test file");
+    }
+
+    fn insert_test_resource(conn: &Connection, id: &str, ocr_text: Option<&str>) {
+        conn.execute(
+            "INSERT INTO resources (id, ocr_text, deleted_at) VALUES (?1, ?2, NULL)",
+            params![id, ocr_text],
+        )
+        .expect("Failed to insert test resource");
+    }
+
+    fn soft_delete_test_resource(conn: &Connection, id: &str) {
+        conn.execute(
+            "UPDATE resources SET deleted_at = ?1 WHERE id = ?2",
+            params!["2026-05-30T00:00:00.000Z", id],
+        )
+        .expect("Failed to soft delete test resource");
     }
 
     fn insert_test_file_with_resource_id(
@@ -2220,6 +2268,18 @@ mod tests {
         assert!(result.is_none());
     }
 
+    #[test]
+    fn test_get_ocr_pages_text_hides_deleted_file() {
+        let conn = create_test_db();
+        let ocr_json = r#"["deleted OCR text should be hidden"]"#;
+        insert_test_file(&conn, "file_ocr_deleted", "test.pdf", None, Some(ocr_json));
+        soft_delete_test_file(&conn, "file_ocr_deleted");
+
+        let result = get_ocr_pages_text_with_conn(&conn, "file_ocr_deleted");
+
+        assert!(result.is_none());
+    }
+
     // ------------------------------------------------------------------------
     // get_extracted_text_with_conn 测试
     // ------------------------------------------------------------------------
@@ -2273,6 +2333,58 @@ mod tests {
         let result = get_extracted_text_with_conn(&conn, "file_ext_4");
 
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_extracted_text_hides_deleted_file() {
+        let conn = create_test_db();
+        insert_test_file(
+            &conn,
+            "file_ext_deleted",
+            "test.pdf",
+            Some("deleted extracted text should be hidden"),
+            None,
+        );
+        soft_delete_test_file(&conn, "file_ext_deleted");
+
+        let result = get_extracted_text_with_conn(&conn, "file_ext_deleted");
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_image_ocr_text_requires_active_file_and_resource() {
+        let conn = create_test_db();
+        insert_test_resource(&conn, "res_img_active", Some("active image OCR text"));
+        insert_test_file_with_resource_id(
+            &conn,
+            "file_img_active",
+            "res_img_active",
+            "active.png",
+            None,
+            None,
+        );
+
+        assert_eq!(
+            get_image_ocr_text_with_conn(&conn, "file_img_active").as_deref(),
+            Some("active image OCR text")
+        );
+
+        soft_delete_test_file(&conn, "file_img_active");
+        assert!(get_image_ocr_text_with_conn(&conn, "file_img_active").is_none());
+
+        insert_test_resource(&conn, "res_img_deleted", Some("deleted resource OCR text"));
+        insert_test_file_with_resource_id(
+            &conn,
+            "file_img_resource_deleted",
+            "res_img_deleted",
+            "resource-deleted.png",
+            None,
+            None,
+        );
+        soft_delete_test_resource(&conn, "res_img_deleted");
+
+        assert!(get_image_ocr_text_with_conn(&conn, "file_img_resource_deleted").is_none());
     }
 
     // ------------------------------------------------------------------------

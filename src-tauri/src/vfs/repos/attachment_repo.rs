@@ -1298,6 +1298,11 @@ impl VfsAttachmentRepo {
         Self::get_by_id_with_conn(&conn, id)
     }
 
+    pub fn get_active_by_id(db: &VfsDatabase, id: &str) -> VfsResult<Option<VfsAttachment>> {
+        let conn = db.get_conn_safe()?;
+        Self::get_active_by_id_with_conn(&conn, id)
+    }
+
     /// 根据 ID 获取附件（使用现有连接）
     pub fn get_by_id_with_conn(conn: &Connection, id: &str) -> VfsResult<Option<VfsAttachment>> {
         let mut stmt = conn.prepare(
@@ -1307,6 +1312,27 @@ impl VfsAttachmentRepo {
                    preview_json, extracted_text, page_count, deleted_at
             FROM files
             WHERE id = ?1
+            "#,
+        )?;
+
+        let attachment = stmt
+            .query_row(params![id], Self::row_to_attachment)
+            .optional()?;
+
+        Ok(attachment)
+    }
+
+    pub fn get_active_by_id_with_conn(
+        conn: &Connection,
+        id: &str,
+    ) -> VfsResult<Option<VfsAttachment>> {
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT id, resource_id, blob_hash, type, name, mime_type, size,
+                   content_hash, is_favorite, created_at, updated_at,
+                   preview_json, extracted_text, page_count, deleted_at
+            FROM files
+            WHERE id = ?1 AND status = 'active' AND deleted_at IS NULL
             "#,
         )?;
 
@@ -1349,7 +1375,7 @@ impl VfsAttachmentRepo {
                        content_hash, is_favorite, created_at, updated_at,
                        preview_json, extracted_text, page_count, deleted_at
                 FROM files
-                WHERE type = ?1 AND deleted_at IS NULL
+                WHERE type = ?1 AND status = 'active' AND deleted_at IS NULL
                 ORDER BY updated_at DESC
                 LIMIT ?2 OFFSET ?3
                 "#,
@@ -1366,7 +1392,7 @@ impl VfsAttachmentRepo {
                        content_hash, is_favorite, created_at, updated_at,
                        preview_json, extracted_text, page_count, deleted_at
                 FROM files
-                WHERE deleted_at IS NULL
+                WHERE status = 'active' AND deleted_at IS NULL
                 ORDER BY updated_at DESC
                 LIMIT ?1 OFFSET ?2
                 "#,
@@ -1439,7 +1465,7 @@ impl VfsAttachmentRepo {
         blobs_dir: &Path,
         id: &str,
     ) -> VfsResult<Option<String>> {
-        let attachment = match Self::get_by_id_with_conn(conn, id)? {
+        let attachment = match Self::get_active_by_id_with_conn(conn, id)? {
             Some(a) => a,
             None => return Ok(None),
         };
@@ -2013,7 +2039,10 @@ impl VfsAttachmentRepo {
     /// 软删除附件（使用现有连接）
     pub fn delete_attachment_with_conn(conn: &Connection, id: &str) -> VfsResult<()> {
         VfsFileRepo::delete_file_with_conn(conn, id)?;
-        info!("[VFS::AttachmentRepo] Soft deleted attachment via file repo: {}", id);
+        info!(
+            "[VFS::AttachmentRepo] Soft deleted attachment via file repo: {}",
+            id
+        );
         Ok(())
     }
 
@@ -2025,41 +2054,10 @@ impl VfsAttachmentRepo {
 
     /// 恢复软删除的附件（使用现有连接）
     pub fn restore_attachment_with_conn(conn: &Connection, id: &str) -> VfsResult<()> {
-        let now = chrono::Utc::now()
-            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
-            .to_string();
-
-        let updated = conn.execute(
-            "UPDATE files SET deleted_at = NULL, status = 'active', updated_at = ?1 WHERE id = ?2 AND deleted_at IS NOT NULL",
-            params![now, id],
-        )?;
-
-        if updated == 0 {
-            // 可能未删除或不存在
-            let exists: bool = conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM files WHERE id = ?1)",
-                params![id],
-                |row| row.get(0),
-            )?;
-
-            if !exists {
-                return Err(VfsError::NotFound {
-                    resource_type: "attachment".to_string(),
-                    id: id.to_string(),
-                });
-            }
-            // 未在回收站中，静默返回成功
-        }
-
-        let now_ms = chrono::Utc::now().timestamp_millis();
-        let fi_updated = conn.execute(
-            "UPDATE folder_items SET deleted_at = NULL, updated_at = ?1 WHERE item_id = ?2 AND item_type IN ('file', 'image', 'attachment', 'textbook') AND deleted_at IS NOT NULL",
-            params![now_ms, id],
-        )?;
-
+        VfsFileRepo::restore_file_with_conn(conn, id)?;
         info!(
-            "[VFS::AttachmentRepo] Restored attachment: {} (folder_items updated: {})",
-            id, fi_updated
+            "[VFS::AttachmentRepo] Restored attachment via file repo: {}",
+            id
         );
         Ok(())
     }
@@ -2143,7 +2141,7 @@ impl VfsAttachmentRepo {
                    content_hash, is_favorite, created_at, updated_at,
                    preview_json, extracted_text, page_count, deleted_at
             FROM files
-            WHERE deleted_at IS NOT NULL
+            WHERE status = 'deleted' OR deleted_at IS NOT NULL
             ORDER BY deleted_at DESC
             LIMIT ?1 OFFSET ?2
             "#,
@@ -2281,7 +2279,7 @@ impl VfsAttachmentRepo {
     ) -> VfsResult<Vec<Option<String>>> {
         let ocr_json: Option<String> = conn
             .query_row(
-                "SELECT ocr_pages_json FROM files WHERE id = ?1",
+                "SELECT ocr_pages_json FROM files WHERE id = ?1 AND status = 'active' AND deleted_at IS NULL",
                 params![attachment_id],
                 |row| row.get(0),
             )
@@ -2492,6 +2490,8 @@ fn split_text_to_pages(text: &str, page_count: usize) -> Vec<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vfs::database::VfsDatabase;
+    use crate::vfs::types::VfsUploadAttachmentParams;
 
     #[test]
     fn test_decode_base64_plain() {
@@ -2564,6 +2564,48 @@ mod tests {
             VfsAttachmentRepo::infer_extension("application/pdf", "document.pdf"),
             Some("pdf".to_string())
         );
+    }
+
+    #[test]
+    fn test_deleted_attachment_is_hidden_from_active_and_content_reads() {
+        let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+        let db = VfsDatabase::new(temp_dir.path()).expect("Failed to create database");
+        let conn = db.get_conn_safe().unwrap();
+
+        let upload = VfsAttachmentRepo::upload_with_conn(
+            &conn,
+            db.blobs_dir(),
+            VfsUploadAttachmentParams {
+                name: "hidden.png".to_string(),
+                mime_type: "image/png".to_string(),
+                base64_content: "aW1hZ2UtYnl0ZXM=".to_string(),
+                attachment_type: Some("image".to_string()),
+            },
+        )
+        .expect("Upload should succeed");
+
+        assert!(VfsAttachmentRepo::get_active_by_id(&db, &upload.source_id)
+            .unwrap()
+            .is_some());
+        assert!(VfsAttachmentRepo::get_content(&db, &upload.source_id)
+            .unwrap()
+            .is_some());
+
+        VfsAttachmentRepo::delete_attachment(&db, &upload.source_id)
+            .expect("Delete should succeed");
+
+        assert!(VfsAttachmentRepo::get_by_id(&db, &upload.source_id)
+            .unwrap()
+            .is_some());
+        assert!(VfsAttachmentRepo::get_active_by_id(&db, &upload.source_id)
+            .unwrap()
+            .is_none());
+        assert!(VfsAttachmentRepo::get_content(&db, &upload.source_id)
+            .unwrap()
+            .is_none());
+
+        let deleted = VfsAttachmentRepo::list_deleted_attachments(&db, 10, 0).unwrap();
+        assert!(deleted.iter().any(|item| item.id == upload.source_id));
     }
 
     #[test]
