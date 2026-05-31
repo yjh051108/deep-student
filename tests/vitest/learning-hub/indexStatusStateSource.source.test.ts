@@ -31,6 +31,16 @@ describe('Index status state source contract', () => {
     expect(handlerSource).toContain('get_vl_embedding_model_config().await');
     expect(handlerSource).toContain('fn is_usable_vl_embedding_config(config: &ApiConfig) -> bool');
     expect(handlerSource).toContain('Ok(config) if is_usable_vl_embedding_config(&config)');
+    expect(handlerSource).toContain('database: State<\'_, Arc<crate::database::Database>>');
+    expect(handlerSource).toContain('vfs_db: State<\'_, Arc<VfsDatabase>>');
+    expect(handlerSource).toContain('resolve_bound_multimodal_embedding_model_id');
+    expect(handlerSource).toContain('match resolve_bound_multimodal_embedding_model_id(&database, &vfs_db)');
+    expect(handlerSource).toContain('save_setting(');
+    expect(handlerSource).toContain('embedding.default_multimodal_model_config_id');
+    expect(handlerSource).toContain('embedding.default_multimodal_dimension');
+    expect(handlerSource).toContain('list_by_modality(&conn, "multimodal")');
+    expect(handlerSource).toContain('默认多模态维度 {} 不存在，请重新设置');
+    expect(handlerSource).toContain('检测到多个多模态维度绑定了不同模型，请设置默认多模态维度');
     expect(handlerSource).toContain('vl_embedding_capability_accepts_explicit_embedding_assignment_without_multimodal_flag');
     expect(handlerSource).toContain('vl_embedding_capability_rejects_disabled_non_embedding_or_reranker_configs');
     expect(ragExtensionSource).toContain('get_setting("embedding.default_multimodal_model_config_id")');

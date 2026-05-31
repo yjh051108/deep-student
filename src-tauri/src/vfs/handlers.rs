@@ -4110,21 +4110,86 @@ fn is_usable_vl_embedding_config(config: &ApiConfig) -> bool {
     config.enabled && config.is_embedding && !config.is_reranker
 }
 
+fn resolve_bound_multimodal_embedding_model_id(
+    database: &crate::database::Database,
+    vfs_db: &VfsDatabase,
+) -> Result<Option<String>, String> {
+    let conn = vfs_db.get_conn().map_err(|e| e.to_string())?;
+
+    if let Ok(Some(default_dim_str)) =
+        database.get_setting("embedding.default_multimodal_dimension")
+    {
+        let default_dim = default_dim_str
+            .parse::<i32>()
+            .map_err(|_| format!("无效的默认多模态维度: {}", default_dim_str))?;
+        let dim =
+            crate::vfs::repos::embedding_dim_repo::get_by_key(&conn, default_dim, "multimodal")
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("默认多模态维度 {} 不存在，请重新设置", default_dim))?;
+        if let Some(model_config_id) = dim.model_config_id {
+            return Ok(Some(model_config_id));
+        }
+    }
+
+    let bound_ids = crate::vfs::repos::embedding_dim_repo::list_by_modality(&conn, "multimodal")
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .filter_map(|dim| dim.model_config_id)
+        .filter(|id| !id.trim().is_empty())
+        .collect::<std::collections::BTreeSet<_>>();
+    drop(conn);
+
+    if bound_ids.is_empty() {
+        return Ok(None);
+    }
+    if bound_ids.len() > 1 {
+        return Err("检测到多个多模态维度绑定了不同模型，请设置默认多模态维度".to_string());
+    }
+
+    let model_config_id = bound_ids
+        .into_iter()
+        .next()
+        .expect("checked exactly one bound model id");
+    Ok(Some(model_config_id))
+}
+
 #[tauri::command]
 pub async fn vfs_get_multimodal_index_capability(
+    database: State<'_, Arc<crate::database::Database>>,
+    vfs_db: State<'_, Arc<VfsDatabase>>,
     llm_manager: State<'_, Arc<crate::llm_manager::LLMManager>>,
 ) -> Result<MultimodalIndexCapability, String> {
-    match llm_manager.get_vl_embedding_model_config().await {
-        Ok(config) if is_usable_vl_embedding_config(&config) => {
-            Ok(MultimodalIndexCapability {
-                status: "ready".to_string(),
-                ready: true,
-                model_config_id: Some(config.id),
-                model_name: Some(config.name),
-                model: Some(config.model),
-                reason: None,
-            })
+    let config_result = match llm_manager.get_vl_embedding_model_config().await {
+        Ok(config) => Ok(config),
+        Err(primary_err) => {
+            match resolve_bound_multimodal_embedding_model_id(&database, &vfs_db) {
+                Ok(Some(model_config_id)) => {
+                    database
+                        .save_setting(
+                            "embedding.default_multimodal_model_config_id",
+                            &model_config_id,
+                        )
+                        .map_err(|e| e.to_string())?;
+                    llm_manager
+                        .get_vl_embedding_model_config()
+                        .await
+                        .map_err(|e| e.to_string())
+                }
+                Ok(None) => Err(primary_err.to_string()),
+                Err(fallback_err) => Err(fallback_err),
+            }
         }
+    };
+
+    match config_result {
+        Ok(config) if is_usable_vl_embedding_config(&config) => Ok(MultimodalIndexCapability {
+            status: "ready".to_string(),
+            ready: true,
+            model_config_id: Some(config.id),
+            model_name: Some(config.name),
+            model: Some(config.model),
+            reason: None,
+        }),
         Ok(config) => Ok(MultimodalIndexCapability {
             status: "invalidModel".to_string(),
             ready: false,
@@ -4139,7 +4204,7 @@ pub async fn vfs_get_multimodal_index_capability(
             model_config_id: None,
             model_name: None,
             model: None,
-            reason: Some(err.to_string()),
+            reason: Some(err),
         }),
     }
 }
