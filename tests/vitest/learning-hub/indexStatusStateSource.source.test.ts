@@ -63,8 +63,10 @@ describe('Index status state source contract', () => {
 
   it('loads every index status page before deriving visible rows or one-click workload', () => {
     expect(viewSource).toContain('const getCompleteIndexStatus = async (');
-    expect(viewSource).toContain('while (resources.length < firstPage.totalResources)');
+    expect(viewSource).toContain('const expectedTotal = firstPage.displayTotalResources ?? firstPage.totalResources;');
+    expect(viewSource).toContain('while (resources.length < expectedTotal)');
     expect(viewSource).toContain('offset: resources.length');
+    expect(viewSource).toContain('if (page.resources.length === 0) break;');
     expect(viewSource).toContain('resources.push(...page.resources)');
     expect(viewSource).toContain('getCompleteIndexStatus({');
     expect(viewSource).not.toContain('limit: 200');

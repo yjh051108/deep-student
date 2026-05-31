@@ -164,8 +164,9 @@ const getCompleteIndexStatus = async (
     offset: 0,
   });
   const resources = [...firstPage.resources];
+  const expectedTotal = firstPage.displayTotalResources ?? firstPage.totalResources;
 
-  while (resources.length < firstPage.totalResources) {
+  while (resources.length < expectedTotal) {
     const page = await getAllIndexStatus({
       ...params,
       limit: INDEX_STATUS_PAGE_SIZE,
