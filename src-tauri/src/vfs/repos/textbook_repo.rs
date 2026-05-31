@@ -16,7 +16,7 @@ use crate::vfs::database::VfsDatabase;
 use crate::vfs::error::{VfsError, VfsResult};
 use crate::vfs::ocr_utils::parse_ocr_pages_json;
 use crate::vfs::repos::folder_repo::VfsFolderRepo;
-use crate::vfs::repos::VfsBlobRepo;
+use crate::vfs::repos::{VfsBlobRepo, VfsFileRepo};
 use crate::vfs::types::{PdfPreviewJson, ResourceLocation, VfsFile, VfsFolderItem, VfsTextbook};
 
 /// Log row-parse errors instead of silently discarding them.
@@ -326,6 +326,37 @@ impl VfsTextbookRepo {
         Ok(textbook)
     }
 
+    /// 根据 ID 获取公开可见教材（仅 active 且未软删除）
+    pub fn get_active_textbook(
+        db: &VfsDatabase,
+        textbook_id: &str,
+    ) -> VfsResult<Option<VfsTextbook>> {
+        let conn = db.get_conn_safe()?;
+        Self::get_active_textbook_with_conn(&conn, textbook_id)
+    }
+
+    /// 根据 ID 获取公开可见教材（使用现有连接）
+    pub fn get_active_textbook_with_conn(
+        conn: &Connection,
+        textbook_id: &str,
+    ) -> VfsResult<Option<VfsTextbook>> {
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT id, resource_id, blob_hash, sha256, file_name, original_path, size, page_count,
+                   tags_json, is_favorite, last_opened_at, last_page, bookmarks_json,
+                   cover_key, status, created_at, updated_at
+            FROM files
+            WHERE id = ?1 AND status = 'active' AND deleted_at IS NULL
+            "#,
+        )?;
+
+        let textbook = stmt
+            .query_row(params![textbook_id], Self::row_to_textbook)
+            .optional()?;
+
+        Ok(textbook)
+    }
+
     /// 根据 SHA256 获取教材
     pub fn get_by_sha256(db: &VfsDatabase, sha256: &str) -> VfsResult<Option<VfsTextbook>> {
         let conn = db.get_conn_safe()?;
@@ -381,6 +412,7 @@ impl VfsTextbookRepo {
                    cover_key, status, created_at, updated_at
             FROM files
             WHERE status = 'active'
+              AND deleted_at IS NULL
             ORDER BY updated_at DESC
             LIMIT ?1 OFFSET ?2
             "#,
@@ -417,6 +449,7 @@ impl VfsTextbookRepo {
                    cover_key, status, created_at, updated_at
             FROM files
             WHERE status = 'active'
+              AND deleted_at IS NULL
               AND (file_name LIKE ?1 OR COALESCE(original_path, '') LIKE ?1)
             ORDER BY updated_at DESC
             LIMIT ?2 OFFSET ?3
@@ -643,37 +676,12 @@ impl VfsTextbookRepo {
 
     /// 恢复软删除的教材（使用现有连接）
     ///
-    /// ★ P0 修复：恢复教材时同步恢复 folder_items 记录，
-    /// 确保恢复后的教材在 Learning Hub 中可见
+    /// 通过统一 files 恢复路径同步恢复 folder_items、resources 与索引状态。
     pub fn restore_textbook_with_conn(conn: &Connection, textbook_id: &str) -> VfsResult<()> {
-        let now = chrono::Utc::now()
-            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
-            .to_string();
-        let now_ms = chrono::Utc::now().timestamp_millis();
-
-        // 1. 恢复教材
-        let updated = conn.execute(
-            "UPDATE files SET status = 'active', deleted_at = NULL, updated_at = ?1 WHERE id = ?2 AND status = 'deleted'",
-            params![now, textbook_id],
-        )?;
-
-        if updated == 0 {
-            return Err(VfsError::NotFound {
-                resource_type: "Textbook".to_string(),
-                id: textbook_id.to_string(),
-            });
-        }
-
-        // 2. ★ P0 修复：恢复 folder_items 记录
-        // Migration032 后统一使用 'file' 类型
-        let folder_items_restored = conn.execute(
-            "UPDATE folder_items SET deleted_at = NULL, updated_at = ?1 WHERE item_type = 'file' AND item_id = ?2 AND deleted_at IS NOT NULL",
-            params![now_ms, textbook_id],
-        )?;
-
+        VfsFileRepo::restore_file_with_conn(conn, textbook_id)?;
         info!(
-            "[VFS::TextbookRepo] Restored textbook: {}, folder_items restored: {}",
-            textbook_id, folder_items_restored
+            "[VFS::TextbookRepo] Restored textbook {} through unified file repo",
+            textbook_id
         );
         Ok(())
     }
@@ -1050,23 +1058,9 @@ impl VfsTextbookRepo {
         conn: &Connection,
         textbook_id: &str,
     ) -> VfsResult<()> {
-        // 1. 软删除教材
-        Self::delete_textbook_with_conn(conn, textbook_id)?;
-
-        // 2. 软删除 folder_items 记录（而不是硬删除）
-        // Migration032 后统一使用 'file' 类型
-        // ★ P0 修复：deleted_at 是 TEXT 列，updated_at 是 INTEGER 列，必须分开处理
-        let now_str = chrono::Utc::now()
-            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
-            .to_string();
-        let now_ms = chrono::Utc::now().timestamp_millis();
-        conn.execute(
-            "UPDATE folder_items SET deleted_at = ?1, updated_at = ?2 WHERE item_type = 'file' AND item_id = ?3 AND deleted_at IS NULL",
-            params![now_str, now_ms, textbook_id],
-        )?;
-
+        VfsFileRepo::delete_file_with_conn(conn, textbook_id)?;
         debug!(
-            "[VFS::TextbookRepo] Soft deleted textbook {} and its folder_items",
+            "[VFS::TextbookRepo] Soft deleted textbook {} through unified file repo",
             textbook_id
         );
 
@@ -1122,7 +1116,10 @@ impl VfsTextbookRepo {
                    t.cover_key, t.status, t.created_at, t.updated_at
             FROM files t
             JOIN folder_items fi ON fi.item_type = 'file' AND fi.item_id = t.id
-            WHERE fi.folder_id IS ?1 AND t.status = 'active'
+            WHERE fi.folder_id IS ?1
+              AND fi.deleted_at IS NULL
+              AND t.status = 'active'
+              AND t.deleted_at IS NULL
             ORDER BY fi.sort_order ASC, t.updated_at DESC
             LIMIT ?2 OFFSET ?3
         "#;

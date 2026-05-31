@@ -70,7 +70,7 @@ pub async fn get_resource_by_type_and_id(
                 }
             }
         }
-        "textbooks" => match VfsTextbookRepo::get_textbook(vfs_db, id) {
+        "textbooks" => match VfsTextbookRepo::get_active_textbook(vfs_db, id) {
             Ok(textbook) => {
                 log::info!(
                     "[DSTU::crud] get_resource_by_type_and_id: SUCCESS - type=textbook, id={}",
@@ -183,7 +183,7 @@ pub async fn fetch_resource_as_dstu_node(
             Ok(None) => Ok(None),
             Err(e) => Err(e.to_string()),
         },
-        "textbook" => match VfsTextbookRepo::get_textbook(vfs_db, &item.item_id) {
+        "textbook" => match VfsTextbookRepo::get_active_textbook(vfs_db, &item.item_id) {
             Ok(Some(tb)) => Ok(Some(textbook_to_dstu_node(&tb))),
             Ok(None) => Ok(None),
             Err(e) => Err(e.to_string()),
@@ -293,7 +293,7 @@ pub fn fallback_lookup_uuid_resource(vfs_db: &Arc<VfsDatabase>, uuid_id: &str) -
     );
 
     // 1. 尝试教材（最可能是从旧数据库迁移的 UUID 格式）
-    if let Ok(Some(textbook)) = VfsTextbookRepo::get_textbook(vfs_db, uuid_id) {
+    if let Ok(Some(textbook)) = VfsTextbookRepo::get_active_textbook(vfs_db, uuid_id) {
         log::info!(
             "[DSTU::crud] fallback_lookup_uuid_resource: found as textbook, id={}",
             uuid_id

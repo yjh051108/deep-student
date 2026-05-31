@@ -448,7 +448,7 @@ pub async fn dstu_get(
                 return Err(e.to_string());
             }
         },
-        "textbooks" => match VfsTextbookRepo::get_textbook(&vfs_db, &id) {
+        "textbooks" => match VfsTextbookRepo::get_active_textbook(&vfs_db, &id) {
             Ok(Some(textbook)) => Some(textbook_to_dstu_node(&textbook)),
             Ok(None) => None,
             Err(e) => {
@@ -5780,7 +5780,7 @@ pub async fn dstu_get_resource_by_path(
                 Ok(None) => Ok(None),
                 Err(e) => Err(e.to_string()),
             },
-            "textbook" => match VfsTextbookRepo::get_textbook(&vfs_db, resource_id) {
+            "textbook" => match VfsTextbookRepo::get_active_textbook(&vfs_db, resource_id) {
                 Ok(Some(tb)) => Ok(Some(textbook_to_dstu_node(&tb))),
                 Ok(None) => Ok(None),
                 Err(e) => Err(e.to_string()),

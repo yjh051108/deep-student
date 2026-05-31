@@ -254,6 +254,7 @@ pub fn search_textbooks(
                cover_key, status, created_at, updated_at
         FROM files
         WHERE status = 'active'
+          AND deleted_at IS NULL
           AND file_name LIKE ?1 ESCAPE '\'
           AND (mime_type LIKE '%pdf%' OR file_name LIKE '%.pdf')
         ORDER BY updated_at DESC
@@ -633,6 +634,7 @@ pub fn search_by_index(
             SELECT DISTINCT u.resource_id, s.content_text
             FROM vfs_index_segments s
             JOIN vfs_index_units u ON s.unit_id = u.id
+            JOIN resources r ON r.id = u.resource_id AND r.deleted_at IS NULL
             WHERE s.content_text LIKE ?1 ESCAPE '\'
             GROUP BY u.resource_id
             LIMIT ?2
@@ -715,11 +717,11 @@ fn resolve_source_to_node(
             .ok()
             .flatten()
             .map(|n| note_to_dstu_node(&n)),
-        "files" => VfsFileRepo::get_file(vfs_db, source_id)
+        "files" => VfsFileRepo::get_active_file(vfs_db, source_id)
             .ok()
             .flatten()
             .map(|f| file_to_dstu_node(&f)),
-        "textbooks" => VfsTextbookRepo::get_textbook(vfs_db, source_id)
+        "textbooks" => VfsTextbookRepo::get_active_textbook(vfs_db, source_id)
             .ok()
             .flatten()
             .map(|t| textbook_to_dstu_node(&t)),

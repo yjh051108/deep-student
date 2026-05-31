@@ -126,7 +126,7 @@ pub async fn dstu_soft_delete(
     let result = match item_type.as_str() {
         "folder" => VfsFolderRepo::delete_folder(&db, &id),
         "note" => VfsNoteRepo::delete_note(&db, &id),
-        "textbook" => VfsTextbookRepo::delete_textbook(&db, &id),
+        "textbook" => VfsFileRepo::delete_file(&db, &id),
         "exam" => VfsExamRepo::delete_exam_sheet(&db, &id),
         "translation" => VfsTranslationRepo::delete_translation(&db, &id),
         "essay" => {
