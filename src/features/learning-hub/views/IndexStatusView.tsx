@@ -319,7 +319,6 @@ export const IndexStatusView: React.FC = () => {
     const currentRequestId = ++requestIdRef.current;
     debugLog.log('[IndexStatusView] loadData 开始', {
       requestId: currentRequestId,
-      selectedState,
       selectedType,
     });
     setIsLoading(true);
@@ -379,7 +378,7 @@ export const IndexStatusView: React.FC = () => {
         setIsLoading(false);
       }
     }
-  }, [selectedState, selectedType]);
+  }, [selectedType]);
 
   useEffect(() => {
     loadData();
