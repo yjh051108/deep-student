@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DSTU_NAVIGATE_TO_KNOWLEDGE_BASE_EVENT } from '@/components/learning-hub/learningHubContracts';
@@ -42,7 +42,26 @@ vi.mock('@/dstu', () => ({
 }));
 vi.mock('@/components/UnifiedNotification', () => ({ showGlobalNotification: vi.fn() }));
 vi.mock('@/utils/pendingMemoryLocate', () => ({ setPendingMemoryLocate: pageMocks.setPendingMemoryLocate }));
-vi.mock('@/components/learning-hub/LearningHubSidebar', () => ({ LearningHubSidebar: () => <div>sidebar</div> }));
+vi.mock('@/components/learning-hub/LearningHubSidebar', () => ({
+  LearningHubSidebar: ({ onOpenApp, activeFileId }: {
+    onOpenApp?: (item: { id: string; type: string; title: string; path: string }) => void;
+    activeFileId?: string | null;
+  }) => (
+    <div>
+      <button
+        onClick={() => onOpenApp?.({
+          id: 'file_1',
+          type: 'file',
+          title: 'Handout.pdf',
+          path: '/Course/Handout.pdf',
+        })}
+      >
+        open-sidebar-file
+      </button>
+      <div data-testid="active-file-id">{activeFileId ?? ''}</div>
+    </div>
+  ),
+}));
 vi.mock('@/stores/uiStore', () => ({ useUIStore: (selector: (state: { leftPanelCollapsed: boolean; setLeftPanelCollapsed: () => void }) => unknown) => selector({ leftPanelCollapsed: false, setLeftPanelCollapsed: vi.fn() }) }));
 vi.mock('@/components/layout', () => ({ useMobileHeader: vi.fn() }));
 vi.mock('@/hooks/useBreakpoint', () => ({ useBreakpoint: () => ({ isSmallScreen: false }) }));
@@ -94,5 +113,17 @@ describe('LearningHubPage events', () => {
     expect(pageMocks.dstuGet).toHaveBeenCalledWith('/tb_1');
     expect(pageMocks.finderQuickAccessNavigate).not.toHaveBeenCalledWith('memory');
     expect(pageMocks.setPendingMemoryLocate).not.toHaveBeenCalled();
+  });
+
+  it('opens and reuses a finder resource tab while feeding the active resource back to the sidebar', async () => {
+    render(<LearningHubPage />);
+
+    fireEvent.click(screen.getByText('open-sidebar-file'));
+    await waitFor(() => expect(screen.getByTestId('tab-count')).toHaveTextContent('1:Handout.pdf'));
+    expect(screen.getByTestId('active-file-id')).toHaveTextContent('file_1');
+
+    fireEvent.click(screen.getByText('open-sidebar-file'));
+    await waitFor(() => expect(screen.getByTestId('tab-count')).toHaveTextContent('1:Handout.pdf'));
+    expect(screen.getByTestId('active-file-id')).toHaveTextContent('file_1');
   });
 });

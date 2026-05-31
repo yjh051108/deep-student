@@ -16,7 +16,10 @@ const finderState = {
   selectedIds: new Set<string>(),
   searchQuery: '',
   isSearching: false,
-  items: [{ id: 'type_textbooks', type: 'folder', name: '教材', path: '/virtual' }],
+  items: [
+    { id: 'type_textbooks', type: 'folder', name: '教材', path: '/virtual' },
+    { id: 'fld_child', type: 'folder', name: 'Child', path: '/Child' },
+  ],
   isLoading: false,
   error: null,
   goBack: vi.fn(),
@@ -85,8 +88,11 @@ vi.mock('@/components/learning-hub/components/finder', () => ({
   FinderQuickAccess: () => null,
   FinderBatchToolbar: () => null,
   FolderPickerDialog: () => null,
-  FinderFileList: ({ items, onOpen }: { items: any[]; onOpen: (item: any) => void }) => (
-    <button onClick={() => onOpen(items[0])}>open-first-item</button>
+  FinderFileList: ({ items, onOpen, onSelect }: { items: any[]; onOpen: (item: any) => void; onSelect: (id: string, mode: 'single') => void }) => (
+    <>
+      <button onClick={() => onOpen(items[0])}>open-first-item</button>
+      <button onClick={() => onSelect(items[1].id, 'single')}>select-folder-item</button>
+    </>
   ),
 }));
 vi.mock('@/dstu', () => ({
@@ -138,6 +144,17 @@ describe('LearningHubSidebar integration', () => {
     fireEvent.click(screen.getByText('open-first-item'));
 
     expect(sidebarMocks.quickAccessNavigate).toHaveBeenCalledWith('textbooks');
+    expect(sidebarMocks.addRecent).not.toHaveBeenCalled();
+  });
+
+  it('opens real folders from the same single-click selection path as files', async () => {
+    render(<LearningHubSidebar mode="fullscreen" />);
+
+    await waitFor(() => expect(sidebarMocks.finderRefresh).toHaveBeenCalled());
+    fireEvent.click(screen.getByText('select-folder-item'));
+
+    expect(finderState.select).toHaveBeenCalledWith('fld_child', 'single');
+    expect(finderState.enterFolder).toHaveBeenCalledWith('fld_child', 'Child', '/Child');
     expect(sidebarMocks.addRecent).not.toHaveBeenCalled();
   });
 });

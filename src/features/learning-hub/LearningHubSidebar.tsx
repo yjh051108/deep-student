@@ -483,7 +483,7 @@ export function LearningHubSidebar({
     if (selectMode !== 'single') return;
 
     const item = items.find(i => i.id === id);
-    if (!item || item.type === 'folder') return;
+    if (!item) return;
     handleOpen(item);
   };
 
