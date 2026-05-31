@@ -73,14 +73,13 @@ describe('Index status state source contract', () => {
   });
 
   it('derives one-click workload from backend summary and lets backend drain pending work', () => {
-    expect(viewSource).toContain('const displayWorkCount = summary.displayPendingCount + summary.displayFailedCount;');
-    expect(viewSource).toContain('const pendingTextResources = summary.resources.filter(isPendingTextResource);');
-    expect(viewSource).toContain('const pendingTextCount = pendingTextResources.length;');
+    expect(viewSource).toContain('const textWorkCount = summary.pendingCount + summary.failedCount;');
     expect(viewSource).toContain('const pendingMmCount = mmResources.length;');
     expect(viewSource).toContain('await batchIndexPending();');
-    expect(viewSource).toContain('if (displayWorkCount === 0) {');
+    expect(viewSource).toContain('if (textWorkCount === 0 && pendingMmCount === 0) {');
     expect(viewSource).not.toContain('Math.max(pendingTextCount, 10)');
     expect(viewSource).not.toContain('const pendingTextCount = summary.pendingCount + summary.failedCount;');
+    expect(viewSource).not.toContain('const pendingTextResources = summary.resources.filter(isPendingTextResource);');
     expect(viewSource).not.toContain('const pendingMmCount = summary.mmPendingCount + summary.mmFailedCount;');
   });
 

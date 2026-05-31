@@ -126,11 +126,6 @@ const isPendingMultimodalResource = (resource: ResourceIndexStatus): boolean =>
     && resource.mmIndexState !== 'indexed'
     && resource.mmIndexState !== 'disabled';
 
-const isPendingTextResource = (resource: ResourceIndexStatus): boolean => {
-  const textState = normalizeIndexState(resource.textIndexState);
-  return textState === 'pending' || textState === 'failed';
-};
-
 type ImageIndexCapability = 'ready' | 'featureDisabled' | 'notConfigured' | 'invalidModel';
 
 interface MultimodalIndexCapability {
@@ -635,21 +630,19 @@ export const IndexStatusView: React.FC = () => {
       return;
     }
 
-    const displayWorkCount = summary.displayPendingCount + summary.displayFailedCount;
-    const pendingTextResources = summary.resources.filter(isPendingTextResource);
-    const pendingTextCount = pendingTextResources.length;
+    const textWorkCount = summary.pendingCount + summary.failedCount;
     const mmResources = MULTIMODAL_INDEX_ENABLED
       ? summary.resources.filter(isPendingMultimodalResource)
       : [];
     const pendingMmCount = mmResources.length;
     const canRunImageIndex = imageIndexCapability === 'ready';
 
-    if (displayWorkCount === 0) {
+    if (textWorkCount === 0 && pendingMmCount === 0) {
       showGlobalNotification('info', t('indexStatus.notification.hint'), t('indexStatus.notification.noResourcesToIndex'));
       return;
     }
 
-    if (displayWorkCount > 0 && pendingTextCount === 0 && pendingMmCount > 0 && !canRunImageIndex) {
+    if (textWorkCount === 0 && pendingMmCount > 0 && !canRunImageIndex) {
       showGlobalNotification(
         'warning',
         t('indexStatus.notification.hint'),
@@ -659,7 +652,7 @@ export const IndexStatusView: React.FC = () => {
     }
 
     // 先执行 OCR 文本索引。工作量来自当前完整资源页，展示口径来自后端 display state。
-    if (pendingTextCount > 0) {
+    if (textWorkCount > 0) {
       setBatchIndexing(true);
       setBatchProgress(0);
       setBatchMessage(t('indexStatus.notification.preparingOcrBatch'));
@@ -912,8 +905,19 @@ export const IndexStatusView: React.FC = () => {
     if (!summary) return null;
     const imageIndexReady = imageIndexCapability === 'ready';
     const imageIndexMessage = t(`indexStatus.progress.imageIndexCapability.${imageIndexCapability}`);
-    const renderCount = (indexed: number, total: number) => (
-      <span className="grid grid-cols-[3ch_1ch_3ch_auto] items-center gap-x-1 text-xs leading-none text-muted-foreground tabular-nums">
+    const textProgress = {
+      indexed: summary.indexedCount,
+      total: summary.totalResources,
+    };
+    const imageProgress = {
+      indexed: summary.mmIndexedCount,
+      total: summary.mmTotalResources,
+    };
+    const renderCount = (indexed: number, total: number, label: string) => (
+      <span
+        aria-label={`${label} ${indexed}/${total}`}
+        className="grid grid-cols-[3ch_1ch_3ch_auto] items-center gap-x-1 text-xs leading-none tabular-nums"
+      >
         <span className="text-right">{indexed}</span>
         <span className="text-center">/</span>
         <span className="text-left">{total}</span>
@@ -926,18 +930,18 @@ export const IndexStatusView: React.FC = () => {
         "grid min-w-0 grid-cols-[14px_auto_1fr] items-center gap-x-2",
         compact ? "gap-y-1" : "gap-y-1.5"
       )}>
-        <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        <span className={cn("shrink-0 font-medium leading-none", compact ? "text-sm" : "text-sm")}>{t('indexStatus.progress.textIndexProgress')}</span>
-        {renderCount(displayIndexStats.indexed, displayIndexStats.total)}
+        <FileText className="h-3.5 w-3.5 shrink-0 text-foreground/75" />
+        <span className={cn("shrink-0 font-medium leading-none text-foreground/85", compact ? "text-sm" : "text-sm")}>{t('indexStatus.progress.textIndexProgress')}</span>
+        <span className="text-foreground/75">{renderCount(textProgress.indexed, textProgress.total, t('indexStatus.progress.textIndexProgress'))}</span>
 
         {imageIndexReady ? (
-          <Image className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <Image className="h-3.5 w-3.5 shrink-0 text-foreground/75" />
         ) : (
           <XCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/55" />
         )}
-        <span className={cn("shrink-0 text-xs leading-none", imageIndexReady ? "text-muted-foreground" : "text-muted-foreground/55")}>{t('indexStatus.progress.imageIndexProgress')}</span>
-        <span className={cn("min-w-0 truncate text-xs leading-none", imageIndexReady ? "text-muted-foreground" : "text-muted-foreground/55")}>
-          {imageIndexReady ? t('indexStatus.progress.imageIncludedInOverall', '已计入整体进度') : imageIndexMessage}
+        <span className={cn("shrink-0 text-xs leading-none", imageIndexReady ? "font-medium text-foreground/85" : "text-muted-foreground/55")}>{t('indexStatus.progress.imageIndexProgress')}</span>
+        <span className={cn("min-w-0 truncate text-xs leading-none", imageIndexReady ? "text-foreground/75" : "text-muted-foreground/55")}>
+          {imageIndexReady ? renderCount(imageProgress.indexed, imageProgress.total, t('indexStatus.progress.imageIndexProgress')) : imageIndexMessage}
         </span>
       </div>
     );

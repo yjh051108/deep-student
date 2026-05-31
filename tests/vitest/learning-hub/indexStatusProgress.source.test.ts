@@ -16,12 +16,16 @@ describe('IndexStatusView progress display contract', () => {
     expect(source).not.toContain('bg-purple-500/5 p-2 rounded-md');
   });
 
-  it('keeps image index capability as metadata instead of a second progress count', () => {
-    expect(source).toContain("t('indexStatus.progress.imageIncludedInOverall'");
-    expect(source).toContain('renderCount(displayIndexStats.indexed, displayIndexStats.total)');
+  it('renders text and image progress from their backend counters', () => {
+    expect(source).toContain('indexed: summary.indexedCount,');
+    expect(source).toContain('total: summary.totalResources,');
+    expect(source).toContain('indexed: summary.mmIndexedCount,');
+    expect(source).toContain('total: summary.mmTotalResources,');
+    expect(source).toContain("renderCount(textProgress.indexed, textProgress.total, t('indexStatus.progress.textIndexProgress'))");
+    expect(source).toContain("renderCount(imageProgress.indexed, imageProgress.total, t('indexStatus.progress.imageIndexProgress'))");
     expect(source).toContain('total: summary?.displayTotalResources ?? 0');
     expect(source).toContain('indexed: summary?.displayIndexedCount ?? 0');
-    expect(source).not.toContain('renderCount(imageIndexStats.indexed, imageIndexStats.total)');
+    expect(source).not.toContain('renderCount(displayIndexStats.indexed, displayIndexStats.total)');
   });
 
   it('uses multimodal progress events only to lock indexing and refresh aggregate status', () => {
@@ -33,15 +37,15 @@ describe('IndexStatusView progress display contract', () => {
 
   it('does not run image indexing when the backend reports multimodal indexing unavailable', () => {
     expect(source).toContain("const canRunImageIndex = imageIndexCapability === 'ready';");
-    expect(source).toContain('const displayWorkCount = summary.displayPendingCount + summary.displayFailedCount;');
+    expect(source).toContain('const textWorkCount = summary.pendingCount + summary.failedCount;');
     expect(source).toContain('const pendingMmCount = mmResources.length;');
-    expect(source).toContain('displayWorkCount > 0 && pendingTextCount === 0 && pendingMmCount > 0 && !canRunImageIndex');
+    expect(source).toContain('textWorkCount === 0 && pendingMmCount > 0 && !canRunImageIndex');
     expect(source).toContain('if (mmResources.length > 0 && canRunImageIndex)');
     expect(source).toContain('includeImageIndex,');
   });
 
   it('does not start progress animation when display state has no work left', () => {
-    expect(source).toContain('if (displayWorkCount === 0) {');
+    expect(source).toContain('if (textWorkCount === 0 && pendingMmCount === 0) {');
     expect(source).toContain("t('indexStatus.notification.noResourcesToIndex')");
     expect(source).toContain('return;');
     expect(source).not.toContain('pendingTextCount > 0 || displayWorkCount === 0');
