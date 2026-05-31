@@ -18,13 +18,14 @@ describe('Index status state source contract', () => {
     expect(viewSource).not.toContain('resolveImageIndexCapability');
   });
 
-  it('groups visible rows by combined text and image index state', () => {
-    expect(viewSource).toContain('resolveResourceDisplayState');
-    expect(viewSource).toContain("const states = [textState, normalizeIndexState(resource.mmIndexState)]");
+  it('groups visible rows by backend display index state', () => {
+    expect(viewSource).not.toContain('resolveResourceDisplayState');
+    expect(viewSource).not.toContain("const states = [textState, normalizeIndexState(resource.mmIndexState)]");
     expect(viewSource).toContain('const resolvedDisplayRows = useMemo<DisplayIndexRow[]>');
+    expect(viewSource).toContain('displayState: normalizeIndexState(resource.displayIndexState)');
     expect(viewSource).toContain('const groupedDisplayRows = useMemo(() =>');
     expect(viewSource).toContain('displayIndexStats');
-    expect(viewSource).toContain('indexed: groupedDisplayRows.indexed?.length ?? 0');
+    expect(viewSource).toContain('indexed: summary?.displayIndexedCount ?? 0');
     expect(viewSource).toContain('const displayedRows = selectedState ===');
     expect(viewSource).not.toContain("stateFilter: selectedState === 'all' ? undefined : selectedState");
   });
@@ -38,11 +39,28 @@ describe('Index status state source contract', () => {
     expect(viewSource).not.toContain('limit: 200');
   });
 
-  it('derives one-click workload from the complete loaded resource set', () => {
-    expect(viewSource).toContain('const pendingTextCount = summary.resources.filter(isPendingTextResource).length;');
+  it('derives one-click workload from backend summary and lets backend drain pending work', () => {
+    expect(viewSource).toContain('const pendingTextCount = summary.pendingCount + summary.failedCount;');
     expect(viewSource).toContain('const pendingMmCount = mmResources.length;');
-    expect(viewSource).not.toContain('const pendingTextCount = summary.pendingCount + summary.failedCount;');
+    expect(viewSource).toContain('await batchIndexPending();');
+    expect(viewSource).not.toContain('Math.max(pendingTextCount, 10)');
     expect(viewSource).not.toContain('const pendingMmCount = summary.mmPendingCount + summary.mmFailedCount;');
+  });
+
+  it('asks the backend for image-aware display state only after capability is known', () => {
+    expect(viewSource).toContain('const includeImageIndex = MULTIMODAL_INDEX_ENABLED && multimodalCapability.ready;');
+    expect(viewSource).toContain('includeImageIndex,');
+  });
+
+  it('exposes backend display state and display counts in the API contract', () => {
+    const apiSource = readFileSync(
+      resolve(process.cwd(), 'src/api/vfsUnifiedIndexApi.ts'),
+      'utf-8'
+    );
+    expect(apiSource).toContain('displayIndexState: string;');
+    expect(apiSource).toContain('displayTotalResources: number;');
+    expect(apiSource).toContain('displayIndexedCount: number;');
+    expect(apiSource).toContain('includeImageIndex?: boolean;');
   });
 
   it('filters deleted source rows before index status list and summary counts are built', () => {
@@ -50,5 +68,15 @@ describe('Index status state source contract', () => {
     expect(handlerSource).toContain("LEFT JOIN files fs ON fs.id = r.source_id AND fs.status = 'active' AND fs.deleted_at IS NULL");
     expect(handlerSource).toContain("LEFT JOIN files fs_mm ON fs_mm.id = r.source_id AND fs_mm.status = 'active' AND fs_mm.deleted_at IS NULL");
     expect(handlerSource).toContain('EXISTS (SELECT 1 FROM notes WHERE resource_id = r.id AND deleted_at IS NULL)');
+  });
+
+  it('computes display state and display counts in the backend contract', () => {
+    expect(handlerSource).toContain('pub display_index_state: String');
+    expect(handlerSource).toContain('pub display_total_resources: i32');
+    expect(handlerSource).toContain('fn display_index_state_sql(');
+    expect(handlerSource).toContain('include_image_index: Option<bool>');
+    expect(handlerSource).toContain('{display_state} as display_index_state');
+    expect(handlerSource).toContain('list_conditions.push(format!("({}) = ?", list_display_state_sql));');
+    expect(handlerSource).toContain("COALESCE(SUM(CASE WHEN {display_state} = 'indexed' THEN 1 ELSE 0 END), 0) as display_indexed");
   });
 });

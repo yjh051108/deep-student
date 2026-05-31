@@ -52,6 +52,7 @@ export interface ResourceIndexStatus {
   mmEmbeddingDim?: number;
   mmIndexingMode?: string;
   mmIndexError?: string;
+  displayIndexState: string;
   embeddingDim?: number;
   modality?: string;
   updatedAt: number;
@@ -67,6 +68,12 @@ export interface ResourceIndexStatusSummary {
   failedCount: number;
   disabledCount: number;
   staleCount: number;
+  displayTotalResources: number;
+  displayIndexedCount: number;
+  displayPendingCount: number;
+  displayIndexingCount: number;
+  displayFailedCount: number;
+  displayDisabledCount: number;
   mmTotalResources: number;
   mmIndexedCount: number;
   mmPendingCount: number;
@@ -81,6 +88,7 @@ export interface GetIndexStatusParams {
   folderId?: string;
   resourceType?: string;
   stateFilter?: string;
+  includeImageIndex?: boolean;
   limit?: number;
   offset?: number;
 }
@@ -178,6 +186,7 @@ export async function getAllIndexStatus(params?: GetIndexStatusParams): Promise<
     folderId: params?.folderId ?? null,
     resourceType: params?.resourceType ?? null,
     stateFilter: params?.stateFilter ?? null,
+    includeImageIndex: params?.includeImageIndex ?? false,
     limit: params?.limit ?? 100,
     offset: params?.offset ?? 0,
   });

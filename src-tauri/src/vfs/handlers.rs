@@ -4186,6 +4186,10 @@ pub struct ResourceIndexStatus {
     /// 多模态索引错误
     pub mm_index_error: Option<String>,
 
+    // ========== 显示状态 ==========
+    /// 索引页权威显示状态。由后端按文本/图片索引能力统一合成，前端只负责渲染。
+    pub display_index_state: String,
+
     // ========== 通用 ==========
     /// 模态类型（text, multimodal 等）- 保留向后兼容
     pub modality: Option<String>,
@@ -4215,6 +4219,19 @@ pub struct IndexStatusSummary {
     pub disabled_count: i32,
     /// 索引过时数（内容已更新但索引未更新）
     pub stale_count: i32,
+    // ========== 显示状态统计 ==========
+    /// 显示总资源数（与资源列表同一状态口径）
+    pub display_total_resources: i32,
+    /// 显示已索引数
+    pub display_indexed_count: i32,
+    /// 显示待索引数
+    pub display_pending_count: i32,
+    /// 显示索引中数
+    pub display_indexing_count: i32,
+    /// 显示失败数
+    pub display_failed_count: i32,
+    /// 显示禁用数
+    pub display_disabled_count: i32,
     // ========== 多模态索引统计 ==========
     /// 多模态总资源数（教材/附件/题目集/图片）
     pub mm_total_resources: i32,
@@ -4265,12 +4282,38 @@ fn has_vfs_index_units_table(conn: &rusqlite::Connection) -> bool {
     .unwrap_or(false)
 }
 
+fn display_index_state_sql(
+    effective_text_state_sql: &str,
+    effective_mm_state_sql: &str,
+    include_image_index: bool,
+) -> String {
+    if !include_image_index {
+        return format!("({})", effective_text_state_sql);
+    }
+
+    format!(
+        r#"
+CASE
+    WHEN r.type NOT IN ('textbook', 'file', 'exam', 'image') THEN ({text_state})
+    WHEN ({text_state}) = 'failed' OR ({mm_state}) = 'failed' THEN 'failed'
+    WHEN ({text_state}) = 'indexing' OR ({mm_state}) = 'indexing' THEN 'indexing'
+    WHEN ({text_state}) = 'pending' OR ({mm_state}) = 'pending' THEN 'pending'
+    WHEN ({text_state}) = 'indexed' OR ({mm_state}) = 'indexed' THEN 'indexed'
+    ELSE 'disabled'
+END
+"#,
+        text_state = effective_text_state_sql,
+        mm_state = effective_mm_state_sql
+    )
+}
+
 /// 获取所有资源的向量化状态
 #[tauri::command]
 pub async fn vfs_get_all_index_status(
     folder_id: Option<String>,
     resource_type: Option<String>,
     state_filter: Option<String>,
+    include_image_index: Option<bool>,
     limit: Option<u32>,
     offset: Option<u32>,
     vfs_db: State<'_, Arc<VfsDatabase>>,
@@ -4283,6 +4326,7 @@ pub async fn vfs_get_all_index_status(
     );
 
     let conn = vfs_db.get_conn_safe().map_err(|e| e.to_string())?;
+    let include_image_index = include_image_index.unwrap_or(false);
 
     // 检查必要的列和表是否存在
     let has_index_state = has_index_state_column(&conn);
@@ -4351,6 +4395,12 @@ END
             failed_count: 0,
             disabled_count: 0,
             stale_count: 0,
+            display_total_resources: 0,
+            display_indexed_count: 0,
+            display_pending_count: 0,
+            display_indexing_count: 0,
+            display_failed_count: 0,
+            display_disabled_count: 0,
             mm_total_resources: 0,
             mm_indexed_count: 0,
             mm_pending_count: 0,
@@ -4360,6 +4410,19 @@ END
             resources: vec![],
         });
     }
+
+    let list_mm_state_sql = r#"
+CASE
+    WHEN r.type IN ('textbook', 'file', 'image') THEN COALESCE(fr.mm_index_state, fs.mm_index_state, r.mm_index_state, 'pending')
+    WHEN r.type = 'exam' THEN COALESCE(ei.mm_index_state, es_src.mm_index_state, r.mm_index_state, 'pending')
+    ELSE 'disabled'
+END
+"#;
+    let list_display_state_sql = display_index_state_sql(
+        effective_text_state_sql,
+        list_mm_state_sql,
+        include_image_index,
+    );
 
     // ========== 构建查询条件 ==========
     // 统计查询不受 state_filter 影响，始终显示全部资源统计
@@ -4378,7 +4441,7 @@ END
 
     // state_filter 只影响资源列表，不影响统计。
     if let Some(ref sf) = state_filter {
-        list_conditions.push(format!("({}) = ?", effective_text_state_sql));
+        list_conditions.push(format!("({}) = ?", list_display_state_sql));
         list_params.push(Box::new(sf.clone()));
     }
 
@@ -4543,12 +4606,7 @@ END
                 ELSE NULL
             END as text_index_source,
             -- 多模态索引状态：使用 JOIN 数据替代 4×5=20 个关联子查询
-            CASE
-                WHEN r.type IN ('textbook', 'file', 'image') THEN COALESCE(
-                    fr.mm_index_state, fs.mm_index_state, 'pending')
-                WHEN r.type = 'exam' THEN COALESCE(ei.mm_index_state, 'pending')
-                ELSE 'disabled'
-            END as mm_index_state,
+            {list_mm_state} as mm_index_state,
             CASE
                 WHEN r.type IN ('textbook', 'file', 'image') THEN COALESCE(
                     json_array_length(COALESCE(fr.mm_indexed_pages_json, fs.mm_indexed_pages_json)), 0)
@@ -4574,6 +4632,7 @@ END
                 WHEN r.type = 'exam' THEN ei.mm_index_error
                 ELSE r.mm_index_error
             END as mm_index_error,
+            {display_state} as display_index_state,
             -- 模态：使用 CTE 预聚合替代 3 个 EXISTS 关联子查询
             {modality} as modality,
             r.updated_at,
@@ -4620,6 +4679,8 @@ END
         ocr_chunks = ocr_chunks_col,
         embedding_dim = embedding_dim_col,
         effective_text_state = effective_text_state_sql,
+        list_mm_state = list_mm_state_sql,
+        display_state = list_display_state_sql,
         modality = modality_col,
         index_joins = index_joins,
         folder_join = folder_join,
@@ -4647,14 +4708,14 @@ END
         // 6=index_state, 7=indexed_at, 8=index_error, 9=chunk_count, 10=native_chunk_count, 11=ocr_chunk_count,
         // 12=text_embedding_dim, 13=text_index_source,
         // 14=mm_index_state, 15=mm_indexed_pages, 16=mm_embedding_dim, 17=mm_indexing_mode, 18=mm_index_error,
-        // 19=modality, 20=updated_at, 21=is_stale, 22=raw_ocr_pages_json,
-        // 23=raw_extracted_text, 24=raw_resource_ocr_text
+        // 19=display_index_state, 20=modality, 21=updated_at, 22=is_stale, 23=raw_ocr_pages_json,
+        // 24=raw_extracted_text, 25=raw_resource_ocr_text
 
         // updated_at 可能是 INTEGER 或 TEXT 格式，需要兼容处理
-        let updated_at: i64 = match row.get::<_, i64>(20) {
+        let updated_at: i64 = match row.get::<_, i64>(21) {
             Ok(v) => v,
             Err(_) => {
-                let text_val: String = row.get(20)?;
+                let text_val: String = row.get(21)?;
                 chrono::DateTime::parse_from_rfc3339(&text_val)
                     .map(|dt| dt.timestamp_millis())
                     .or_else(|_| {
@@ -4673,9 +4734,9 @@ END
 
         let text_embedding_dim: Option<i32> = row.get(12)?;
         let resource_type: String = row.get(2)?;
-        let raw_ocr_pages_json: Option<String> = row.get(22)?;
-        let raw_extracted_text: Option<String> = row.get(23)?;
-        let raw_resource_ocr_text: Option<String> = row.get(24)?;
+        let raw_ocr_pages_json: Option<String> = row.get(23)?;
+        let raw_extracted_text: Option<String> = row.get(24)?;
+        let raw_resource_ocr_text: Option<String> = row.get(25)?;
         let (ocr_pages_has_text, ocr_pages_char_count) =
             ocr_pages_effective_text_stats(&raw_ocr_pages_json);
         let extracted_text_len = raw_extracted_text
@@ -4728,11 +4789,14 @@ END
             mm_embedding_dim: row.get(16)?,
             mm_indexing_mode: row.get(17)?,
             mm_index_error: row.get(18)?,
+            display_index_state: row
+                .get::<_, String>(19)
+                .unwrap_or_else(|_| "pending".to_string()),
             // 通用（向后兼容）
-            modality: row.get(19)?,
+            modality: row.get(20)?,
             embedding_dim: text_embedding_dim,
             updated_at,
-            is_stale: row.get::<_, i32>(21).unwrap_or(0) == 1,
+            is_stale: row.get::<_, i32>(22).unwrap_or(0) == 1,
         })
     });
 
@@ -4808,6 +4872,12 @@ END
                 WHEN COALESCE(r.index_state, 'pending') = 'indexed'
                      AND r.index_hash IS NOT NULL AND r.index_hash != r.hash
                 THEN 1 ELSE 0 END), 0) as stale
+            ,COUNT(*) as display_total
+            ,COALESCE(SUM(CASE WHEN {display_state} = 'indexed' THEN 1 ELSE 0 END), 0) as display_indexed
+            ,COALESCE(SUM(CASE WHEN {display_state} = 'pending' THEN 1 ELSE 0 END), 0) as display_pending
+            ,COALESCE(SUM(CASE WHEN {display_state} = 'indexing' THEN 1 ELSE 0 END), 0) as display_indexing
+            ,COALESCE(SUM(CASE WHEN {display_state} = 'failed' THEN 1 ELSE 0 END), 0) as display_failed
+            ,COALESCE(SUM(CASE WHEN {display_state} = 'disabled' THEN 1 ELSE 0 END), 0) as display_disabled
             ,COALESCE(SUM(CASE WHEN r.type IN ('textbook', 'file', 'exam', 'image') THEN 1 ELSE 0 END), 0) as mm_total
             ,COALESCE(SUM(CASE WHEN r.type IN ('textbook', 'file', 'exam', 'image')
                 AND COALESCE(
@@ -4859,7 +4929,18 @@ END
         "#,
         folder_join,
         stats_where_clause,
-        effective_text_state = effective_text_state_sql
+        effective_text_state = effective_text_state_sql,
+        display_state = display_index_state_sql(
+            effective_text_state_sql,
+            r#"
+COALESCE(
+    CASE WHEN r.type IN ('textbook', 'file', 'image') THEN COALESCE(fm.mm_index_state, fs_mm.mm_index_state) END,
+    CASE WHEN r.type = 'exam' THEN COALESCE(em.mm_index_state, es_mm.mm_index_state) END,
+    COALESCE(r.mm_index_state, 'pending')
+)
+"#,
+            include_image_index
+        )
     );
 
     // 构建统计查询的参数（使用 stats_params，不包括 state_filter）
@@ -4874,6 +4955,12 @@ END
         failed,
         disabled,
         stale,
+        display_total,
+        display_indexed,
+        display_pending,
+        display_indexing,
+        display_failed,
+        display_disabled,
         mm_total,
         mm_indexed,
         mm_pending,
@@ -4881,6 +4968,12 @@ END
         mm_failed,
         mm_disabled,
     ): (
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
         i32,
         i32,
         i32,
@@ -4913,6 +5006,12 @@ END
                     row.get(10)?,
                     row.get(11)?,
                     row.get(12)?,
+                    row.get(13)?,
+                    row.get(14)?,
+                    row.get(15)?,
+                    row.get(16)?,
+                    row.get(17)?,
+                    row.get(18)?,
                 ))
             },
         )
@@ -4931,6 +5030,12 @@ END
         failed_count: failed,
         disabled_count: disabled,
         stale_count: stale,
+        display_total_resources: display_total,
+        display_indexed_count: display_indexed,
+        display_pending_count: display_pending,
+        display_indexing_count: display_indexing,
+        display_failed_count: display_failed,
+        display_disabled_count: display_disabled,
         mm_total_resources: mm_total,
         mm_indexed_count: mm_indexed,
         mm_pending_count: mm_pending,
@@ -7922,6 +8027,173 @@ mod tests {
         let folder = VfsFolder::new(title.to_string(), parent_id, None, None);
         VfsFolderRepo::create_folder(db, &folder).expect("create folder");
         folder
+    }
+
+    fn eval_display_state_sql(
+        resource_type: &str,
+        text_state: &str,
+        mm_state: &str,
+        include_image_index: bool,
+    ) -> String {
+        let conn = rusqlite::Connection::open_in_memory().expect("open memory db");
+        conn.execute(
+            "CREATE TABLE resources (type TEXT NOT NULL, text_state TEXT NOT NULL, mm_state TEXT NOT NULL)",
+            [],
+        )
+        .expect("create table");
+        conn.execute(
+            "INSERT INTO resources (type, text_state, mm_state) VALUES (?1, ?2, ?3)",
+            rusqlite::params![resource_type, text_state, mm_state],
+        )
+        .expect("insert row");
+
+        let display_sql =
+            display_index_state_sql("r.text_state", "r.mm_state", include_image_index);
+        let query = format!("SELECT {} FROM resources r", display_sql);
+        conn.query_row(&query, [], |row| row.get::<_, String>(0))
+            .expect("evaluate display sql")
+    }
+
+    fn eval_display_contract(
+        include_image_index: bool,
+    ) -> (Vec<(String, String)>, (i32, i32, i32, i32, i32), Vec<String>) {
+        let conn = rusqlite::Connection::open_in_memory().expect("open memory db");
+        conn.execute(
+            "CREATE TABLE resources (
+                id TEXT NOT NULL,
+                type TEXT NOT NULL,
+                text_state TEXT NOT NULL,
+                mm_state TEXT NOT NULL
+            )",
+            [],
+        )
+        .expect("create table");
+
+        let rows = [
+            ("img", "image", "indexed", "failed"),
+            ("exam", "exam", "indexed", "pending"),
+            ("note", "note", "indexed", "failed"),
+            ("file", "file", "disabled", "indexed"),
+        ];
+
+        for (id, resource_type, text_state, mm_state) in rows {
+            conn.execute(
+                "INSERT INTO resources (id, type, text_state, mm_state) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![id, resource_type, text_state, mm_state],
+            )
+            .expect("insert row");
+        }
+
+        let display_sql =
+            display_index_state_sql("r.text_state", "r.mm_state", include_image_index);
+
+        let row_query = format!("SELECT r.id, {display_sql} FROM resources r ORDER BY r.id");
+        let row_states = conn
+            .prepare(&row_query)
+            .expect("prepare row query")
+            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+            .expect("query rows")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect rows");
+
+        let summary_query = format!(
+            "SELECT
+                COALESCE(SUM(CASE WHEN {display_sql} = 'indexed' THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN {display_sql} = 'pending' THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN {display_sql} = 'indexing' THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN {display_sql} = 'failed' THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN {display_sql} = 'disabled' THEN 1 ELSE 0 END), 0)
+             FROM resources r"
+        );
+        let counts = conn
+            .query_row(&summary_query, [], |row| {
+                Ok((
+                    row.get::<_, i32>(0)?,
+                    row.get::<_, i32>(1)?,
+                    row.get::<_, i32>(2)?,
+                    row.get::<_, i32>(3)?,
+                    row.get::<_, i32>(4)?,
+                ))
+            })
+            .expect("query summary");
+
+        let filter_query =
+            format!("SELECT r.id FROM resources r WHERE ({display_sql}) = 'failed' ORDER BY r.id");
+        let failed_ids = conn
+            .prepare(&filter_query)
+            .expect("prepare filter query")
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("query filter")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect filter rows");
+
+        (row_states, counts, failed_ids)
+    }
+
+    #[test]
+    fn display_index_state_uses_text_only_when_image_index_is_excluded() {
+        assert_eq!(
+            eval_display_state_sql("image", "indexed", "failed", false),
+            "indexed"
+        );
+        assert_eq!(
+            eval_display_state_sql("exam", "pending", "indexed", false),
+            "pending"
+        );
+    }
+
+    #[test]
+    fn display_index_state_combines_text_and_image_by_priority() {
+        let cases = [
+            ("image", "indexed", "failed", "failed"),
+            ("image", "indexed", "indexing", "indexing"),
+            ("image", "indexed", "pending", "pending"),
+            ("image", "indexed", "disabled", "indexed"),
+            ("note", "indexed", "failed", "indexed"),
+            ("note", "failed", "indexed", "failed"),
+        ];
+
+        for (resource_type, text_state, mm_state, expected) in cases {
+            assert_eq!(
+                eval_display_state_sql(resource_type, text_state, mm_state, true),
+                expected,
+                "{resource_type} text={text_state} mm={mm_state}"
+            );
+        }
+    }
+
+    #[test]
+    fn display_contract_rows_summary_and_filter_share_text_only_state() {
+        let (row_states, counts, failed_ids) = eval_display_contract(false);
+
+        assert_eq!(
+            row_states,
+            vec![
+                ("exam".to_string(), "indexed".to_string()),
+                ("file".to_string(), "disabled".to_string()),
+                ("img".to_string(), "indexed".to_string()),
+                ("note".to_string(), "indexed".to_string()),
+            ]
+        );
+        assert_eq!(counts, (3, 0, 0, 0, 1));
+        assert!(failed_ids.is_empty());
+    }
+
+    #[test]
+    fn display_contract_rows_summary_and_filter_share_image_aware_state() {
+        let (row_states, counts, failed_ids) = eval_display_contract(true);
+
+        assert_eq!(
+            row_states,
+            vec![
+                ("exam".to_string(), "pending".to_string()),
+                ("file".to_string(), "indexed".to_string()),
+                ("img".to_string(), "failed".to_string()),
+                ("note".to_string(), "indexed".to_string()),
+            ]
+        );
+        assert_eq!(counts, (2, 1, 0, 1, 0));
+        assert_eq!(failed_ids, vec!["img".to_string()]);
     }
 
     #[test]

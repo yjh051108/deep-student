@@ -120,7 +120,6 @@ const RESOURCE_TYPE_CONFIG: Record<string, { icon: React.ElementType; labelKey: 
 /** 不支持任何索引的资源类型（技能卡等系统资源） */
 const UNSUPPORTED_INDEX_TYPES = new Set(['retrieval']);
 const MULTIMODAL_RESOURCE_TYPES = new Set(['textbook', 'exam', 'image', 'file']);
-const DISPLAY_STATE_PRIORITY: IndexState[] = ['failed', 'indexing', 'pending', 'indexed', 'disabled'];
 
 const isPendingMultimodalResource = (resource: ResourceIndexStatus): boolean =>
   MULTIMODAL_RESOURCE_TYPES.has(resource.resourceType)
@@ -140,24 +139,6 @@ interface MultimodalIndexCapability {
 
 const normalizeIndexState = (state: string | undefined): IndexState =>
   state && state in STATE_CONFIG ? state as IndexState : 'pending';
-
-const isPendingTextResource = (resource: ResourceIndexStatus): boolean => {
-  const state = normalizeIndexState(resource.textIndexState);
-  return state === 'pending' || state === 'failed';
-};
-
-const resolveResourceDisplayState = (
-  resource: ResourceIndexStatus,
-  includeImageIndex: boolean
-): IndexState => {
-  const textState = normalizeIndexState(resource.textIndexState);
-  if (!includeImageIndex || !MULTIMODAL_RESOURCE_TYPES.has(resource.resourceType)) {
-    return textState;
-  }
-
-  const states = [textState, normalizeIndexState(resource.mmIndexState)];
-  return DISPLAY_STATE_PRIORITY.find(state => states.includes(state)) ?? textState;
-};
 
 interface DisplayIndexRow {
   resource: ResourceIndexStatus;
@@ -329,15 +310,18 @@ export const IndexStatusView: React.FC = () => {
       // 之前"刷新"会静默重置用户主动禁用的资源，违反用户意图
       // disabled 资源的重置现在需要用户通过"重置状态"按钮显式操作
 
-      const [data, dims, multimodalCapability] = await Promise.all([
+      const multimodalCapability = await invoke<MultimodalIndexCapability>('vfs_get_multimodal_index_capability').catch(() => ({
+        status: MULTIMODAL_INDEX_ENABLED ? 'notConfigured' : 'featureDisabled',
+        ready: false,
+      } satisfies MultimodalIndexCapability));
+      const includeImageIndex = MULTIMODAL_INDEX_ENABLED && multimodalCapability.ready;
+
+      const [data, dims] = await Promise.all([
         getCompleteIndexStatus({
           resourceType: selectedType === 'all' ? undefined : selectedType,
+          includeImageIndex,
         }),
         listDimensions(),
-        invoke<MultimodalIndexCapability>('vfs_get_multimodal_index_capability').catch(() => ({
-          status: MULTIMODAL_INDEX_ENABLED ? 'notConfigured' : 'featureDisabled',
-          ready: false,
-        } satisfies MultimodalIndexCapability)),
       ]);
       
       debugLog.log('[IndexStatusView] API 返回', {
@@ -645,7 +629,7 @@ export const IndexStatusView: React.FC = () => {
       return;
     }
 
-    const pendingTextCount = summary.resources.filter(isPendingTextResource).length;
+    const pendingTextCount = summary.pendingCount + summary.failedCount;
     const mmResources = MULTIMODAL_INDEX_ENABLED
       ? summary.resources.filter(isPendingMultimodalResource)
       : [];
@@ -669,7 +653,7 @@ export const IndexStatusView: React.FC = () => {
       setBatchMessage(t('indexStatus.notification.preparingOcrBatch'));
       let batchFailed = false;
       try {
-        await batchIndexPending(Math.max(pendingTextCount, 10));
+        await batchIndexPending();
         setBatchIndexing(false);
         setBatchProgress(100);
         setBatchMessage(t('indexStatus.notification.batchCompleted'));
@@ -699,8 +683,8 @@ export const IndexStatusView: React.FC = () => {
       }
     }
 
-    // 然后执行原生多模态索引（仅在 MULTIMODAL_INDEX_ENABLED 时）
-    if (mmResources.length > 0) {
+    // 然后执行原生多模态索引（仅在 MULTIMODAL_INDEX_ENABLED 且能力可用时）
+    if (mmResources.length > 0 && canRunImageIndex) {
       setMmIndexing(true);
 
       let successCount = 0;
@@ -742,8 +726,14 @@ export const IndexStatusView: React.FC = () => {
       }
 
       await loadData();
+    } else if (mmResources.length > 0 && !canRunImageIndex) {
+      showGlobalNotification(
+        'info',
+        t('indexStatus.notification.hint'),
+        t(`indexStatus.progress.imageIndexCapability.${imageIndexCapability}`)
+      );
     }
-  }, [summary, batchIndexing, mmIndexing, loadData]);
+  }, [summary, batchIndexing, mmIndexing, imageIndexCapability, loadData]);
 
   // ========== 重置所有索引状态 ==========
   const [resetting, setResetting] = useState(false);
@@ -864,7 +854,7 @@ export const IndexStatusView: React.FC = () => {
     const includeImageIndex = imageIndexCapability === 'ready';
     return summary.resources.map((resource) => ({
       resource,
-      displayState: resolveResourceDisplayState(resource, includeImageIndex),
+      displayState: normalizeIndexState(resource.displayIndexState),
       textState: normalizeIndexState(resource.textIndexState),
       mmState: normalizeIndexState(resource.mmIndexState),
       hasImageIndex: includeImageIndex && MULTIMODAL_RESOURCE_TYPES.has(resource.resourceType),
@@ -898,14 +888,14 @@ export const IndexStatusView: React.FC = () => {
     ? resolvedDisplayRows
     : groupedDisplayRows[selectedState] ?? [];
   const displayIndexStats = useMemo(() => ({
-    total: resolvedDisplayRows.length,
-    indexed: groupedDisplayRows.indexed?.length ?? 0,
-    pending: groupedDisplayRows.pending?.length ?? 0,
-    indexing: groupedDisplayRows.indexing?.length ?? 0,
-    failed: groupedDisplayRows.failed?.length ?? 0,
-    disabled: groupedDisplayRows.disabled?.length ?? 0,
-    stale: summary?.resources.filter(resource => resource.isStale).length ?? 0,
-  }), [summary, resolvedDisplayRows, groupedDisplayRows]);
+    total: summary?.displayTotalResources ?? 0,
+    indexed: summary?.displayIndexedCount ?? 0,
+    pending: summary?.displayPendingCount ?? 0,
+    indexing: summary?.displayIndexingCount ?? 0,
+    failed: summary?.displayFailedCount ?? 0,
+    disabled: summary?.displayDisabledCount ?? 0,
+    stale: summary?.staleCount ?? 0,
+  }), [summary]);
 
   // ========== 计算进度百分比 ==========
   const progressPercentage = useMemo(() => {

@@ -19,6 +19,8 @@ describe('IndexStatusView progress display contract', () => {
   it('keeps image index capability as metadata instead of a second progress count', () => {
     expect(source).toContain("t('indexStatus.progress.imageIncludedInOverall'");
     expect(source).toContain('renderCount(displayIndexStats.indexed, displayIndexStats.total)');
+    expect(source).toContain('total: summary?.displayTotalResources ?? 0');
+    expect(source).toContain('indexed: summary?.displayIndexedCount ?? 0');
     expect(source).not.toContain('renderCount(imageIndexStats.indexed, imageIndexStats.total)');
   });
 
@@ -33,5 +35,7 @@ describe('IndexStatusView progress display contract', () => {
     expect(source).toContain("const canRunImageIndex = imageIndexCapability === 'ready';");
     expect(source).toContain('const pendingMmCount = mmResources.length;');
     expect(source).toContain('pendingTextCount === 0 && pendingMmCount > 0 && !canRunImageIndex');
+    expect(source).toContain('if (mmResources.length > 0 && canRunImageIndex)');
+    expect(source).toContain('includeImageIndex,');
   });
 });
