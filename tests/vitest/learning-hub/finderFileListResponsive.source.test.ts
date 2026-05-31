@@ -36,6 +36,16 @@ describe('FinderFileList responsive grid contract', () => {
     expect(source).not.toContain('flex w-full min-w-0 flex-wrap');
   });
 
+  it('treats inner virtualized blank space as finder background clicks', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/features/learning-hub/components/finder/FinderFileList.tsx'),
+      'utf-8'
+    );
+
+    expect(source).toContain("if (!target.closest('[data-finder-item]') && onContainerClick)");
+    expect(source).not.toContain('e.target === e.currentTarget && onContainerClick');
+  });
+
   it('does not turn the fullscreen finder grid into a vertical list when the shell sidebar is collapsed', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/features/learning-hub/LearningHubSidebar.tsx'),

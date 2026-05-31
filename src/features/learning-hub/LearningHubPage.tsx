@@ -150,6 +150,10 @@ export const LearningHubPage: React.FC = () => {
     if (!isSmallScreen) {
       setLocalSidebarCollapsed(false);
     }
+    const existingBeforeUpdate = tabsRef.current.find(t => t.resourceId === app.resourceId);
+    if (existingBeforeUpdate) {
+      setSplitView(split => split?.rightTabId === existingBeforeUpdate.tabId ? null : split);
+    }
     setTabState(prev => {
       // 1. 已存在同 resourceId 的 tab → 激活并更新 openedAt（LRU）
       const existing = prev.tabs.find(t => t.resourceId === app.resourceId);

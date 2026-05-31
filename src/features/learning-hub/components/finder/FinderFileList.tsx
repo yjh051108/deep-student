@@ -308,7 +308,8 @@ export function FinderFileList({
 
   // 容器点击
   const handleContainerClick = useCallback((e: React.MouseEvent) => {
-    if (e.target === e.currentTarget && onContainerClick) {
+    const target = e.target as HTMLElement;
+    if (!target.closest('[data-finder-item]') && onContainerClick) {
       onContainerClick();
     }
   }, [onContainerClick]);

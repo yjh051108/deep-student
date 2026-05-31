@@ -10,6 +10,8 @@ describe('LearningHub open tab refresh contract', () => {
     );
 
     expect(source).toContain('setLocalSidebarCollapsed(false);');
+    expect(source).toContain('const existingBeforeUpdate = tabsRef.current.find(t => t.resourceId === app.resourceId);');
+    expect(source).toContain('setSplitView(split => split?.rightTabId === existingBeforeUpdate.tabId ? null : split);');
     expect(source).toContain('setTabState(prev => {');
     expect(source).toContain('tabs: prev.tabs.map(t => t.tabId === existing.tabId ? { ...t, ...app, openedAt: Date.now() } : t)');
     expect(source).toContain('activeTabId: existing.tabId');
