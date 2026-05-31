@@ -11,11 +11,28 @@ describe('Index status state source contract', () => {
     resolve(process.cwd(), 'src-tauri/src/vfs/handlers.rs'),
     'utf-8'
   );
+  const ragExtensionSource = readFileSync(
+    resolve(process.cwd(), 'src-tauri/src/llm_manager/rag_extension.rs'),
+    'utf-8'
+  );
+  const embeddingRepoSource = readFileSync(
+    resolve(process.cwd(), 'src-tauri/src/vfs/repos/embedding_repo.rs'),
+    'utf-8'
+  );
 
   it('uses backend multimodal capability instead of duplicating model matching in the UI', () => {
     expect(viewSource).toContain("invoke<MultimodalIndexCapability>('vfs_get_multimodal_index_capability')");
     expect(viewSource).not.toContain("invoke<IndexModelConfig[]>('get_api_configurations')");
     expect(viewSource).not.toContain('resolveImageIndexCapability');
+  });
+
+  it('recognizes VL embedding model assignment as multimodal index capability fallback', () => {
+    expect(handlerSource).toContain('vfs_get_multimodal_index_capability');
+    expect(handlerSource).toContain('get_vl_embedding_model_config().await');
+    expect(ragExtensionSource).toContain('get_setting("embedding.default_multimodal_model_config_id")');
+    expect(ragExtensionSource).toContain('.get_model_assignments()');
+    expect(ragExtensionSource).toContain('assignments.vl_embedding_model_config_id');
+    expect(ragExtensionSource).toContain('dimension_default_available || assignment_available');
   });
 
   it('groups visible rows by backend display index state', () => {
@@ -40,10 +57,14 @@ describe('Index status state source contract', () => {
   });
 
   it('derives one-click workload from backend summary and lets backend drain pending work', () => {
-    expect(viewSource).toContain('const pendingTextCount = summary.pendingCount + summary.failedCount;');
+    expect(viewSource).toContain('const displayWorkCount = summary.displayPendingCount + summary.displayFailedCount;');
+    expect(viewSource).toContain('const pendingTextResources = summary.resources.filter(isPendingTextResource);');
+    expect(viewSource).toContain('const pendingTextCount = pendingTextResources.length;');
     expect(viewSource).toContain('const pendingMmCount = mmResources.length;');
     expect(viewSource).toContain('await batchIndexPending();');
+    expect(viewSource).toContain('if (displayWorkCount === 0) {');
     expect(viewSource).not.toContain('Math.max(pendingTextCount, 10)');
+    expect(viewSource).not.toContain('const pendingTextCount = summary.pendingCount + summary.failedCount;');
     expect(viewSource).not.toContain('const pendingMmCount = summary.mmPendingCount + summary.mmFailedCount;');
   });
 
@@ -68,6 +89,16 @@ describe('Index status state source contract', () => {
     expect(handlerSource).toContain("LEFT JOIN files fs ON fs.id = r.source_id AND fs.status = 'active' AND fs.deleted_at IS NULL");
     expect(handlerSource).toContain("LEFT JOIN files fs_mm ON fs_mm.id = r.source_id AND fs_mm.status = 'active' AND fs_mm.deleted_at IS NULL");
     expect(handlerSource).toContain('EXISTS (SELECT 1 FROM notes WHERE resource_id = r.id AND deleted_at IS NULL)');
+  });
+
+  it('uses the same active source-row universe for one-click pending queue counts', () => {
+    expect(embeddingRepoSource).toContain('const PENDING_RESOURCES_WHERE_SQL');
+    expect(embeddingRepoSource).toContain('EXISTS (SELECT 1 FROM notes WHERE resource_id = r.id AND deleted_at IS NULL)');
+    expect(embeddingRepoSource).toContain("EXISTS (SELECT 1 FROM files WHERE status = 'active' AND deleted_at IS NULL AND (resource_id = r.id OR id = r.source_id))");
+    expect(embeddingRepoSource).toContain('EXISTS (SELECT 1 FROM exam_sheets WHERE deleted_at IS NULL AND (resource_id = r.id OR id = r.source_id))');
+    expect(embeddingRepoSource).toContain('EXISTS (SELECT 1 FROM translations WHERE resource_id = r.id AND deleted_at IS NULL)');
+    expect(embeddingRepoSource).toContain('EXISTS (SELECT 1 FROM essays WHERE resource_id = r.id AND deleted_at IS NULL)');
+    expect(embeddingRepoSource).toContain('EXISTS (SELECT 1 FROM mindmaps WHERE resource_id = r.id AND deleted_at IS NULL)');
   });
 
   it('computes display state and display counts in the backend contract', () => {

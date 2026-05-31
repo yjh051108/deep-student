@@ -3,7 +3,7 @@
 //! 嵌入/重排序模型配置、多模态RAG
 
 use crate::json_validator::{validate, Stage as ValidateStage};
-use crate::models::AppError;
+use crate::models::{AppError, ModelAssignments};
 use crate::providers::ProviderAdapter;
 use crate::utils::text::safe_truncate_chars;
 use log::{debug, error, info, warn};
@@ -13,6 +13,14 @@ use url::Url;
 use super::{ApiConfig, LLMManager, Result};
 
 // ==================== RAG相关扩展方法 ====================
+
+fn resolve_vl_embedding_model_config_id(
+    dimension_default_id: Option<String>,
+    assignments: Option<ModelAssignments>,
+) -> Option<String> {
+    dimension_default_id
+        .or_else(|| assignments.and_then(|assignments| assignments.vl_embedding_model_config_id))
+}
 
 impl LLMManager {
     /// 获取嵌入模型配置
@@ -111,18 +119,23 @@ impl LLMManager {
 
     /// 获取多模态嵌入模型配置（Qwen3-VL-Embedding）
     ///
-    /// 从维度管理的默认设置中获取多模态嵌入模型配置ID
+    /// 从维度管理的默认设置中获取多模态嵌入模型配置ID；
+    /// 若用户只在模型分配页配置了 VL embedding，则使用该配置作为兼容回退。
     pub async fn get_vl_embedding_model_config(&self) -> Result<ApiConfig> {
-        // 从 settings 读取默认多模态嵌入模型配置ID
-        let vl_embedding_model_id = self
+        let default_vl_embedding_model_id = self
             .db
             .get_setting("embedding.default_multimodal_model_config_id")
-            .map_err(|e| AppError::configuration(format!("读取多模态嵌入模型配置失败: {}", e)))?
-            .ok_or_else(|| {
-                AppError::configuration(
-                "未配置默认多模态嵌入维度。请在「模型分配 > 嵌入维度管理」中设置默认多模态维度。"
+            .map_err(|e| AppError::configuration(format!("读取多模态嵌入模型配置失败: {}", e)))?;
+        let assignment_vl_embedding_model_id = self.get_model_assignments().await.ok();
+        let vl_embedding_model_id = resolve_vl_embedding_model_config_id(
+            default_vl_embedding_model_id,
+            assignment_vl_embedding_model_id,
+        )
+        .ok_or_else(|| {
+            AppError::configuration(
+                "未配置多模态嵌入模型。请在「模型分配」或「嵌入维度管理」中设置 VL Embedding。",
             )
-            })?;
+        })?;
 
         let configs = self.get_api_configs().await?;
         configs
@@ -157,16 +170,19 @@ impl LLMManager {
     ///
     /// 只要任一方案可用即返回 true
     pub async fn is_multimodal_rag_configured(&self) -> bool {
-        // 方案一：VL-Embedding 直接向量化（从维度管理获取）
-        let mode1_available = self
+        let dimension_default_available = self
             .db
             .get_setting("embedding.default_multimodal_model_config_id")
             .ok()
             .flatten()
             .is_some();
+        let assignment_available = self
+            .get_model_assignments()
+            .await
+            .ok()
+            .is_some_and(|assignments| assignments.vl_embedding_model_config_id.is_some());
 
-        // 方案二：VL 摘要 + 文本嵌入已废弃
-        mode1_available
+        dimension_default_available || assignment_available
     }
 
     /// 检查多模态精排是否已配置
@@ -1386,5 +1402,39 @@ impl LLMManager {
         }
 
         "计算题".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vl_embedding_model_config_id_prefers_dimension_default() {
+        let assignments = ModelAssignments {
+            vl_embedding_model_config_id: Some("assignment_vl".to_string()),
+            ..ModelAssignments::default()
+        };
+
+        assert_eq!(
+            resolve_vl_embedding_model_config_id(
+                Some("dimension_vl".to_string()),
+                Some(assignments)
+            ),
+            Some("dimension_vl".to_string())
+        );
+    }
+
+    #[test]
+    fn vl_embedding_model_config_id_falls_back_to_assignment() {
+        let assignments = ModelAssignments {
+            vl_embedding_model_config_id: Some("assignment_vl".to_string()),
+            ..ModelAssignments::default()
+        };
+
+        assert_eq!(
+            resolve_vl_embedding_model_config_id(None, Some(assignments)),
+            Some("assignment_vl".to_string())
+        );
     }
 }

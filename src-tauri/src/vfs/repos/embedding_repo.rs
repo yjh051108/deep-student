@@ -368,12 +368,12 @@ const PENDING_RESOURCES_WHERE_SQL: &str = r#"
         )
     )
     AND (
-        EXISTS (SELECT 1 FROM notes WHERE resource_id = r.id)
-        OR EXISTS (SELECT 1 FROM files WHERE status = 'active' AND (resource_id = r.id OR id = r.source_id))
-        OR EXISTS (SELECT 1 FROM exam_sheets WHERE resource_id = r.id OR id = r.source_id)
-        OR EXISTS (SELECT 1 FROM translations WHERE resource_id = r.id)
-        OR EXISTS (SELECT 1 FROM essays WHERE resource_id = r.id)
-        OR EXISTS (SELECT 1 FROM mindmaps WHERE resource_id = r.id)
+        EXISTS (SELECT 1 FROM notes WHERE resource_id = r.id AND deleted_at IS NULL)
+        OR EXISTS (SELECT 1 FROM files WHERE status = 'active' AND deleted_at IS NULL AND (resource_id = r.id OR id = r.source_id))
+        OR EXISTS (SELECT 1 FROM exam_sheets WHERE deleted_at IS NULL AND (resource_id = r.id OR id = r.source_id))
+        OR EXISTS (SELECT 1 FROM translations WHERE resource_id = r.id AND deleted_at IS NULL)
+        OR EXISTS (SELECT 1 FROM essays WHERE resource_id = r.id AND deleted_at IS NULL)
+        OR EXISTS (SELECT 1 FROM mindmaps WHERE resource_id = r.id AND deleted_at IS NULL)
     )
 "#;
 
@@ -841,6 +841,19 @@ mod tests {
         (temp_dir, db)
     }
 
+    fn insert_pending_resource(conn: &Connection, id: &str, resource_type: &str) {
+        conn.execute(
+            r#"
+            INSERT INTO resources (
+                id, hash, type, storage_mode, data, created_at, updated_at, index_state
+            )
+            VALUES (?1, ?2, ?3, 'inline', 'test', 0, 0, 'pending')
+            "#,
+            params![id, format!("hash_{id}"), resource_type],
+        )
+        .unwrap();
+    }
+
     #[test]
     fn test_register_dimension() {
         let (_temp_dir, db) = setup_test_db();
@@ -883,5 +896,99 @@ mod tests {
             .expect("State should exist");
         assert_eq!(state.state, INDEX_STATE_INDEXED);
         assert_eq!(state.hash, Some("hash123".to_string()));
+    }
+
+    #[test]
+    fn pending_queue_excludes_deleted_source_rows() {
+        let (_temp_dir, db) = setup_test_db();
+
+        {
+            let conn = db.get_conn_safe().unwrap();
+            insert_pending_resource(&conn, "res_active_note", "note");
+            insert_pending_resource(&conn, "res_deleted_note", "note");
+            insert_pending_resource(&conn, "res_active_file", "file");
+            insert_pending_resource(&conn, "res_deleted_file", "file");
+            insert_pending_resource(&conn, "res_active_exam", "exam");
+            insert_pending_resource(&conn, "res_deleted_exam", "exam");
+
+            conn.execute(
+                "INSERT INTO notes (id, resource_id, title, created_at, updated_at, deleted_at) VALUES ('note_active', 'res_active_note', 'Active note', '0', '0', NULL)",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO notes (id, resource_id, title, created_at, updated_at, deleted_at) VALUES ('note_deleted', 'res_deleted_note', 'Deleted note', '0', '0', '1')",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                r#"
+                INSERT INTO files (
+                    id, resource_id, sha256, file_name, size, status, created_at, updated_at, deleted_at
+                )
+                VALUES ('file_active', 'res_active_file', 'sha_active', 'active.pdf', 1, 'active', '0', '0', NULL)
+                "#,
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                r#"
+                INSERT INTO files (
+                    id, resource_id, sha256, file_name, size, status, created_at, updated_at, deleted_at
+                )
+                VALUES ('file_deleted', 'res_deleted_file', 'sha_deleted', 'deleted.pdf', 1, 'active', '0', '0', '1')
+                "#,
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                r#"
+                INSERT INTO exam_sheets (
+                    id, resource_id, status, temp_id, metadata_json, preview_json, created_at, updated_at, deleted_at
+                )
+                VALUES ('exam_active', 'res_active_exam', 'completed', 'tmp_active', '{}', '{}', '0', '0', NULL)
+                "#,
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                r#"
+                INSERT INTO exam_sheets (
+                    id, resource_id, status, temp_id, metadata_json, preview_json, created_at, updated_at, deleted_at
+                )
+                VALUES ('exam_deleted', 'res_deleted_exam', 'completed', 'tmp_deleted', '{}', '{}', '0', '0', '1')
+                "#,
+                [],
+            )
+            .unwrap();
+
+            assert_eq!(
+                VfsIndexStateRepo::count_pending_resources_with_conn(&conn, 3).unwrap(),
+                3
+            );
+
+            let mut pending =
+                VfsIndexStateRepo::get_pending_resources_with_conn(&conn, 10, 3).unwrap();
+            pending.sort();
+            assert_eq!(
+                pending,
+                vec![
+                    "res_active_exam".to_string(),
+                    "res_active_file".to_string(),
+                    "res_active_note".to_string()
+                ]
+            );
+        }
+
+        let mut claimed = VfsIndexStateRepo::claim_pending_resources(&db, 10, 3).unwrap();
+        claimed.sort();
+        assert_eq!(
+            claimed,
+            vec![
+                "res_active_exam".to_string(),
+                "res_active_file".to_string(),
+                "res_active_note".to_string()
+            ]
+        );
     }
 }

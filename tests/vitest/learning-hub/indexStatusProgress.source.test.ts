@@ -33,9 +33,17 @@ describe('IndexStatusView progress display contract', () => {
 
   it('does not run image indexing when the backend reports multimodal indexing unavailable', () => {
     expect(source).toContain("const canRunImageIndex = imageIndexCapability === 'ready';");
+    expect(source).toContain('const displayWorkCount = summary.displayPendingCount + summary.displayFailedCount;');
     expect(source).toContain('const pendingMmCount = mmResources.length;');
-    expect(source).toContain('pendingTextCount === 0 && pendingMmCount > 0 && !canRunImageIndex');
+    expect(source).toContain('displayWorkCount > 0 && pendingTextCount === 0 && pendingMmCount > 0 && !canRunImageIndex');
     expect(source).toContain('if (mmResources.length > 0 && canRunImageIndex)');
     expect(source).toContain('includeImageIndex,');
+  });
+
+  it('does not start progress animation when display state has no work left', () => {
+    expect(source).toContain('if (displayWorkCount === 0) {');
+    expect(source).toContain("t('indexStatus.notification.noResourcesToIndex')");
+    expect(source).toContain('return;');
+    expect(source).not.toContain('pendingTextCount > 0 || displayWorkCount === 0');
   });
 });

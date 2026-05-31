@@ -126,6 +126,11 @@ const isPendingMultimodalResource = (resource: ResourceIndexStatus): boolean =>
     && resource.mmIndexState !== 'indexed'
     && resource.mmIndexState !== 'disabled';
 
+const isPendingTextResource = (resource: ResourceIndexStatus): boolean => {
+  const textState = normalizeIndexState(resource.textIndexState);
+  return textState === 'pending' || textState === 'failed';
+};
+
 type ImageIndexCapability = 'ready' | 'featureDisabled' | 'notConfigured' | 'invalidModel';
 
 interface MultimodalIndexCapability {
@@ -629,14 +634,21 @@ export const IndexStatusView: React.FC = () => {
       return;
     }
 
-    const pendingTextCount = summary.pendingCount + summary.failedCount;
+    const displayWorkCount = summary.displayPendingCount + summary.displayFailedCount;
+    const pendingTextResources = summary.resources.filter(isPendingTextResource);
+    const pendingTextCount = pendingTextResources.length;
     const mmResources = MULTIMODAL_INDEX_ENABLED
       ? summary.resources.filter(isPendingMultimodalResource)
       : [];
     const pendingMmCount = mmResources.length;
     const canRunImageIndex = imageIndexCapability === 'ready';
 
-    if (pendingTextCount === 0 && pendingMmCount > 0 && !canRunImageIndex) {
+    if (displayWorkCount === 0) {
+      showGlobalNotification('info', t('indexStatus.notification.hint'), t('indexStatus.notification.noResourcesToIndex'));
+      return;
+    }
+
+    if (displayWorkCount > 0 && pendingTextCount === 0 && pendingMmCount > 0 && !canRunImageIndex) {
       showGlobalNotification(
         'warning',
         t('indexStatus.notification.hint'),
@@ -645,9 +657,8 @@ export const IndexStatusView: React.FC = () => {
       return;
     }
 
-    // 先执行 OCR 文本索引。即使当前 UI 摘要显示 0，也让后端队列作为最终状态源，
-    // 避免筛选/旧摘要误报“全部已索引”。
-    if (pendingTextCount > 0 || mmResources.length === 0) {
+    // 先执行 OCR 文本索引。工作量来自当前完整资源页，展示口径来自后端 display state。
+    if (pendingTextCount > 0) {
       setBatchIndexing(true);
       setBatchProgress(0);
       setBatchMessage(t('indexStatus.notification.preparingOcrBatch'));
