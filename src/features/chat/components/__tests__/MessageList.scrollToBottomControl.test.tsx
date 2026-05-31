@@ -167,6 +167,9 @@ function configureViewportMetrics(
   return {
     scrollTo,
     getScrollTop: () => currentScrollTop,
+    setScrollTop: (value: number) => {
+      currentScrollTop = value;
+    },
   };
 }
 
@@ -254,5 +257,73 @@ describe('MessageList scroll-to-bottom control', () => {
     queuedFrame?.(0);
 
     expect(getScrollTop()).toBe(580);
+  });
+
+  it('keeps streaming auto-scroll paused after a small upward wheel near the bottom', async () => {
+    const rafQueue: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      rafQueue.push(callback);
+      return rafQueue.length;
+    });
+
+    mockSessionStatus = 'streaming';
+    mockMessageOrder = ['message-user', 'message-assistant'];
+
+    renderMessageList();
+
+    const viewport = requireViewport();
+    const { getScrollTop, setScrollTop } = configureViewportMetrics(viewport, {
+      scrollHeight: 1000,
+      clientHeight: 400,
+      scrollTop: 580,
+    });
+
+    fireEvent.wheel(viewport, { deltaY: -1 });
+    setScrollTop(575);
+    fireEvent.scroll(viewport);
+
+    const button = await screen.findByRole('button', { name: 'Scroll to bottom' });
+    expect(button.parentElement).toHaveAttribute('data-open', 'true');
+
+    const queuedFrame = rafQueue.shift();
+    expect(queuedFrame).toBeTypeOf('function');
+    queuedFrame?.(0);
+
+    expect(getScrollTop()).toBe(575);
+  });
+
+  it('does not treat streaming auto-scroll writes as user scroll intent', async () => {
+    const rafQueue: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      rafQueue.push(callback);
+      return rafQueue.length;
+    });
+
+    mockSessionStatus = 'streaming';
+    mockMessageOrder = ['message-user', 'message-assistant'];
+
+    renderMessageList();
+
+    const viewport = requireViewport();
+    const { getScrollTop } = configureViewportMetrics(viewport, {
+      scrollHeight: 1200,
+      clientHeight: 400,
+      scrollTop: 300,
+    });
+
+    for (let i = 0; i < 5 && getScrollTop() === 300; i += 1) {
+      const queuedFrame = rafQueue.shift();
+      expect(queuedFrame).toBeTypeOf('function');
+      queuedFrame?.(0);
+    }
+
+    expect(getScrollTop()).toBeGreaterThan(300);
+    fireEvent.scroll(viewport);
+
+    const button = screen.getByRole('button', { hidden: true, name: 'Scroll to bottom' });
+    expect(button.parentElement).toHaveAttribute('data-open', 'false');
+
+    const nextFrame = rafQueue.shift();
+    expect(nextFrame).toBeTypeOf('function');
   });
 });
