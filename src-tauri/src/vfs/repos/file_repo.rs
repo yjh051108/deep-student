@@ -812,6 +812,7 @@ impl VfsFileRepo {
             )
             .optional()?
             .flatten();
+        let folder_item_ids = Self::folder_item_ids_for_file_with_conn(conn, file_id)?;
         let now = chrono::Utc::now()
             .format("%Y-%m-%dT%H:%M:%S%.3fZ")
             .to_string();
@@ -851,10 +852,13 @@ impl VfsFileRepo {
             .format("%Y-%m-%dT%H:%M:%S%.3fZ")
             .to_string();
         let now_ms = chrono::Utc::now().timestamp_millis();
-        let fi_updated = conn.execute(
-            "UPDATE folder_items SET deleted_at = ?1, updated_at = ?2 WHERE item_id = ?3 AND item_type IN ('file', 'image', 'attachment', 'textbook') AND deleted_at IS NULL",
-            params![now_str, now_ms, file_id],
-        )?;
+        let mut fi_updated = 0;
+        for item_id in &folder_item_ids {
+            fi_updated += conn.execute(
+                "UPDATE folder_items SET deleted_at = ?1, updated_at = ?2 WHERE item_id = ?3 AND item_type IN ('file', 'image', 'attachment', 'textbook') AND deleted_at IS NULL",
+                params![now_str, now_ms, item_id],
+            )?;
+        }
 
         if let Some(ref rid) = resource_id {
             conn.execute(
@@ -899,6 +903,7 @@ impl VfsFileRepo {
             )
             .optional()?
             .flatten();
+        let folder_item_ids = Self::folder_item_ids_for_file_with_conn(conn, file_id)?;
         let now = chrono::Utc::now()
             .format("%Y-%m-%dT%H:%M:%S%.3fZ")
             .to_string();
@@ -917,10 +922,13 @@ impl VfsFileRepo {
 
         // ★ CONC-02 修复：恢复 folder_items 中的关联记录
         let now_ms = chrono::Utc::now().timestamp_millis();
-        let fi_updated = conn.execute(
-            "UPDATE folder_items SET deleted_at = NULL, updated_at = ?1 WHERE item_id = ?2 AND item_type IN ('file', 'image', 'attachment', 'textbook') AND deleted_at IS NOT NULL",
-            params![now_ms, file_id],
-        )?;
+        let mut fi_updated = 0;
+        for item_id in &folder_item_ids {
+            fi_updated += conn.execute(
+                "UPDATE folder_items SET deleted_at = NULL, updated_at = ?1 WHERE item_id = ?2 AND item_type IN ('file', 'image', 'attachment', 'textbook') AND deleted_at IS NOT NULL",
+                params![now_ms, item_id],
+            )?;
+        }
 
         if let Some(ref rid) = resource_id {
             conn.execute(
@@ -1803,6 +1811,32 @@ impl VfsFileRepo {
         Ok(resource_id)
     }
 
+    fn folder_item_ids_for_file_with_conn(
+        conn: &Connection,
+        file_id: &str,
+    ) -> VfsResult<Vec<String>> {
+        let row: Option<(Option<String>, Option<String>)> = conn
+            .query_row(
+                "SELECT f.resource_id, r.source_id
+                 FROM files f
+                 LEFT JOIN resources r ON r.id = f.resource_id
+                 WHERE f.id = ?1",
+                params![file_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+
+        let mut item_ids = vec![file_id.to_string()];
+        if let Some((resource_id, source_id)) = row {
+            for candidate in [resource_id, source_id].into_iter().flatten() {
+                if !candidate.is_empty() && !item_ids.iter().any(|id| id == &candidate) {
+                    item_ids.push(candidate);
+                }
+            }
+        }
+        Ok(item_ids)
+    }
+
     /// 软删除文件并清理向量索引
     ///
     /// ★ M-12 修复：软删除时同步删除 LanceDB 向量索引，确保已删除资源不会在 RAG 检索中返回。
@@ -2110,6 +2144,74 @@ mod tests {
             )
             .unwrap();
         assert!(resource_deleted_at.is_none());
+    }
+
+    #[test]
+    fn test_soft_delete_and_restore_updates_legacy_folder_item_aliases() {
+        let (_temp_dir, db) = setup_test_db();
+
+        let file = VfsFileRepo::create_file(
+            &db,
+            "sha-alias-folder-items",
+            "legacy-alias.png",
+            1024,
+            "image",
+            Some("image/png"),
+            None,
+            None,
+        )
+        .expect("Create should succeed");
+
+        let conn = db.get_conn_safe().unwrap();
+        let resource_id = file.resource_id.as_deref().unwrap().to_string();
+        let legacy_source_id = "legacy_source_file_1";
+        conn.execute(
+            "UPDATE resources SET source_id = ?1 WHERE id = ?2",
+            params![legacy_source_id, resource_id],
+        )
+        .unwrap();
+
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        conn.execute(
+            "INSERT INTO folder_items (id, folder_id, item_type, item_id, sort_order, created_at, updated_at)
+             VALUES (?1, NULL, 'image', ?2, 0, ?3, ?3)",
+            params!["fi_alias_file", file.id, now_ms],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO folder_items (id, folder_id, item_type, item_id, sort_order, created_at, updated_at)
+             VALUES (?1, NULL, 'image', ?2, 0, ?3, ?3)",
+            params!["fi_alias_resource", resource_id, now_ms],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO folder_items (id, folder_id, item_type, item_id, sort_order, created_at, updated_at)
+             VALUES (?1, NULL, 'image', ?2, 0, ?3, ?3)",
+            params!["fi_alias_source", legacy_source_id, now_ms],
+        )
+        .unwrap();
+
+        VfsFileRepo::delete_file(&db, &file.id).expect("Delete should succeed");
+        let active_aliases: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM folder_items
+                 WHERE item_id IN (?1, ?2, ?3) AND deleted_at IS NULL",
+                params![file.id, resource_id, legacy_source_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(active_aliases, 0);
+
+        VfsFileRepo::restore_file(&db, &file.id).expect("Restore should succeed");
+        let restored_aliases: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM folder_items
+                 WHERE item_id IN (?1, ?2, ?3) AND deleted_at IS NULL",
+                params![file.id, resource_id, legacy_source_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(restored_aliases, 3);
     }
 
     #[test]

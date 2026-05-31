@@ -5411,7 +5411,9 @@ pub async fn dstu_search_in_folder(
                     }
                 }
                 "textbook" => {
-                    if let Ok(Some(tb)) = VfsTextbookRepo::get_textbook(&vfs_db, &item.item_id) {
+                    if let Ok(Some(tb)) =
+                        VfsTextbookRepo::get_active_textbook(&vfs_db, &item.item_id)
+                    {
                         if tb.file_name.to_lowercase().contains(&query_lower) {
                             Some(textbook_to_dstu_node(&tb))
                         } else {
@@ -5421,8 +5423,8 @@ pub async fn dstu_search_in_folder(
                         None
                     }
                 }
-                "file" => {
-                    if let Ok(Some(f)) = VfsFileRepo::get_file(&vfs_db, &item.item_id) {
+                "file" | "image" => {
+                    if let Ok(Some(f)) = VfsFileRepo::get_active_file(&vfs_db, &item.item_id) {
                         if f.file_name.to_lowercase().contains(&query_lower) {
                             Some(file_to_dstu_node(&f))
                         } else {

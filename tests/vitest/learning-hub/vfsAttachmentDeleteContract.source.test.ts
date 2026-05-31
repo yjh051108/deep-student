@@ -19,6 +19,10 @@ describe('VFS attachment delete contract', () => {
     resolve(process.cwd(), 'src-tauri/src/dstu/handler_utils/content_helpers.rs'),
     'utf-8'
   );
+  const dstuHandlersSource = readFileSync(
+    resolve(process.cwd(), 'src-tauri/src/dstu/handlers.rs'),
+    'utf-8'
+  );
   const refHandlersSource = readFileSync(
     resolve(process.cwd(), 'src-tauri/src/vfs/ref_handlers.rs'),
     'utf-8'
@@ -46,10 +50,27 @@ describe('VFS attachment delete contract', () => {
   });
 
   it('handles legacy file-backed folder item types when deleting or restoring files', () => {
+    expect(fileRepoSource).toContain('fn folder_item_ids_for_file_with_conn(');
+    expect(fileRepoSource).toContain('SELECT f.resource_id, r.source_id');
+    expect(fileRepoSource).toContain('LEFT JOIN resources r ON r.id = f.resource_id');
     expect(fileRepoSource).toContain("item_type IN ('file', 'image', 'attachment', 'textbook') AND deleted_at IS NULL");
     expect(fileRepoSource).toContain("item_type IN ('file', 'image', 'attachment', 'textbook') AND deleted_at IS NOT NULL");
+    expect(fileRepoSource).toContain('for item_id in &folder_item_ids');
     expect(attachmentRepoSource).toContain('VfsFileRepo::restore_file_with_conn(conn, id)?;');
     expect(attachmentRepoSource).not.toContain("UPDATE folder_items SET deleted_at = NULL");
+  });
+
+  it('uses active-only reads for DSTU folder search to avoid ghost files', () => {
+    const searchBody = dstuHandlersSource.slice(
+      dstuHandlersSource.indexOf('pub async fn dstu_search_in_folder'),
+      dstuHandlersSource.indexOf('// ============================================================================', dstuHandlersSource.indexOf('pub async fn dstu_search_in_folder') + 1)
+    );
+
+    expect(searchBody).toContain('VfsTextbookRepo::get_active_textbook(&vfs_db, &item.item_id)');
+    expect(searchBody).toContain('"file" | "image"');
+    expect(searchBody).toContain('VfsFileRepo::get_active_file(&vfs_db, &item.item_id)');
+    expect(searchBody).not.toContain('VfsTextbookRepo::get_textbook(&vfs_db, &item.item_id)');
+    expect(searchBody).not.toContain('VfsFileRepo::get_file(&vfs_db, &item.item_id)');
   });
 
   it('keeps deleted attachments out of public metadata and content reads', () => {
