@@ -114,4 +114,12 @@ describe('Index status state source contract', () => {
     expect(handlerSource).toContain('list_conditions.push(format!("({}) = ?", list_display_state_sql));');
     expect(handlerSource).toContain("COALESCE(SUM(CASE WHEN {display_state} = 'indexed' THEN 1 ELSE 0 END), 0) as display_indexed");
   });
+
+  it('does not silently skip index status rows when list parsing fails', () => {
+    expect(handlerSource).toContain('fn read_optional_millis(');
+    expect(handlerSource).toContain('fn read_optional_i32(');
+    expect(handlerSource).toContain('return Err(format!');
+    expect(handlerSource).toContain('Index status row {} parse error: {}');
+    expect(handlerSource).not.toContain('rows had parse errors');
+  });
 });

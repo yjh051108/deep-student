@@ -4318,6 +4318,94 @@ END
     )
 }
 
+fn read_optional_millis(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<Option<i64>> {
+    use rusqlite::types::{Type, ValueRef};
+
+    match row.get_ref(index)? {
+        ValueRef::Null => Ok(None),
+        ValueRef::Integer(value) => Ok(Some(value)),
+        ValueRef::Real(value) => Ok(Some(value as i64)),
+        ValueRef::Text(bytes) => {
+            let text = String::from_utf8_lossy(bytes).trim().to_string();
+            if text.is_empty() {
+                return Ok(None);
+            }
+            if let Ok(value) = text.parse::<i64>() {
+                return Ok(Some(value));
+            }
+            chrono::DateTime::parse_from_rfc3339(&text)
+                .map(|dt| dt.timestamp_millis())
+                .or_else(|_| {
+                    chrono::NaiveDateTime::parse_from_str(&text, "%Y-%m-%dT%H:%M:%S%.f")
+                        .or_else(|_| {
+                            chrono::NaiveDateTime::parse_from_str(&text, "%Y-%m-%d %H:%M:%S")
+                        })
+                        .map(|dt| dt.and_utc().timestamp_millis())
+                })
+                .map(Some)
+                .map_err(|err| row_conversion_error(index, Type::Text, err))
+        }
+        ValueRef::Blob(_) => Err(row_conversion_error(
+            index,
+            Type::Blob,
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "timestamp cannot be read from blob",
+            ),
+        )),
+    }
+}
+
+fn read_optional_i32(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<Option<i32>> {
+    use rusqlite::types::{Type, ValueRef};
+
+    match row.get_ref(index)? {
+        ValueRef::Null => Ok(None),
+        ValueRef::Integer(value) => i32::try_from(value)
+            .map(Some)
+            .map_err(|err| row_conversion_error(index, Type::Integer, err)),
+        ValueRef::Real(value)
+            if value.is_finite() && value >= i32::MIN as f64 && value <= i32::MAX as f64 =>
+        {
+            Ok(Some(value as i32))
+        }
+        ValueRef::Real(_) => Err(row_conversion_error(
+            index,
+            Type::Real,
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "dimension real value is out of i32 range",
+            ),
+        )),
+        ValueRef::Text(bytes) => {
+            let text = String::from_utf8_lossy(bytes).trim().to_string();
+            if text.is_empty() {
+                Ok(None)
+            } else {
+                text.parse::<i32>()
+                    .map(Some)
+                    .map_err(|err| row_conversion_error(index, Type::Text, err))
+            }
+        }
+        ValueRef::Blob(_) => Err(row_conversion_error(
+            index,
+            Type::Blob,
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "dimension cannot be read from blob",
+            ),
+        )),
+    }
+}
+
+fn row_conversion_error(
+    index: usize,
+    value_type: rusqlite::types::Type,
+    err: impl std::error::Error + Send + Sync + 'static,
+) -> rusqlite::Error {
+    rusqlite::Error::FromSqlConversionFailure(index, value_type, Box::new(err))
+}
+
 /// 获取所有资源的向量化状态
 #[tauri::command]
 pub async fn vfs_get_all_index_status(
@@ -4722,28 +4810,11 @@ END
         // 19=display_index_state, 20=modality, 21=updated_at, 22=is_stale, 23=raw_ocr_pages_json,
         // 24=raw_extracted_text, 25=raw_resource_ocr_text
 
-        // updated_at 可能是 INTEGER 或 TEXT 格式，需要兼容处理
-        let updated_at: i64 = match row.get::<_, i64>(21) {
-            Ok(v) => v,
-            Err(_) => {
-                let text_val: String = row.get(21)?;
-                chrono::DateTime::parse_from_rfc3339(&text_val)
-                    .map(|dt| dt.timestamp_millis())
-                    .or_else(|_| {
-                        chrono::NaiveDateTime::parse_from_str(&text_val, "%Y-%m-%dT%H:%M:%S%.f")
-                            .or_else(|_| {
-                                chrono::NaiveDateTime::parse_from_str(
-                                    &text_val,
-                                    "%Y-%m-%d %H:%M:%S",
-                                )
-                            })
-                            .map(|dt| dt.and_utc().timestamp_millis())
-                    })
-                    .unwrap_or(0)
-            }
-        };
+        // indexed_at / updated_at may be INTEGER millis in new rows or TEXT in migrated rows.
+        let text_indexed_at = read_optional_millis(row, 7)?;
+        let updated_at = read_optional_millis(row, 21)?.unwrap_or(0);
 
-        let text_embedding_dim: Option<i32> = row.get(12)?;
+        let text_embedding_dim = read_optional_i32(row, 12)?;
         let resource_type: String = row.get(2)?;
         let raw_ocr_pages_json: Option<String> = row.get(23)?;
         let raw_extracted_text: Option<String> = row.get(24)?;
@@ -4785,7 +4856,7 @@ END
             ocr_count,
             // 文本索引状态
             text_index_state: row.get(6)?,
-            text_indexed_at: row.get(7)?,
+            text_indexed_at,
             text_index_error: row.get(8)?,
             text_chunk_count: row.get(9).unwrap_or(0),
             native_text_chunk_count: row.get(10).unwrap_or(0),
@@ -4797,7 +4868,7 @@ END
                 .get::<_, String>(14)
                 .unwrap_or_else(|_| "pending".to_string()),
             mm_indexed_pages: row.get(15).unwrap_or(0),
-            mm_embedding_dim: row.get(16)?,
+            mm_embedding_dim: read_optional_i32(row, 16)?,
             mm_indexing_mode: row.get(17)?,
             mm_index_error: row.get(18)?,
             display_index_state: row
@@ -4820,25 +4891,18 @@ END
     let resources: Vec<ResourceIndexStatus> = match query_result {
         Ok(rows) => {
             let mut resources = Vec::new();
-            let mut error_count = 0;
             for (idx, row) in rows.enumerate() {
                 match row {
                     Ok(r) => resources.push(r),
                     Err(e) => {
-                        error_count += 1;
-                        log::warn!(
+                        log::error!(
                             "[VFS::handlers] vfs_get_all_index_status: row {} parse error: {}",
                             idx,
                             e
                         );
+                        return Err(format!("Index status row {} parse error: {}", idx, e));
                     }
                 }
-            }
-            if error_count > 0 {
-                log::warn!(
-                    "[VFS::handlers] vfs_get_all_index_status: {} rows had parse errors",
-                    error_count
-                );
             }
             log::info!(
                 "[VFS::handlers] vfs_get_all_index_status: 资源列表查询完成, 返回 {} 条记录",
@@ -8250,6 +8314,74 @@ mod tests {
         );
         assert_eq!(counts, (2, 1, 0, 1, 0));
         assert_eq!(failed_ids, vec!["img".to_string()]);
+    }
+
+    #[test]
+    fn index_status_row_parser_accepts_legacy_timestamp_shapes() {
+        let conn = rusqlite::Connection::open_in_memory().expect("open memory db");
+
+        let values = conn
+            .query_row(
+                "SELECT
+                    NULL,
+                    1700000000123,
+                    1700000000456.0,
+                    '1700000000789',
+                    '2026-05-29T12:24:35.570763700+00:00',
+                    '2026-05-29 12:24:35'",
+                [],
+                |row| {
+                    Ok((
+                        read_optional_millis(row, 0)?,
+                        read_optional_millis(row, 1)?,
+                        read_optional_millis(row, 2)?,
+                        read_optional_millis(row, 3)?,
+                        read_optional_millis(row, 4)?,
+                        read_optional_millis(row, 5)?,
+                    ))
+                },
+            )
+            .expect("read timestamp values");
+
+        assert_eq!(values.0, None);
+        assert_eq!(values.1, Some(1700000000123));
+        assert_eq!(values.2, Some(1700000000456));
+        assert_eq!(values.3, Some(1700000000789));
+        assert_eq!(values.4, Some(1780057475570));
+        assert_eq!(values.5, Some(1780057475000));
+
+        let invalid = conn.query_row("SELECT 'bad timestamp'", [], |row| {
+            read_optional_millis(row, 0)
+        });
+        assert!(invalid.is_err());
+    }
+
+    #[test]
+    fn index_status_row_parser_accepts_legacy_dimension_shapes() {
+        let conn = rusqlite::Connection::open_in_memory().expect("open memory db");
+
+        let values = conn
+            .query_row(
+                "SELECT NULL, 1024, 768.0, '512', ''",
+                [],
+                |row| {
+                    Ok((
+                        read_optional_i32(row, 0)?,
+                        read_optional_i32(row, 1)?,
+                        read_optional_i32(row, 2)?,
+                        read_optional_i32(row, 3)?,
+                        read_optional_i32(row, 4)?,
+                    ))
+                },
+            )
+            .expect("read dimension values");
+
+        assert_eq!(values, (None, Some(1024), Some(768), Some(512), None));
+
+        let invalid = conn.query_row("SELECT 'not a dimension'", [], |row| {
+            read_optional_i32(row, 0)
+        });
+        assert!(invalid.is_err());
     }
 
     #[test]
