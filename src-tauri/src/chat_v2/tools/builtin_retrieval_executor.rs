@@ -261,14 +261,6 @@ impl BuiltinRetrievalExecutor {
         }
     }
 
-    fn sanitize_scope_segment(value: &str) -> String {
-        crate::memory::sanitize_scope_segment(value)
-    }
-
-    fn topic_memory_root(ctx: &ExecutionContext) -> Option<String> {
-        crate::memory::topic_memory_root(ctx.group_id.as_deref(), ctx.group_name.as_deref())
-    }
-
     /// 执行 VFS RAG 知识检索（统一方案）
     async fn execute_vfs_rag(
         &self,
