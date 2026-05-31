@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { learningResourceSkill } from '../builtin-tools/learning-resource';
+import { mindmapToolsSkill } from '../builtin-tools/mindmap-tools';
 import { knowledgeRetrievalSkill } from '../builtin-tools/knowledge-retrieval';
 import { BUILTIN_NAMESPACE, BUILTIN_TOOLS } from '@/mcp/builtinMcpServer';
 
@@ -37,5 +38,29 @@ describe('resource tool contract consistency', () => {
     expect(searchEnum).toEqual(expect.arrayContaining(REQUIRED_TYPES));
     expect(unifiedEnum).toEqual(expect.arrayContaining(REQUIRED_TYPES));
   });
-});
 
+  it('keeps mindmap browsing in learning-resource and creation/editing in mindmap-tools', () => {
+    const learningResourceText = `${learningResourceSkill.description}\n${learningResourceSkill.content}`;
+    const learningResourceTools = learningResourceSkill.embeddedTools.map(tool => tool.name);
+    const mindmapTools = mindmapToolsSkill.embeddedTools.map(tool => tool.name);
+
+    expect(learningResourceText).toContain('mindmap-tools');
+    expect(learningResourceText).toContain('创建/编辑思维导图');
+    expect(learningResourceTools).not.toEqual(expect.arrayContaining([
+      'builtin-mindmap_create',
+      'builtin-mindmap_update',
+      'builtin-mindmap_edit_nodes',
+      'builtin-mindmap_delete',
+    ]));
+
+    expect(mindmapToolsSkill.dependencies).toEqual(expect.arrayContaining(['learning-resource']));
+    expect(mindmapTools).toEqual(expect.arrayContaining([
+      'builtin-mindmap_create',
+      'builtin-mindmap_update',
+      'builtin-mindmap_edit_nodes',
+      'builtin-mindmap_delete',
+      'builtin-mindmap_versions',
+      'builtin-mindmap_diff_versions',
+    ]));
+  });
+});

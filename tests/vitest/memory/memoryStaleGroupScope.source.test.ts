@@ -114,4 +114,30 @@ describe('memory and resource scope stale group contract', () => {
     expect(folderHelper).not.toContain('ctx.group_id.as_deref()');
     expect(folderHelper).not.toContain('ctx.group_name.as_deref()');
   });
+
+  it('keeps topicless memory list folder reads under global memory by default', () => {
+    const memoryExecutorSource = readFileSync(
+      resolve(process.cwd(), 'src-tauri/src/chat_v2/tools/memory_executor.rs'),
+      'utf-8'
+    );
+
+    expect(memoryExecutorSource).toContain('let has_explicit_scope = call.arguments.get("scope").is_some();');
+    expect(memoryExecutorSource).toContain('&& Self::topic_memory_root(ctx).is_none()');
+    expect(memoryExecutorSource).toContain('MemoryScope::Global');
+    expect(memoryExecutorSource).toContain('Self::scoped_folder_path(ctx, effective_scope, folder.as_deref())');
+  });
+
+  it('validates explicit retrieval filters against current topic resource scope', () => {
+    const retrievalSource = readFileSync(
+      resolve(process.cwd(), 'src-tauri/src/chat_v2/tools/builtin_retrieval_executor.rs'),
+      'utf-8'
+    );
+
+    expect(retrievalSource).toContain(') -> Result<(Option<Vec<String>>, Option<Vec<String>>), String>');
+    expect(retrievalSource).toContain('if resource_scope::is_topic_scoped(ctx)');
+    expect(retrievalSource).toContain('resource_scope::current_topic_folder_roots(ctx)');
+    expect(retrievalSource).toContain('resource_scope::folder_is_within_roots(');
+    expect(retrievalSource).toContain('resource_scope::ensure_item_in_scope(');
+    expect(retrievalSource).toContain('self.scoped_filters(ctx, vfs_db, explicit_folder_ids, explicit_resource_ids)?');
+  });
 });

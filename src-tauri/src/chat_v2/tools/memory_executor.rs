@@ -614,13 +614,22 @@ impl MemoryToolExecutor {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
         let scope = Self::parse_scope(call)?;
-        let scoped_folder = if folder.is_some() {
-            Self::scoped_folder_path(ctx, scope, folder.as_deref()).map(|path| vec![path])
+        let has_explicit_scope = call.arguments.get("scope").is_some();
+        let effective_scope = if !has_explicit_scope
+            && folder.is_some()
+            && Self::topic_memory_root(ctx).is_none()
+        {
+            MemoryScope::Global
         } else {
-            match scope {
+            scope
+        };
+        let scoped_folder = if folder.is_some() {
+            Self::scoped_folder_path(ctx, effective_scope, folder.as_deref()).map(|path| vec![path])
+        } else {
+            match effective_scope {
                 MemoryScope::Global => Some(vec![crate::memory::GLOBAL_MEMORY_FOLDER.to_string()]),
                 MemoryScope::Topic => {
-                    if call.arguments.get("scope").is_some() {
+                    if has_explicit_scope {
                         Self::topic_memory_root(ctx).map(|path| vec![path])
                     } else {
                         Some(Self::visible_scope_roots(ctx))
