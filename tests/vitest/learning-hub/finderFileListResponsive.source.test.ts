@@ -84,6 +84,7 @@ describe('FinderFileList responsive grid contract', () => {
     expect(pageSource).toContain('onCollapse={() => setLocalSidebarCollapsed(true)}');
     expect(pageSource).toContain('onExpand={() => setLocalSidebarCollapsed(false)}');
     expect(source).toContain("const showFinderCollapseRail = mode === 'fullscreen' && isCollapsed && hasOpenApp && Boolean(onToggleCollapse);");
+    expect(source).toContain('Boolean(quickAccessPortalTarget) || !showFinderCollapseRail');
     expect(source).toContain('showFinderCollapseRail && "hidden"');
     expect(source).not.toContain('FILE_PANE_COLLAPSE_WIDTH');
     expect(source).not.toContain('filePaneCollapsed');

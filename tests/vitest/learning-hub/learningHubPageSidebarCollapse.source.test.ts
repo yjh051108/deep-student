@@ -15,12 +15,7 @@ describe('LearningHubPage sidebar collapse contract', () => {
   });
 
   it('does not repeatedly squeeze the resource tree when switching or opening more tabs', () => {
-    expect(source).toContain('const hadOpenAppRef = useRef(false);');
-    expect(source).toContain('const wasOpen = hadOpenAppRef.current;');
-    expect(source).toContain('if (wasOpen) {');
-    expect(source).toContain('return;');
-    expect(source).toContain('sidebarPanelRef.current?.resize(35);');
-    expect(source).toContain('appPanelRef.current?.resize(65);');
+    expect(source).toContain('setLocalSidebarCollapsed(false);');
     expect(source).not.toContain('sidebarPanelRef.current?.resize(25);');
     expect(source).not.toContain('appPanelRef.current?.resize(75);');
   });

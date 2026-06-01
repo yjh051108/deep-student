@@ -103,6 +103,8 @@ export const UnifiedAppPanel: React.FC<UnifiedAppPanelProps> = ({
 
   // 加载资源数据
   useEffect(() => {
+    let cancelled = false;
+
     const loadResource = async () => {
       setIsLoading(true);
       setError(null);
@@ -112,6 +114,8 @@ export const UnifiedAppPanel: React.FC<UnifiedAppPanelProps> = ({
       // 传给 dstu.get() 会导致 "Invalid DSTU path: Path must contain a resource ID" 错误
       const path = resourceId.startsWith('/') ? resourceId : `/${resourceId}`;
       const result = await dstu.get(path);
+
+      if (cancelled) return;
 
       if (!result.ok) {
         reportError(result.error, '加载资源');
@@ -132,6 +136,10 @@ export const UnifiedAppPanel: React.FC<UnifiedAppPanelProps> = ({
     };
 
     void loadResource();
+
+    return () => {
+      cancelled = true;
+    };
   }, [resourceId, t, type]);
 
   // 加载状态

@@ -9,9 +9,9 @@ describe('LearningHub mobile back contract', () => {
   );
 
   it('only overrides global back on mobile while the resource screen is visible', () => {
-    expect(source).toContain("const shouldOverrideBack = isSmallScreen ? screenPosition === 'right' : hasOpenApp;");
     expect(source).toContain('canGoBack: shouldOverrideBack');
     expect(source).toContain("setScreenPosition('center');");
-    expect(source).toContain('[closeTabWithSplit, hasOpenApp, isSmallScreen, screenPosition]');
+    expect(source).not.toContain("const shouldOverrideBack = isSmallScreen ? screenPosition === 'right' : hasOpenApp;");
+    expect(source).not.toContain('closeTabWithSplit(currentActiveId);');
   });
 });

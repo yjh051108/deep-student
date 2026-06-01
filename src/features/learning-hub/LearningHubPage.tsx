@@ -15,7 +15,7 @@
  * - 打开资源时自动切换到右侧应用视图
  */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PanelGroup, Panel, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels';
 import { registerOpenResourceHandler, type OpenResourceHandler } from '@/dstu/openResource';
@@ -235,9 +235,10 @@ export const LearningHubPage: React.FC = () => {
 
   // ★ 关闭 tab 时自动清理分屏状态
   const closeTabWithSplit = useCallback((tabId: string) => {
-    // 如果关闭的是右侧分屏 tab，先退出分屏
+    // 关闭分屏任一可见侧时退出分屏，避免剩余 tab 同时占据 active 和 right pane。
     setSplitView(prev => {
       if (prev?.rightTabId === tabId) return null;
+      if (prev && activeTabIdRef.current === tabId) return null;
       return prev;
     });
     closeTab(tabId);
@@ -296,21 +297,14 @@ export const LearningHubPage: React.FC = () => {
   const [activeAppType, setActiveAppType] = useState<string>('all');
 
   useEffect(() => {
-    const shouldOverrideBack = isSmallScreen ? screenPosition === 'right' : hasOpenApp;
+    const shouldOverrideBack = isSmallScreen && screenPosition === 'right';
     return setLearningHubLocalBackHandler({
       canGoBack: shouldOverrideBack,
       goBack: () => {
-        if (isSmallScreen) {
-          setScreenPosition('center');
-          return;
-        }
-        const currentActiveId = activeTabIdRef.current;
-        if (currentActiveId) {
-          closeTabWithSplit(currentActiveId);
-        }
+        setScreenPosition('center');
       },
     });
-  }, [closeTabWithSplit, hasOpenApp, isSmallScreen, screenPosition]);
+  }, [isSmallScreen, screenPosition]);
 
   // 拖拽状态
   const containerRef = useRef<HTMLDivElement>(null);
@@ -930,17 +924,25 @@ export const LearningHubPage: React.FC = () => {
   const appPanelRef = useRef<ImperativePanelHandle>(null);
   
   // ★ 当标签页打开/全部关闭时同步桌面面板宽度与移动端位置
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (tabs.length > 0) {
-      const wasOpen = hadOpenAppRef.current;
-      hadOpenAppRef.current = true;
-      if (wasOpen) {
+      if (hadOpenAppRef.current) {
         return;
       }
-      const frame = window.requestAnimationFrame(() => {
-        sidebarPanelRef.current?.resize(35);
-        appPanelRef.current?.resize(65);
-      });
+      const showAppPanel = () => {
+        if (!appPanelRef.current || !sidebarPanelRef.current) {
+          return false;
+        }
+        sidebarPanelRef.current.expand();
+        appPanelRef.current.expand();
+        sidebarPanelRef.current.resize(35);
+        appPanelRef.current.resize(65);
+        hadOpenAppRef.current = true;
+        return true;
+      };
+      if (showAppPanel()) return;
+
+      const frame = window.requestAnimationFrame(showAppPanel);
       return () => window.cancelAnimationFrame(frame);
     }
 

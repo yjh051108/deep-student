@@ -50,6 +50,9 @@ export const TabPanelContainer: React.FC<TabPanelContainerProps> = ({
   tabs, activeTabId, splitView, onClose, onTitleChange, onCloseSplitView, className,
 }) => {
   const { t } = useTranslation('common');
+  const effectiveActiveTabId = activeTabId && tabs.some(tab => tab.tabId === activeTabId)
+    ? activeTabId
+    : tabs[tabs.length - 1]?.tabId ?? null;
 
   const handleClose = useCallback((tabId: string) => onClose(tabId), [onClose]);
   const handleTitleChange = useCallback((tabId: string, title: string) => onTitleChange(tabId, title), [onTitleChange]);
@@ -82,7 +85,7 @@ export const TabPanelContainer: React.FC<TabPanelContainerProps> = ({
   // ========== 分屏模式 ==========
   if (splitView) {
     const rightTab = tabs.find(t => t.tabId === splitView.rightTabId);
-    const leftTab = tabs.find(t => t.tabId === activeTabId && t.tabId !== splitView.rightTabId);
+    const leftTab = tabs.find(t => t.tabId === effectiveActiveTabId && t.tabId !== splitView.rightTabId);
     const visibleTabIds = new Set([leftTab?.tabId, rightTab?.tabId].filter(Boolean));
     const hiddenTabs = tabs.filter(tab => !visibleTabIds.has(tab.tabId));
 
@@ -142,7 +145,7 @@ export const TabPanelContainer: React.FC<TabPanelContainerProps> = ({
   // ========== 普通模式 ==========
   return (
     <div className={cn('relative h-full', className)}>
-      {tabs.map(tab => renderTabPanel(tab, tab.tabId === activeTabId))}
+      {tabs.map(tab => renderTabPanel(tab, tab.tabId === effectiveActiveTabId))}
     </div>
   );
 };

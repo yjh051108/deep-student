@@ -7,6 +7,7 @@ import { DSTU_NAVIGATE_TO_KNOWLEDGE_BASE_EVENT } from '@/components/learning-hub
 const pageMocks = vi.hoisted(() => ({
   dstuGet: vi.fn(),
   finderQuickAccessNavigate: vi.fn(),
+  panelOps: [] as string[],
   setPendingMemoryLocate: vi.fn(),
 }));
 
@@ -27,11 +28,26 @@ vi.mock('react-i18next', async () => {
     }),
   };
 });
-vi.mock('react-resizable-panels', () => ({
-  PanelGroup: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Panel: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  PanelResizeHandle: () => null,
-}));
+vi.mock('react-resizable-panels', async () => {
+  const React = await vi.importActual<typeof import('react')>('react');
+  return {
+    PanelGroup: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+    Panel: React.forwardRef(({
+      children,
+      id,
+    }: {
+      children: React.ReactNode;
+      id?: string;
+    }, ref: React.ForwardedRef<unknown>) => {
+      React.useImperativeHandle(ref, () => ({
+        expand: () => pageMocks.panelOps.push(`${id ?? 'panel'}:expand`),
+        resize: (size: number) => pageMocks.panelOps.push(`${id ?? 'panel'}:resize:${size}`),
+      }));
+      return <div data-testid={id ? `panel-${id}` : undefined}>{children}</div>;
+    }),
+    PanelResizeHandle: () => null,
+  };
+});
 vi.mock('@/dstu/openResource', () => ({ registerOpenResourceHandler: vi.fn(() => () => {}), type: {} }));
 vi.mock('@/dstu', () => ({
   createEmpty: vi.fn(),
@@ -58,6 +74,16 @@ vi.mock('@/components/learning-hub/LearningHubSidebar', () => ({
       >
         open-sidebar-file
       </button>
+      <button
+        onClick={() => onOpenApp?.({
+          id: 'file_2',
+          type: 'file',
+          title: 'Notes.pdf',
+          path: '/Course/Notes.pdf',
+        })}
+      >
+        open-sidebar-file-2
+      </button>
       <div data-testid="active-file-id">{activeFileId ?? ''}</div>
     </div>
   ),
@@ -69,7 +95,28 @@ vi.mock('@/components/learning-hub/stores/finderStore', () => ({
   useFinderStore: (selector: (state: typeof finderState) => unknown) => selector(finderState),
 }));
 vi.mock('@/components/learning-hub/components/DstuAppLauncher', () => ({ DstuAppLauncher: () => null }));
-vi.mock('@/components/learning-hub/components/TabBar', () => ({ TabBar: () => null }));
+vi.mock('@/components/learning-hub/components/TabBar', () => ({
+  TabBar: ({
+    tabs,
+    activeTabId,
+    splitView,
+    onSplitView,
+    onClose,
+  }: {
+    tabs: Array<{ tabId: string; title: string }>;
+    activeTabId: string | null;
+    splitView?: { rightTabId: string } | null;
+    onSplitView?: (tabId: string) => void;
+    onClose?: (tabId: string) => void;
+  }) => (
+    <div>
+      <div data-testid="tabbar-active">{activeTabId ?? ''}</div>
+      <div data-testid="tabbar-split">{splitView?.rightTabId ?? ''}</div>
+      <button onClick={() => tabs[1] && onSplitView?.(tabs[1].tabId)}>split-second-tab</button>
+      <button onClick={() => activeTabId && onClose?.(activeTabId)}>close-active-tab</button>
+    </div>
+  ),
+}));
 vi.mock('@/components/learning-hub/apps/TabPanelContainer', () => ({
   TabPanelContainer: ({ tabs }: { tabs: Array<{ title: string }> }) => <div data-testid="tab-count">{tabs.length}:{tabs[0]?.title ?? ''}</div>,
 }));
@@ -91,6 +138,7 @@ describe('LearningHubPage events', () => {
   beforeEach(() => {
     pageMocks.dstuGet.mockReset();
     pageMocks.finderQuickAccessNavigate.mockReset();
+    pageMocks.panelOps.length = 0;
     pageMocks.setPendingMemoryLocate.mockReset();
     pageMocks.dstuGet.mockResolvedValue({ ok: true, value: { id: 'tb_1', type: 'textbook', name: '代数.pdf' } });
   });
@@ -125,5 +173,34 @@ describe('LearningHubPage events', () => {
     fireEvent.click(screen.getByText('open-sidebar-file'));
     await waitFor(() => expect(screen.getByTestId('tab-count')).toHaveTextContent('1:Handout.pdf'));
     expect(screen.getByTestId('active-file-id')).toHaveTextContent('file_1');
+  });
+
+  it('restores the desktop split when the first resource tab opens', async () => {
+    render(<LearningHubPage />);
+
+    fireEvent.click(screen.getByText('open-sidebar-file'));
+
+    await waitFor(() => {
+      expect(pageMocks.panelOps).toEqual(expect.arrayContaining([
+        'learning-hub-sidebar:expand',
+        'learning-hub-app:expand',
+        'learning-hub-sidebar:resize:35',
+        'learning-hub-app:resize:65',
+      ]));
+    });
+  });
+
+  it('clears split view when the active left tab is closed', async () => {
+    render(<LearningHubPage />);
+
+    fireEvent.click(screen.getByText('open-sidebar-file'));
+    fireEvent.click(screen.getByText('open-sidebar-file-2'));
+    await waitFor(() => expect(screen.getByTestId('tab-count')).toHaveTextContent('2:Handout.pdf'));
+
+    fireEvent.click(screen.getByText('split-second-tab'));
+    await waitFor(() => expect(screen.getByTestId('tabbar-split')).not.toHaveTextContent(''));
+
+    fireEvent.click(screen.getByText('close-active-tab'));
+    await waitFor(() => expect(screen.getByTestId('tabbar-split').textContent).toBe(''));
   });
 });

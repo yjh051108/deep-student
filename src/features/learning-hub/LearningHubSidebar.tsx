@@ -2254,7 +2254,8 @@ export function LearningHubSidebar({
 
   const shouldRenderDesktopQuickAccess = !isSmallScreen && mode !== 'canvas';
   const showFinderCollapseRail = mode === 'fullscreen' && isCollapsed && hasOpenApp && Boolean(onToggleCollapse);
-  const quickAccessNode = shouldRenderDesktopQuickAccess ? (
+  const shouldRenderQuickAccess = shouldRenderDesktopQuickAccess && (Boolean(quickAccessPortalTarget) || !showFinderCollapseRail);
+  const quickAccessNode = shouldRenderQuickAccess ? (
     <FinderQuickAccess
       collapsed={quickAccessPortalTarget ? false : effectiveQuickAccessCollapsed}
       activeType={currentQuickAccessType}
