@@ -11,6 +11,7 @@ const panelMocks = vi.hoisted(() => ({
 const stableT = (_key: string, fallback?: string) => fallback ?? _key;
 
 vi.mock('react-i18next', () => ({
+  initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({ t: stableT }),
 }));
 
