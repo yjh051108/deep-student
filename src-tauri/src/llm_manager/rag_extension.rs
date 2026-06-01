@@ -2,12 +2,12 @@
 //!
 //! 嵌入/重排序模型配置、多模态RAG
 
-use crate::json_validator::{validate, Stage as ValidateStage};
+use crate::json_validator::{Stage as ValidateStage, validate};
 use crate::models::{AppError, ModelAssignments};
 use crate::providers::ProviderAdapter;
 use crate::utils::text::safe_truncate_chars;
 use log::{debug, error, info, warn};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use url::Url;
 
 use super::{ApiConfig, LLMManager, Result};
@@ -19,7 +19,18 @@ fn resolve_vl_embedding_model_config_id(
     assignments: Option<ModelAssignments>,
 ) -> Option<String> {
     dimension_default_id
-        .or_else(|| assignments.and_then(|assignments| assignments.vl_embedding_model_config_id))
+        .and_then(|id| {
+            let trimmed = id.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
+        })
+        .or_else(|| {
+            assignments
+                .and_then(|assignments| assignments.vl_embedding_model_config_id)
+                .and_then(|id| {
+                    let trimmed = id.trim();
+                    (!trimmed.is_empty()).then(|| trimmed.to_string())
+                })
+        })
 }
 
 impl LLMManager {
@@ -170,19 +181,14 @@ impl LLMManager {
     ///
     /// 只要任一方案可用即返回 true
     pub async fn is_multimodal_rag_configured(&self) -> bool {
-        let dimension_default_available = self
+        let dimension_default_id = self
             .db
             .get_setting("embedding.default_multimodal_model_config_id")
             .ok()
-            .flatten()
-            .is_some();
-        let assignment_available = self
-            .get_model_assignments()
-            .await
-            .ok()
-            .is_some_and(|assignments| assignments.vl_embedding_model_config_id.is_some());
+            .flatten();
+        let assignments = self.get_model_assignments().await.ok();
 
-        dimension_default_available || assignment_available
+        resolve_vl_embedding_model_config_id(dimension_default_id, assignments).is_some()
     }
 
     /// 检查多模态精排是否已配置
@@ -1435,6 +1441,32 @@ mod tests {
         assert_eq!(
             resolve_vl_embedding_model_config_id(None, Some(assignments)),
             Some("assignment_vl".to_string())
+        );
+    }
+
+    #[test]
+    fn vl_embedding_model_config_id_ignores_blank_dimension_default() {
+        let assignments = ModelAssignments {
+            vl_embedding_model_config_id: Some("assignment_vl".to_string()),
+            ..ModelAssignments::default()
+        };
+
+        assert_eq!(
+            resolve_vl_embedding_model_config_id(Some("  ".to_string()), Some(assignments)),
+            Some("assignment_vl".to_string())
+        );
+    }
+
+    #[test]
+    fn vl_embedding_model_config_id_ignores_blank_sources() {
+        let assignments = ModelAssignments {
+            vl_embedding_model_config_id: Some("  ".to_string()),
+            ..ModelAssignments::default()
+        };
+
+        assert_eq!(
+            resolve_vl_embedding_model_config_id(Some("  ".to_string()), Some(assignments)),
+            None
         );
     }
 }
