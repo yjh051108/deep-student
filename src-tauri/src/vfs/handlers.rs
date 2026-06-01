@@ -2377,7 +2377,18 @@ pub async fn vfs_upload_file(
         VfsFileRepo::get_by_sha256_with_conn(&conn, &sha256).map_err(|e| e.to_string())?;
 
     if let Some(file) = existing {
-        if file.status == "active" {
+        let resource_deleted = if let Some(resource_id) = file.resource_id.as_deref() {
+            conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM resources WHERE id = ?1 AND deleted_at IS NOT NULL)",
+                rusqlite::params![resource_id],
+                |row| row.get::<_, bool>(0),
+            )
+            .unwrap_or(false)
+        } else {
+            false
+        };
+
+        if file.status == "active" && file.deleted_at.is_none() && !resource_deleted {
             log::info!("[VFS::handlers] File reused: {}", file.id);
             let is_pdf = file.mime_type.as_deref() == Some("application/pdf")
                 || file.file_name.to_lowercase().ends_with(".pdf");
@@ -2427,6 +2438,14 @@ pub async fn vfs_upload_file(
                 ocr_status: None,
                 index_status: None,
             });
+        } else {
+            log::info!(
+                "[VFS::handlers] File duplicate needs repository restore: id={}, status={}, deleted_at={:?}, resource_deleted={}",
+                file.id,
+                file.status,
+                file.deleted_at,
+                resource_deleted
+            );
         }
     }
 
@@ -4387,6 +4406,8 @@ pub struct ResourceIndexStatus {
     pub text_embedding_dim: Option<i32>,
     /// 文本索引来源（sqlite = 仅FTS，lance = 向量化完成）
     pub text_index_source: Option<String>,
+    /// 当前资源是否可进入文本索引队列（与 text_queue_count 使用同一后端谓词）
+    pub text_index_retryable: bool,
 
     // ========== 多模态索引状态 ==========
     /// 多模态索引状态（pending, indexing, indexed, failed, disabled）
@@ -4528,8 +4549,6 @@ fn effective_mm_index_state_sql(business_mm_state_sql: &str) -> String {
         r#"
 CASE
     WHEN r.type NOT IN ('textbook', 'file', 'exam', 'image')
-    THEN 'disabled'
-    WHEN ({business_mm_state}) = 'disabled'
     THEN 'disabled'
     WHEN EXISTS (
         SELECT 1 FROM vfs_index_units u
@@ -4967,6 +4986,14 @@ END
                 WHEN {effective_text_state} = 'indexed' THEN 'sqlite'
                 ELSE NULL
             END as text_index_source,
+            CASE
+                WHEN COALESCE(r.index_state, 'pending') != 'disabled'
+                     AND (
+                        ({effective_text_state}) = 'pending'
+                        OR (({effective_text_state}) = 'failed' AND COALESCE(r.index_retry_count, 0) < {max_retries})
+                     )
+                THEN 1 ELSE 0
+            END as text_index_retryable,
             -- 多模态索引状态：使用 JOIN 数据替代 4×5=20 个关联子查询
             {list_mm_state} as mm_index_state,
             CASE
@@ -5047,6 +5074,7 @@ END
         index_joins = index_joins,
         folder_join = folder_join,
         list_where = list_where_clause,
+        max_retries = max_retries,
     );
 
     let mut stmt = conn.prepare(&query).map_err(|e| {
@@ -5068,20 +5096,20 @@ END
         // 0=id, 1=source_id, 2=type, 3=name,
         // 4=has_ocr, 5=ocr_count,
         // 6=index_state, 7=indexed_at, 8=index_error, 9=chunk_count, 10=native_chunk_count, 11=ocr_chunk_count,
-        // 12=text_embedding_dim, 13=text_index_source,
-        // 14=mm_index_state, 15=mm_indexed_pages, 16=mm_embedding_dim, 17=mm_indexing_mode, 18=mm_index_error,
-        // 19=display_index_state, 20=modality, 21=updated_at, 22=is_stale, 23=raw_ocr_pages_json,
-        // 24=raw_extracted_text, 25=raw_resource_ocr_text
+        // 12=text_embedding_dim, 13=text_index_source, 14=text_index_retryable,
+        // 15=mm_index_state, 16=mm_indexed_pages, 17=mm_embedding_dim, 18=mm_indexing_mode, 19=mm_index_error,
+        // 20=display_index_state, 21=modality, 22=updated_at, 23=is_stale, 24=raw_ocr_pages_json,
+        // 25=raw_extracted_text, 26=raw_resource_ocr_text
 
         // indexed_at / updated_at may be INTEGER millis in new rows or TEXT in migrated rows.
         let text_indexed_at = read_optional_millis(row, 7)?;
-        let updated_at = read_optional_millis(row, 21)?.unwrap_or(0);
+        let updated_at = read_optional_millis(row, 22)?.unwrap_or(0);
 
         let text_embedding_dim = read_optional_i32(row, 12)?;
         let resource_type: String = row.get(2)?;
-        let raw_ocr_pages_json: Option<String> = row.get(23)?;
-        let raw_extracted_text: Option<String> = row.get(24)?;
-        let raw_resource_ocr_text: Option<String> = row.get(25)?;
+        let raw_ocr_pages_json: Option<String> = row.get(24)?;
+        let raw_extracted_text: Option<String> = row.get(25)?;
+        let raw_resource_ocr_text: Option<String> = row.get(26)?;
         let (ocr_pages_has_text, ocr_pages_char_count) =
             ocr_pages_effective_text_stats(&raw_ocr_pages_json);
         let extracted_text_len = raw_extracted_text
@@ -5126,22 +5154,23 @@ END
             ocr_text_chunk_count: row.get(11).unwrap_or(0),
             text_embedding_dim,
             text_index_source: row.get(13)?,
+            text_index_retryable: row.get::<_, i32>(14).unwrap_or(0) == 1,
             // 多模态索引状态
             mm_index_state: row
-                .get::<_, String>(14)
+                .get::<_, String>(15)
                 .unwrap_or_else(|_| "pending".to_string()),
-            mm_indexed_pages: row.get(15).unwrap_or(0),
-            mm_embedding_dim: read_optional_i32(row, 16)?,
-            mm_indexing_mode: row.get(17)?,
-            mm_index_error: row.get(18)?,
+            mm_indexed_pages: row.get(16).unwrap_or(0),
+            mm_embedding_dim: read_optional_i32(row, 17)?,
+            mm_indexing_mode: row.get(18)?,
+            mm_index_error: row.get(19)?,
             display_index_state: row
-                .get::<_, String>(19)
+                .get::<_, String>(20)
                 .unwrap_or_else(|_| "pending".to_string()),
             // 通用（向后兼容）
-            modality: row.get(20)?,
+            modality: row.get(21)?,
             embedding_dim: text_embedding_dim,
             updated_at,
-            is_stale: row.get::<_, i32>(22).unwrap_or(0) == 1,
+            is_stale: row.get::<_, i32>(23).unwrap_or(0) == 1,
         })
     });
 
@@ -5348,7 +5377,6 @@ COALESCE(
             },
         )
         .map_err(|e| e.to_string())?;
-
     log::info!(
         "[VFS::handlers] vfs_get_all_index_status: 返回结果 total={}, indexed={}, pending={}, resources_len={}, state_filter={:?}",
         total, indexed, pending, resources.len(), state_filter

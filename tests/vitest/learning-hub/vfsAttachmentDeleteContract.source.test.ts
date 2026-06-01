@@ -74,7 +74,20 @@ describe('VFS attachment delete contract', () => {
     expect(fileRepoSource).toContain("item_type IN ('file', 'image', 'attachment', 'textbook') AND deleted_at IS NOT NULL");
     expect(fileRepoSource).toContain('for item_id in &folder_item_ids');
     expect(attachmentRepoSource).toContain('VfsFileRepo::restore_file_with_conn(conn, id)?;');
+    expect(attachmentRepoSource).toContain('UPDATE files SET name = ?1, file_name = ?1, updated_at = ?2 WHERE id = ?3');
     expect(attachmentRepoSource).not.toContain("UPDATE folder_items SET deleted_at = NULL");
+  });
+
+  it('normalizes restored or deduped attachments into the requested upload folder', () => {
+    const uploadWithFolderBody = attachmentRepoSource.slice(
+      attachmentRepoSource.indexOf('pub fn upload_with_folder_conn'),
+      attachmentRepoSource.indexOf('fn store_inline', attachmentRepoSource.indexOf('pub fn upload_with_folder_conn'))
+    );
+
+    expect(uploadWithFolderBody).toContain("item_type IN ('file', 'image', 'attachment', 'textbook')");
+    expect(uploadWithFolderBody).toContain('result.attachment.resource_id.as_deref()');
+    expect(uploadWithFolderBody).toContain('VfsFolderRepo::add_item_to_folder_with_conn(conn, &folder_item)');
+    expect(uploadWithFolderBody).toContain('folder_id');
   });
 
   it('uses active-only reads for DSTU folder search to avoid ghost files', () => {

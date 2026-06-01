@@ -1095,31 +1095,31 @@ impl VfsAttachmentRepo {
                 "file"
             };
 
-            let existing_item = VfsFolderRepo::get_folder_item_by_item_id_with_conn(
-                conn,
-                item_type,
-                &result.source_id,
-            )?;
-
-            if existing_item.is_none() {
-                let folder_item = VfsFolderItem::new(
-                    folder_id.map(|s| s.to_string()),
-                    item_type.to_string(),
-                    result.source_id.clone(),
-                );
-
-                VfsFolderRepo::add_item_to_folder_with_conn(conn, &folder_item)?;
-
-                info!(
-                    "[VFS::AttachmentRepo] Created folder_item for attachment: {} -> folder {:?}",
-                    result.source_id, folder_id
-                );
-            } else {
-                debug!(
-                    "[VFS::AttachmentRepo] folder_item already exists for attachment: {}",
-                    result.source_id
-                );
+            let mut folder_item_ids = vec![result.source_id.clone()];
+            if let Some(resource_id) = result.attachment.resource_id.as_deref() {
+                if !folder_item_ids.iter().any(|id| id == resource_id) {
+                    folder_item_ids.push(resource_id.to_string());
+                }
             }
+            for item_id in &folder_item_ids {
+                conn.execute(
+                    "DELETE FROM folder_items WHERE item_id = ?1 AND item_type IN ('file', 'image', 'attachment', 'textbook')",
+                    params![item_id],
+                )?;
+            }
+
+            let folder_item = VfsFolderItem::new(
+                folder_id.map(|s| s.to_string()),
+                item_type.to_string(),
+                result.source_id.clone(),
+            );
+
+            VfsFolderRepo::add_item_to_folder_with_conn(conn, &folder_item)?;
+
+            info!(
+                "[VFS::AttachmentRepo] Upserted folder_item for attachment: {} -> folder {:?}",
+                result.source_id, folder_id
+            );
 
             Ok(result)
         })();
@@ -2071,50 +2071,15 @@ impl VfsAttachmentRepo {
             .format("%Y-%m-%dT%H:%M:%S%.3fZ")
             .to_string();
 
-        let updated = conn.execute(
-            "UPDATE files SET deleted_at = NULL, status = 'active', name = ?1, updated_at = ?2 WHERE id = ?3 AND deleted_at IS NOT NULL",
+        VfsFileRepo::restore_file_with_conn(conn, id)?;
+        conn.execute(
+            "UPDATE files SET name = ?1, file_name = ?1, updated_at = ?2 WHERE id = ?3",
             params![new_name, now, id],
         )?;
-
-        if updated == 0 {
-            // ★ P0 修复：并发竞态检测 - 可能另一个线程已经恢复了该附件
-            // 检查附件是否存在（可能已被其他线程恢复）
-            let exists_and_active: bool = conn
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM files WHERE id = ?1 AND deleted_at IS NULL)",
-                    params![id],
-                    |row| row.get(0),
-                )
-                .unwrap_or(false);
-
-            if exists_and_active {
-                // 附件已被其他线程恢复，这是可接受的并发情况
-                info!(
-                    "[VFS::AttachmentRepo] Attachment {} already restored by another thread (concurrent restore)",
-                    id
-                );
-                // 仍需更新名称（如果需要的话可以选择性更新）
-                let _ = conn.execute(
-                    "UPDATE files SET name = ?1, updated_at = ?2 WHERE id = ?3",
-                    params![new_name, now, id],
-                );
-            } else {
-                // 附件不存在或仍在回收站但 UPDATE 失败 - 这是异常情况
-                error!(
-                    "[VFS::AttachmentRepo] restore_and_rename failed: attachment {} not found or still deleted",
-                    id
-                );
-                return Err(VfsError::Other(format!(
-                    "Failed to restore attachment {}: concurrent modification or not found",
-                    id
-                )));
-            }
-        } else {
-            info!(
-                "[VFS::AttachmentRepo] Restored and renamed attachment: {} -> {}",
-                id, new_name
-            );
-        }
+        info!(
+            "[VFS::AttachmentRepo] Restored and renamed attachment: {} -> {}",
+            id, new_name
+        );
 
         Ok(())
     }
@@ -2491,7 +2456,8 @@ fn split_text_to_pages(text: &str, page_count: usize) -> Vec<Option<String>> {
 mod tests {
     use super::*;
     use crate::vfs::database::VfsDatabase;
-    use crate::vfs::types::VfsUploadAttachmentParams;
+    use crate::vfs::repos::folder_repo::VfsFolderRepo;
+    use crate::vfs::types::{VfsFolder, VfsFolderItem, VfsUploadAttachmentParams};
 
     #[test]
     fn test_decode_base64_plain() {
@@ -2606,6 +2572,92 @@ mod tests {
 
         let deleted = VfsAttachmentRepo::list_deleted_attachments(&db, 10, 0).unwrap();
         assert!(deleted.iter().any(|item| item.id == upload.source_id));
+    }
+
+    #[test]
+    fn test_dedup_restore_moves_attachment_to_requested_folder() {
+        let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+        let db = VfsDatabase::new(temp_dir.path()).expect("Failed to create database");
+        let conn = db.get_conn_safe().unwrap();
+
+        let folder_a = VfsFolder::new("A".to_string(), None, None, None);
+        let folder_b = VfsFolder::new("B".to_string(), None, None, None);
+        VfsFolderRepo::create_folder_with_conn(&conn, &folder_a).unwrap();
+        VfsFolderRepo::create_folder_with_conn(&conn, &folder_b).unwrap();
+
+        let first = VfsAttachmentRepo::upload_with_folder_conn(
+            &conn,
+            db.blobs_dir(),
+            VfsUploadAttachmentParams {
+                name: "first.txt".to_string(),
+                mime_type: "text/plain".to_string(),
+                base64_content: "ZHVwbGljYXRlLWF0dGFjaG1lbnQ=".to_string(),
+                attachment_type: Some("file".to_string()),
+            },
+            Some(&folder_a.id),
+        )
+        .expect("first upload should succeed");
+
+        VfsAttachmentRepo::delete_attachment(&db, &first.source_id)
+            .expect("delete should succeed");
+        conn.execute(
+            "INSERT INTO folder_items (id, folder_id, item_type, item_id, sort_order, created_at)
+             VALUES (?1, ?2, 'attachment', ?3, 0, ?4)",
+            params![
+                VfsFolderItem::generate_id(),
+                folder_a.id,
+                first.source_id,
+                chrono::Utc::now().timestamp_millis()
+            ],
+        )
+        .expect("legacy attachment folder item should be inserted");
+
+        let restored = VfsAttachmentRepo::upload_with_folder_conn(
+            &conn,
+            db.blobs_dir(),
+            VfsUploadAttachmentParams {
+                name: "second.txt".to_string(),
+                mime_type: "text/plain".to_string(),
+                base64_content: "ZHVwbGljYXRlLWF0dGFjaG1lbnQ=".to_string(),
+                attachment_type: Some("file".to_string()),
+            },
+            Some(&folder_b.id),
+        )
+        .expect("dedupe restore should succeed");
+
+        assert_eq!(restored.source_id, first.source_id);
+        assert_eq!(restored.attachment.name, "second.txt");
+
+        let folder_item = VfsFolderRepo::get_folder_item_by_item_id_with_conn(
+            &conn,
+            "file",
+            &restored.source_id,
+        )
+        .unwrap()
+        .expect("restored attachment should have an active folder item");
+        assert_eq!(folder_item.folder_id.as_deref(), Some(folder_b.id.as_str()));
+        let legacy_active_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM folder_items
+                 WHERE item_id = ?1 AND item_type IN ('attachment', 'textbook') AND deleted_at IS NULL",
+                params![restored.source_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(legacy_active_count, 0);
+
+        let resource_deleted: bool = conn
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM resources r
+                    JOIN files f ON f.resource_id = r.id
+                    WHERE f.id = ?1 AND r.deleted_at IS NOT NULL
+                )",
+                params![restored.source_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(!resource_deleted);
     }
 
     #[test]

@@ -123,8 +123,7 @@ const MULTIMODAL_RESOURCE_TYPES = new Set(['textbook', 'exam', 'image', 'file'])
 
 const isPendingMultimodalResource = (resource: ResourceIndexStatus): boolean =>
   MULTIMODAL_RESOURCE_TYPES.has(resource.resourceType)
-    && resource.mmIndexState !== 'indexed'
-    && resource.mmIndexState !== 'disabled';
+    && (resource.mmIndexState === 'pending' || resource.mmIndexState === 'failed');
 
 type ImageIndexCapability = 'ready' | 'featureDisabled' | 'notConfigured' | 'invalidModel';
 
@@ -139,6 +138,10 @@ interface MultimodalIndexCapability {
 
 const normalizeIndexState = (state: string | undefined): IndexState =>
   state && state in STATE_CONFIG ? state as IndexState : 'pending';
+
+const isPendingTextResource = (resource: ResourceIndexStatus): boolean => {
+  return resource.textIndexRetryable === true;
+};
 
 interface DisplayIndexRow {
   resource: ResourceIndexStatus;
@@ -645,9 +648,17 @@ export const IndexStatusView: React.FC = () => {
       return;
     }
 
-    const textWorkCount = summary.textQueueCount;
+    const isActionFiltered = selectedType !== 'all' || selectedState !== 'all';
+    const matchesSelectedState = (resource: ResourceIndexStatus): boolean =>
+      selectedState === 'all' || normalizeIndexState(resource.displayIndexState) === selectedState;
+    const filteredTextResources = isActionFiltered
+      ? summary.resources.filter((resource) => isPendingTextResource(resource) && matchesSelectedState(resource))
+      : [];
+    const textWorkCount = isActionFiltered
+      ? filteredTextResources.length
+      : summary.textQueueCount;
     const mmResources = MULTIMODAL_INDEX_ENABLED
-      ? summary.resources.filter(isPendingMultimodalResource)
+      ? summary.resources.filter((resource) => isPendingMultimodalResource(resource) && matchesSelectedState(resource))
       : [];
     const pendingMmCount = mmResources.length;
     const canRunImageIndex = imageIndexCapability === 'ready';
@@ -666,14 +677,34 @@ export const IndexStatusView: React.FC = () => {
       return;
     }
 
-    // 先执行 OCR 文本索引。工作量来自当前完整资源页，展示口径来自后端 display state。
+    // 先执行 OCR 文本索引。无筛选时走后端队列；筛选时只处理当前完整分页内的资源，避免计数和动作范围分裂。
     if (textWorkCount > 0) {
       setBatchIndexing(true);
       setBatchProgress(0);
       setBatchMessage(t('indexStatus.notification.preparingOcrBatch'));
       let batchFailed = false;
       try {
-        await batchIndexPending();
+        if (isActionFiltered) {
+          const limit = pLimit(3);
+          let completed = 0;
+          const failures: unknown[] = [];
+          await Promise.all(filteredTextResources.map((resource) => limit(async () => {
+            try {
+              await reindexResource(resource.resourceId);
+            } catch (error: unknown) {
+              failures.push(error);
+            } finally {
+              completed += 1;
+              setBatchProgress(Math.round((completed / filteredTextResources.length) * 100));
+              setBatchMessage(`${completed}/${filteredTextResources.length}`);
+            }
+          })));
+          if (failures.length > 0) {
+            throw new Error(`${failures.length}/${filteredTextResources.length} resources failed to index`);
+          }
+        } else {
+          await batchIndexPending();
+        }
         if (!batchCompletionTimerRef.current) {
           setBatchIndexing(false);
         }
@@ -748,7 +779,7 @@ export const IndexStatusView: React.FC = () => {
         t(`indexStatus.progress.imageIndexCapability.${imageIndexCapability}`)
       );
     }
-  }, [summary, batchIndexing, mmIndexing, imageIndexCapability, loadData]);
+  }, [summary, selectedType, selectedState, batchIndexing, mmIndexing, imageIndexCapability, loadData]);
 
   // ========== 重置所有索引状态 ==========
   const [resetting, setResetting] = useState(false);
@@ -1857,7 +1888,7 @@ export const IndexStatusView: React.FC = () => {
 
       {/* 分组资源列表 */}
       <CustomScrollArea className="flex-1">
-        {resolvedDisplayRows.length === 0 ? (
+        {displayedRows.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
             <Database className="h-10 w-10 mb-3 opacity-40" />
             <p className="text-sm">{t('indexStatus.empty.noMatchingResources')}</p>

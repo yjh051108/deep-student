@@ -156,6 +156,18 @@ describe("VfsFileRepo folder item deletion contract", () => {
     );
   });
 
+  it("does not reuse upload dedupe rows whose file or resource was deleted", () => {
+    const start = vfsHandlersSource.indexOf("pub async fn vfs_upload_file");
+    const end = vfsHandlersSource.indexOf("#[derive(Debug, Clone, Serialize)]", start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const uploadSource = vfsHandlersSource.slice(start, end);
+
+    expect(uploadSource).toContain("SELECT EXISTS(SELECT 1 FROM resources WHERE id = ?1 AND deleted_at IS NOT NULL)");
+    expect(uploadSource).toContain('file.status == "active" && file.deleted_at.is_none() && !resource_deleted');
+    expect(uploadSource).toContain("File duplicate needs repository restore");
+  });
+
   it("emits delete watch events with real paths and stable resource ids", () => {
     expect(dstuHandlersSource).toContain(
       "DstuWatchEvent::deleted(&path)\n                .with_resource(delete_id.clone(), delete_type.clone())",

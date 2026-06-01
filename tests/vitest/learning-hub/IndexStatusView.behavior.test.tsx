@@ -8,6 +8,7 @@ const batchIndexPendingMock = vi.fn();
 const listDimensionsMock = vi.fn();
 const showGlobalNotificationMock = vi.fn();
 const vfsIndexResourceBySourceMock = vi.fn();
+const reindexResourceMock = vi.fn();
 const eventListeners = new Map<string, Array<(event: { payload: unknown }) => void>>();
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -76,7 +77,7 @@ vi.mock('@/debug-panel/debugMasterSwitch', () => ({
 
 vi.mock('@/api/vfsUnifiedIndexApi', () => ({
   getAllIndexStatus: (...args: unknown[]) => getAllIndexStatusMock(...args),
-  reindexResource: vi.fn(),
+  reindexResource: (...args: unknown[]) => reindexResourceMock(...args),
   batchIndexPendingLegacy: (...args: unknown[]) => batchIndexPendingMock(...args),
   listDimensions: (...args: unknown[]) => listDimensionsMock(...args),
   getResourceOcrInfo: vi.fn(),
@@ -109,6 +110,7 @@ const resource = (overrides = {}) => ({
   textChunkCount: 1,
   nativeTextChunkCount: 1,
   ocrTextChunkCount: 0,
+  textIndexRetryable: false,
   mmIndexState: 'indexed',
   mmIndexedPages: 1,
   displayIndexState: 'indexed',
@@ -149,6 +151,7 @@ describe('IndexStatusView behavior', () => {
     eventListeners.clear();
     listDimensionsMock.mockResolvedValue([]);
     batchIndexPendingMock.mockResolvedValue({ successCount: 2, failCount: 0, total: 2 });
+    reindexResourceMock.mockResolvedValue(1);
     vfsIndexResourceBySourceMock.mockResolvedValue({ indexedPages: 1 });
     invokeMock.mockResolvedValue({
       status: 'ready',
@@ -188,6 +191,54 @@ describe('IndexStatusView behavior', () => {
 
     await waitFor(() => expect(batchIndexPendingMock).toHaveBeenCalledTimes(1));
     expect(batchIndexPendingMock).toHaveBeenCalledWith();
+  });
+
+  it('indexes only filtered text resources when a resource type filter is active', async () => {
+    getAllIndexStatusMock
+      .mockResolvedValueOnce(summary({
+        totalResources: 1,
+        displayTotalResources: 1,
+      }))
+      .mockResolvedValueOnce(summary({
+        totalResources: 2,
+        indexedCount: 0,
+        pendingCount: 2,
+        textQueueCount: 2,
+        displayTotalResources: 2,
+        displayIndexedCount: 0,
+        displayPendingCount: 2,
+        resources: [
+          resource({
+            resourceId: 'file_pending',
+            resourceType: 'file',
+            name: 'File Pending',
+            textIndexState: 'pending',
+            textIndexRetryable: true,
+            displayIndexState: 'pending',
+          }),
+          resource({
+            resourceId: 'file_indexed',
+            resourceType: 'file',
+            name: 'File Indexed',
+            textIndexState: 'indexed',
+            displayIndexState: 'indexed',
+          }),
+        ],
+      }));
+
+    render(<IndexStatusView />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /indexStatus\.resourceType\.file/ }));
+    await waitFor(() => expect(getAllIndexStatusMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      resourceType: 'file',
+    })));
+    await screen.findByText('File Pending');
+
+    fireEvent.click(await screen.findByRole('button', { name: /indexStatus\.action\.oneClickIndex/ }));
+
+    await waitFor(() => expect(reindexResourceMock).toHaveBeenCalledWith('file_pending'));
+    expect(reindexResourceMock).toHaveBeenCalledTimes(1);
+    expect(batchIndexPendingMock).not.toHaveBeenCalled();
   });
 
   it('does not run image indexing when multimodal capability is unavailable', async () => {

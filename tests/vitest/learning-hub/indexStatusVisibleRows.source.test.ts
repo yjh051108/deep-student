@@ -12,8 +12,10 @@ describe('IndexStatusView visible row contract', () => {
     expect(source).toContain('displayState: normalizeIndexState(resource.displayIndexState)');
     expect(source).toContain('indexed: summary?.displayIndexedCount ?? 0');
     expect(source).toContain('const displayedRows = selectedState ===');
+    expect(source).toContain('displayedRows.length === 0');
     expect(source).toContain('{displayedRows.map(renderResourceRow)}');
     expect(source).toContain('const state = row.displayState;');
+    expect(source).toContain("resource.mmIndexState === 'pending' || resource.mmIndexState === 'failed'");
     expect(source).not.toContain('resolveResourceDisplayState');
     expect(source).not.toContain('{summary.resources.map(renderResourceRow)}');
   });

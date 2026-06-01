@@ -47,6 +47,7 @@ export interface ResourceIndexStatus {
   ocrTextChunkCount: number;
   textEmbeddingDim?: number;
   textIndexSource?: string;
+  textIndexRetryable: boolean;
   mmIndexState: string;
   mmIndexedPages: number;
   mmEmbeddingDim?: number;

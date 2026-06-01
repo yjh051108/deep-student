@@ -78,14 +78,18 @@ describe('Index status state source contract', () => {
     expect(viewSource).not.toContain('limit: 200');
   });
 
-  it('derives one-click workload from backend summary and lets backend drain pending work', () => {
-    expect(viewSource).toContain('const textWorkCount = summary.textQueueCount;');
+  it('derives one-click workload from the same scope as the action', () => {
+    expect(viewSource).toContain("const isActionFiltered = selectedType !== 'all' || selectedState !== 'all';");
+    expect(viewSource).toContain('const matchesSelectedState = (resource: ResourceIndexStatus): boolean =>');
+    expect(viewSource).toContain("selectedState === 'all' || normalizeIndexState(resource.displayIndexState) === selectedState");
+    expect(viewSource).toContain('const filteredTextResources = isActionFiltered');
+    expect(viewSource).toContain('const textWorkCount = isActionFiltered');
     expect(viewSource).toContain('const pendingMmCount = mmResources.length;');
+    expect(viewSource).toContain('await reindexResource(resource.resourceId);');
     expect(viewSource).toContain('await batchIndexPending();');
     expect(viewSource).toContain('if (textWorkCount === 0 && pendingMmCount === 0) {');
     expect(viewSource).not.toContain('Math.max(pendingTextCount, 10)');
     expect(viewSource).not.toContain('const pendingTextCount = summary.pendingCount + summary.failedCount;');
-    expect(viewSource).not.toContain('const pendingTextResources = summary.resources.filter(isPendingTextResource);');
     expect(viewSource).not.toContain('const pendingMmCount = summary.mmPendingCount + summary.mmFailedCount;');
   });
 
@@ -100,6 +104,7 @@ describe('Index status state source contract', () => {
       'utf-8'
     );
     expect(apiSource).toContain('displayIndexState: string;');
+    expect(apiSource).toContain('textIndexRetryable: boolean;');
     expect(apiSource).toContain('textQueueCount: number;');
     expect(apiSource).toContain('displayTotalResources: number;');
     expect(apiSource).toContain('displayIndexedCount: number;');
@@ -125,6 +130,7 @@ describe('Index status state source contract', () => {
 
   it('computes display state and display counts in the backend contract', () => {
     expect(handlerSource).toContain('pub display_index_state: String');
+    expect(handlerSource).toContain('pub text_index_retryable: bool');
     expect(handlerSource).toContain('pub text_queue_count: i32');
     expect(handlerSource).toContain('pub display_total_resources: i32');
     expect(handlerSource).toContain('fn display_index_state_sql(');
@@ -134,12 +140,14 @@ describe('Index status state source contract', () => {
     expect(handlerSource).toContain('list_conditions.push(format!("({}) = ?", list_display_state_sql));');
     expect(handlerSource).toContain("COALESCE(SUM(CASE WHEN {display_state} = 'indexed' THEN 1 ELSE 0 END), 0) as display_indexed");
     expect(handlerSource).toContain('as text_queue_count');
+    expect(handlerSource).toContain('as text_index_retryable');
     expect(handlerSource).toContain('let list_business_mm_state_sql =');
     expect(handlerSource).toContain('let stats_business_mm_state_sql =');
     expect(handlerSource).toContain('effective_mm_index_state_sql(list_business_mm_state_sql)');
     expect(handlerSource).toContain('effective_mm_index_state_sql(stats_business_mm_state_sql)');
     expect(handlerSource).toContain('AND u.mm_required = 1');
     expect(handlerSource).toContain("AND u.mm_state = 'pending'");
+    expect(handlerSource).not.toContain("({business_mm_state}) = 'disabled'");
   });
 
   it('keeps multimodal business state and unit state in sync at the backend writer', () => {
