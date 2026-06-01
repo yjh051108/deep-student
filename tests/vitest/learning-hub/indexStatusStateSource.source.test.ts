@@ -140,7 +140,9 @@ describe('Index status state source contract', () => {
     expect(multimodalServiceSource).toContain('UPDATE resources SET mm_index_state = ?1');
     expect(multimodalServiceSource).toContain('UPDATE vfs_index_units');
     expect(multimodalServiceSource).toContain("SET mm_state = 'indexed'");
-    expect(multimodalServiceSource).toContain('WHERE resource_id = ?3 AND mm_required = 1');
+    expect(multimodalServiceSource).toContain('serde_json::from_str::<Vec<serde_json::Value>>');
+    expect(multimodalServiceSource).toContain('WHERE resource_id = ?3 AND unit_index = ?4 AND mm_required = 1');
+    expect(multimodalServiceSource).toContain("SET mm_state = 'failed'");
     expect(multimodalServiceSource).toContain('WHERE resource_id = ?4 AND mm_required = 1');
   });
 

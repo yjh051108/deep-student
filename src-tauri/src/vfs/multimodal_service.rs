@@ -719,6 +719,7 @@ impl VfsMultimodalService {
                 None,
                 0,
                 0,
+                &[],
             )?;
             if let Some(progress_tx) = progress_tx.as_ref() {
                 let event = IndexProgressEvent::new(source_type, source_id, 0)
@@ -742,6 +743,7 @@ impl VfsMultimodalService {
             None,
             0,
             0,
+            &[],
         )?;
 
         // 4. 调用 index_resource_pages
@@ -787,6 +789,7 @@ impl VfsMultimodalService {
                     indexed_pages_json.as_deref(),
                     index_result.dimension as i32,
                     index_result.indexed_pages as i32,
+                    &index_result.failed_pages,
                 )?;
 
                 if let Some(progress_tx) = progress_tx.as_ref() {
@@ -813,6 +816,7 @@ impl VfsMultimodalService {
                     Some(&e.to_string()),
                     0,
                     0,
+                    &[],
                 )?;
 
                 if let Some(progress_tx) = progress_tx.as_ref() {
@@ -840,6 +844,7 @@ impl VfsMultimodalService {
         indexed_pages_json_or_error: Option<&str>,
         _embedding_dim: i32,
         indexed_count: i32,
+        failed_pages: &[i32],
     ) -> VfsResult<()> {
         use rusqlite::params;
         let now = chrono::Utc::now()
@@ -946,24 +951,64 @@ impl VfsMultimodalService {
             if matches!(state, "pending" | "indexing" | "indexed" | "failed" | "disabled") {
                 let now_ms = chrono::Utc::now().timestamp_millis();
                 if state == "indexed" {
-                    let _ = conn.execute(
-                        "UPDATE vfs_index_units
-                         SET mm_state = 'indexed',
-                             mm_error = NULL,
-                             mm_indexed_at = ?1,
-                             mm_embedding_dim = CASE WHEN ?2 > 0 THEN ?2 ELSE mm_embedding_dim END,
-                             updated_at = ?1
-                         WHERE resource_id = ?3 AND mm_required = 1",
-                        params![now_ms, _embedding_dim, res_id],
-                    );
-                } else {
-                    let _ = conn.execute(
-                        "UPDATE vfs_index_units
-                         SET mm_state = ?1,
-                             mm_error = ?2,
-                             updated_at = ?3
-                         WHERE resource_id = ?4 AND mm_required = 1",
-                        params![state, error_val, now_ms, res_id],
+                    let indexed_page_indices: Vec<i32> = indexed_pages_json_or_error
+                        .and_then(|json| serde_json::from_str::<Vec<serde_json::Value>>(json).ok())
+                        .map(|pages| {
+                            pages
+                                .into_iter()
+                                .filter_map(|page| {
+                                    page.get("page_index")
+                                        .and_then(|value| value.as_i64())
+                                        .and_then(|value| i32::try_from(value).ok())
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+
+                    for page_index in indexed_page_indices {
+                        if let Err(err) = conn.execute(
+                            "UPDATE vfs_index_units
+                             SET mm_state = 'indexed',
+                                 mm_error = NULL,
+                                 mm_indexed_at = ?1,
+                                 mm_embedding_dim = CASE WHEN ?2 > 0 THEN ?2 ELSE mm_embedding_dim END,
+                                 updated_at = ?1
+                             WHERE resource_id = ?3 AND unit_index = ?4 AND mm_required = 1",
+                            params![now_ms, _embedding_dim, res_id, page_index],
+                        ) {
+                            warn!(
+                                "[VfsMultimodalService] Failed to sync indexed mm unit state for resource {} page {}: {}",
+                                res_id, page_index, err
+                            );
+                        }
+                    }
+
+                    for page_index in failed_pages {
+                        if let Err(err) = conn.execute(
+                            "UPDATE vfs_index_units
+                             SET mm_state = 'failed',
+                                 mm_error = ?1,
+                                 updated_at = ?2
+                             WHERE resource_id = ?3 AND unit_index = ?4 AND mm_required = 1",
+                            params!["多模态页面索引失败", now_ms, res_id, page_index],
+                        ) {
+                            warn!(
+                                "[VfsMultimodalService] Failed to sync failed mm unit state for resource {} page {}: {}",
+                                res_id, page_index, err
+                            );
+                        }
+                    }
+                } else if let Err(err) = conn.execute(
+                    "UPDATE vfs_index_units
+                     SET mm_state = ?1,
+                         mm_error = ?2,
+                         updated_at = ?3
+                     WHERE resource_id = ?4 AND mm_required = 1",
+                    params![state, error_val, now_ms, res_id],
+                ) {
+                    warn!(
+                        "[VfsMultimodalService] Failed to sync mm unit state for resource {}: {}",
+                        res_id, err
                     );
                 }
             }
