@@ -63,4 +63,34 @@ describe('resource tool contract consistency', () => {
       'builtin-mindmap_diff_versions',
     ]));
   });
+
+  it('describes general-session resource root separately from topic resource scope', () => {
+    const text = learningResourceSkill.content;
+    const listTool = learningResourceSkill.embeddedTools.find(t => t.name === 'builtin-resource_list');
+    const searchTool = learningResourceSkill.embeddedTools.find(t => t.name === 'builtin-resource_search');
+    const folderTool = learningResourceSkill.embeddedTools.find(t => t.name === 'builtin-folder_list');
+
+    expect(text).toContain('没有绑定任何课题');
+    expect(text).toContain('“通用课题”只是无课题会话的界面语义');
+    expect(text).toContain('完整资源根目录');
+    expect((listTool?.inputSchema as any)?.properties?.folder_id?.description).toContain('完整资源根目录');
+    expect((searchTool?.inputSchema as any)?.properties?.folder_id?.description).toContain('完整资源根目录');
+    expect((folderTool?.inputSchema as any)?.properties?.parent_id?.description).toContain('资源根目录');
+  });
+
+  it('keeps mindmap creation small and pushes complex expansion through edit_nodes', () => {
+    const createTool = mindmapToolsSkill.embeddedTools.find(t => t.name === 'builtin-mindmap_create');
+    const editTool = mindmapToolsSkill.embeddedTools.find(t => t.name === 'builtin-mindmap_edit_nodes');
+    const createContent = (createTool?.inputSchema as any)?.properties?.content?.description ?? '';
+    const operations = (editTool?.inputSchema as any)?.properties?.operations;
+    const addNodeChildrenDescription = operations?.items?.properties?.data?.properties?.children?.description ?? '';
+
+    expect(mindmapToolsSkill.content).toContain('首次只创建骨架');
+    expect(mindmapToolsSkill.content).toContain('每批 edit_nodes 最多 10 个操作');
+    expect(mindmapToolsSkill.content).toContain('最终回复只引用最后一次工具返回的 `versionId`');
+    expect(createContent).toContain('不要传 JSON 字符串');
+    expect(createContent).toContain('每支最多 2 个子节点');
+    expect(operations?.description).toContain('每批最多 10 个操作');
+    expect(addNodeChildrenDescription).toContain('不推荐');
+  });
 });

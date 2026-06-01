@@ -30,16 +30,17 @@ export const mindmapToolsSkill: SkillDefinition = {
 1. **分析用户需求**：理解用户想要的主题和结构
 2. **设计节点层级**：
    - 根节点：主题
-   - 一级节点：主要分类（3-7个为宜）
-   - 子节点：具体内容
+   - 一级节点：主要分类（3-5个为宜）
+   - 子节点：首次只放关键骨架，每个一级节点最多 2 个子节点
 3. **丰富视觉表达**（重要！创建时就应该做）：
    - 用 \`bgColor\` 为每个**一级分支设置不同的主题色**，让分支间一目了然
    - 对核心概念/关键节点使用 \`fontWeight: "bold"\` 加粗
    - 为需要补充说明的节点添加 \`note\` 备注
    - 推荐一级分支配色（柔和色系，适配深浅主题）：
      \`"#4FC3F7"\`(蓝) \`"#81C784"\`(绿) \`"#FFB74D"\`(橙) \`"#E57373"\`(红) \`"#BA68C8"\`(紫) \`"#4DB6AC"\`(青) \`"#FFD54F"\`(黄)
-4. **调用 builtin-mindmap_create 工具**
-5. **在回复中使用版本引用格式**：工具返回结果中包含 \`versionId\`（mv_xxx 格式），使用 \`[思维导图:返回的versionId:标题]\` 引用。版本引用是不可变的，确保每次展示的内容与创建时一致。
+4. **调用 builtin-mindmap_create 工具**：首次只创建骨架，\`content\` 必须是 JSON 对象，不要把 JSON 再包成字符串
+5. **复杂导图分步完成**：创建成功后，再用 \`builtin-mindmap_edit_nodes\` 逐步添加细节，避免一次性输出超大 JSON；每批 edit_nodes 最多 10 个操作，add_node 的 data 不要嵌套 children，多级内容拆成后续 add_node
+6. **在回复中使用版本引用格式**：工具返回结果中包含 \`versionId\`（mv_xxx 格式），使用 \`[思维导图:返回的versionId:标题]\` 引用。版本引用是不可变的；如果创建后继续编辑，最终回复只引用最后一次工具返回的 \`versionId\`，避免展示骨架旧快照。
 
 ### 整体编辑思维导图
 
@@ -94,7 +95,7 @@ export const mindmapToolsSkill: SkillDefinition = {
 
 ### builtin-mindmap_create
 
-创建新思维导图，必须提供 title 和 content。
+创建新思维导图，必须提供 title 和 content。首次创建只允许骨架导图：一级分支 3-5 个，每个一级分支最多 2 个子节点，总节点数建议 15 个以内、硬上限 25 个；更多细节必须在创建成功后用 \`builtin-mindmap_edit_nodes\` 追加，每批最多 10 个 add_node/update_node 操作。
 
 **创建示例**（注意：一级分支带颜色 + 关键节点加粗 + 备注）：
 
@@ -109,22 +110,16 @@ export const mindmapToolsSkill: SkillDefinition = {
       "style": {"fontWeight": "bold"},
       "children": [
         {"id": "n1", "text": "数据类型", "style": {"bgColor": "#4FC3F7", "fontWeight": "bold"}, "children": [
-          {"id": "n1-1", "text": "int / float", "note": "整数和浮点数", "children": []},
-          {"id": "n1-2", "text": "str", "note": "不可变序列，支持切片", "style": {"fontWeight": "bold"}, "children": []},
-          {"id": "n1-3", "text": "list / tuple", "children": []},
-          {"id": "n1-4", "text": "dict / set", "children": []}
+          {"id": "n1-1", "text": "数字", "note": "int / float", "children": []},
+          {"id": "n1-2", "text": "集合类型", "note": "list / tuple / dict / set", "children": []}
         ]},
         {"id": "n2", "text": "控制流", "style": {"bgColor": "#81C784", "fontWeight": "bold"}, "children": [
-          {"id": "n2-1", "text": "if / elif / else", "children": []},
-          {"id": "n2-2", "text": "for 循环", "note": "可配合 enumerate、zip 使用", "children": []},
-          {"id": "n2-3", "text": "while 循环", "children": []},
-          {"id": "n2-4", "text": "异常处理", "style": {"fontWeight": "bold"}, "note": "try/except/finally", "children": []}
+          {"id": "n2-1", "text": "条件", "note": "if / elif / else", "children": []},
+          {"id": "n2-2", "text": "循环", "note": "for / while", "children": []}
         ]},
         {"id": "n3", "text": "函数", "style": {"bgColor": "#FFB74D", "fontWeight": "bold"}, "children": [
-          {"id": "n3-1", "text": "def 定义", "children": []},
-          {"id": "n3-2", "text": "参数类型", "note": "位置参数、关键字参数、*args、**kwargs", "children": []},
-          {"id": "n3-3", "text": "lambda 表达式", "children": []},
-          {"id": "n3-4", "text": "装饰器", "style": {"fontWeight": "bold"}, "note": "@decorator 语法糖", "children": []}
+          {"id": "n3-1", "text": "定义", "note": "def 与参数", "children": []},
+          {"id": "n3-2", "text": "抽象", "note": "lambda / decorator 后续用 edit_nodes 展开", "children": []}
         ]}
       ]
     },
@@ -213,12 +208,9 @@ export const mindmapToolsSkill: SkillDefinition = {
 ## 最佳实践
 
 1. **控制首次创建规模**（极重要！）：
-   - 首次创建时，一级分支 3-5 个，每个一级分支下最多 3-5 个二级节点，二级以下**不展开**
-   - 总节点数控制在 **30 个以内**，避免 JSON 过大导致生成失败
-   - 如果主题内容多（如"高中生物学"、"数据结构与算法"），先创建**骨架导图**（一级+少量二级），创建成功后再用 \`builtin-mindmap_edit_nodes\` 的 \`add_node\` 逐步补充子节点
-   - 分批补充时，每次 \`edit_nodes\` 控制在 20 个操作以内；每批成功后再继续下一批
-   - 不要为了“一次完成”而把全量复杂内容塞进 \`mindmap_create\`，稳定创建优先于单次大 JSON
-   - 最终回复只引用最后一次工具返回的 \`versionId\`，避免引用旧快照
+   - 首次创建时，一级分支 3-5 个，每个一级分支下最多 2 个二级节点，二级以下**不展开**
+   - 总节点数建议 **15 个以内**，硬上限 **25 个**，避免 JSON 过大导致生成失败
+   - 如果主题内容多（如"高中生物学"、"数据结构与算法"），先创建**骨架导图**（一级+少量二级），创建成功后再用 \`builtin-mindmap_edit_nodes\` 的 \`add_node\` 逐步补充子节点，每批最多 10 个操作
 2. **节点数量适中**：每层 3-5 个节点最易阅读
 3. **层级不宜过深**：建议不超过 3 层
 4. **文本简洁**：每个节点文本控制在 10 字以内
@@ -251,7 +243,7 @@ export const mindmapToolsSkill: SkillDefinition = {
           description: { type: 'string', description: '导图描述（可选）' },
           content: {
             type: 'object',
-            description: 'MindMapDocument 对象',
+            description: 'MindMapDocument 对象，不要传 JSON 字符串。首次创建只放骨架：3-5 个一级分支，每支最多 2 个子节点；更多节点用 edit_nodes 分批追加。',
             properties: {
               version: { type: 'string', description: '版本号，固定为 "1.0"' },
               root: {
@@ -423,7 +415,7 @@ export const mindmapToolsSkill: SkillDefinition = {
           },
           operations: {
             type: 'array',
-            description: '批量节点操作列表，按顺序执行',
+            description: '批量节点操作列表，按顺序执行；每批最多 10 个操作，复杂导图分多次调用',
             items: {
               type: 'object',
               properties: {
@@ -561,7 +553,7 @@ export const mindmapToolsSkill: SkillDefinition = {
                     },
                     children: {
                       type: 'array',
-                      description: '子节点数组（可选，支持嵌套创建）',
+                      description: '子节点数组（不推荐）。add_node 的 data 应保持单节点；需要多级内容时拆成后续 add_node 操作',
                       items: { type: 'object' },
                     },
                   },
