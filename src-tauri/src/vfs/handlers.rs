@@ -4257,8 +4257,13 @@ fn resolve_bound_multimodal_embedding_model_id(
             crate::vfs::repos::embedding_dim_repo::get_by_key(&conn, default_dim, "multimodal")
                 .map_err(|e| e.to_string())?
                 .ok_or_else(|| format!("默认多模态维度 {} 不存在，请重新设置", default_dim))?;
-        if let Some(model_config_id) = dim.model_config_id {
-            return Ok(Some(model_config_id));
+        if let Some(model_config_id) = dim
+            .model_config_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+        {
+            return Ok(Some(model_config_id.to_string()));
         }
     }
 

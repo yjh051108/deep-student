@@ -35,6 +35,8 @@ describe('Index status state source contract', () => {
     expect(handlerSource).toContain('vfs_db: State<\'_, Arc<VfsDatabase>>');
     expect(handlerSource).toContain('resolve_bound_multimodal_embedding_model_id');
     expect(handlerSource).toContain('match resolve_bound_multimodal_embedding_model_id(&database, &vfs_db)');
+    expect(handlerSource).toContain('.map(str::trim)');
+    expect(handlerSource).toContain('.filter(|id| !id.is_empty())');
     expect(handlerSource).toContain('save_setting(');
     expect(handlerSource).toContain('embedding.default_multimodal_model_config_id');
     expect(handlerSource).toContain('embedding.default_multimodal_dimension');
@@ -46,7 +48,7 @@ describe('Index status state source contract', () => {
     expect(ragExtensionSource).toContain('get_setting("embedding.default_multimodal_model_config_id")');
     expect(ragExtensionSource).toContain('.get_model_assignments()');
     expect(ragExtensionSource).toContain('assignments.vl_embedding_model_config_id');
-    expect(ragExtensionSource).toContain('dimension_default_available || assignment_available');
+    expect(ragExtensionSource).toContain('resolve_vl_embedding_model_config_id(dimension_default_id, assignments).is_some()');
   });
 
   it('groups visible rows by backend display index state', () => {
