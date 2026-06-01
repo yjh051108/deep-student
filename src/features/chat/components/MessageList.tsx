@@ -238,156 +238,152 @@ const MessageListInner: React.FC<MessageListProps> = ({
   const prevMessageCountRef = useRef(messageOrder.length);
   const isAutoScrollingRef = useRef(false);
   const rafIdRef = useRef<number | null>(null);
-  const programmaticScrollLockRef = useRef(false);
-  const programmaticScrollUnlockTimerRef = useRef<number | null>(null);
-  const autoFollowPausedByUserRef = useRef(false);
-  const lastScrollTopRef = useRef(0);
+  const lastAutoScrollTopRef = useRef<number | null>(null);
+  const lastObservedScrollTopRef = useRef(0);
 
-  // 🔧 用户滚动意图检测：根据实际滚动位置决定是否保持吸底跟随
-  const userHasScrolledRef = useRef(false);
+  // 自动跟随是单一状态：发送/回到底部开启，任何用户滚动意图关闭。
+  const autoFollowEnabledRef = useRef(true);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
-
-  /** 检查当前是否在底部附近（阈值 50px，ChatGPT/Claude 同级灵敏度） */
-  const isNearBottom = useCallback(() => {
-    if (!viewportElement) return true;
-    const { scrollTop, scrollHeight, clientHeight } = viewportElement;
-    return scrollHeight - scrollTop - clientHeight < 50;
-  }, [viewportElement]);
-
-  const scheduleProgrammaticScrollUnlock = useCallback((delayMs: number) => {
-    if (programmaticScrollUnlockTimerRef.current !== null) {
-      window.clearTimeout(programmaticScrollUnlockTimerRef.current);
-    }
-    programmaticScrollUnlockTimerRef.current = window.setTimeout(() => {
-      programmaticScrollLockRef.current = false;
-      programmaticScrollUnlockTimerRef.current = null;
-    }, delayMs);
-  }, []);
 
   // 滚动到底部
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     if (!viewportElement) return;
 
-    const top = viewportElement.scrollHeight;
-    const shouldLock = behavior === 'smooth';
+    containerRef.current?.dispatchEvent(new CustomEvent('smooth-wheel:cancel'));
 
-    if (shouldLock) {
-      programmaticScrollLockRef.current = true;
-    }
-
-    if (typeof viewportElement.scrollTo === 'function') {
-      viewportElement.scrollTo({ top, behavior });
+    if (!useDirectRender && messageOrder.length > 0) {
+      virtualizer.measure();
+      virtualizer.scrollToIndex(messageOrder.length - 1, { align: 'end', behavior });
     } else {
-      viewportElement.scrollTop = top;
+      const top = Math.max(0, viewportElement.scrollHeight - viewportElement.clientHeight);
+      if (typeof viewportElement.scrollTo === 'function') {
+        viewportElement.scrollTo({ top, behavior });
+      } else {
+        viewportElement.scrollTop = top;
+      }
     }
-
-    if (shouldLock) {
-      scheduleProgrammaticScrollUnlock(250);
-    }
-  }, [scheduleProgrammaticScrollUnlock, viewportElement]);
+    lastAutoScrollTopRef.current = viewportElement.scrollTop;
+    lastObservedScrollTopRef.current = viewportElement.scrollTop;
+  }, [messageOrder.length, useDirectRender, viewportElement, virtualizer]);
 
   /** 点击"回到底部"按钮 */
   const handleScrollToBottomClick = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
     event.currentTarget.blur();
-    autoFollowPausedByUserRef.current = false;
-    userHasScrolledRef.current = false;
+    autoFollowEnabledRef.current = true;
     setShowScrollToBottom(false);
-    scrollToBottom('smooth');
+    scrollToBottom('auto');
   }, [scrollToBottom]);
-
-  const releaseAutoScrollForUserIntent = useCallback(() => {
-    if (!isAutoScrollingRef.current) return;
-    if (viewportElement) {
-      lastScrollTopRef.current = viewportElement.scrollTop;
-    }
-    autoFollowPausedByUserRef.current = true;
-    userHasScrolledRef.current = true;
-    setShowScrollToBottom(true);
-  }, [viewportElement]);
 
   // 基于真实滚动位置同步吸底状态与按钮可见性
   useEffect(() => {
     if (!viewportElement) return;
 
     const syncScrollState = () => {
-      if (programmaticScrollLockRef.current) return;
+      const scrollTop = viewportElement.scrollTop;
+      const previousScrollTop = lastObservedScrollTopRef.current;
+      const movedDown = scrollTop > previousScrollTop + 1;
+      lastObservedScrollTopRef.current = scrollTop;
 
-      const previousScrollTop = lastScrollTopRef.current;
-      const nearBottom = isNearBottom();
-      const scrolledTowardBottom = viewportElement.scrollTop >= previousScrollTop;
-      lastScrollTopRef.current = viewportElement.scrollTop;
-
-      if (nearBottom && (!autoFollowPausedByUserRef.current || scrolledTowardBottom)) {
-        autoFollowPausedByUserRef.current = false;
-        userHasScrolledRef.current = false;
-        setShowScrollToBottom(false);
+      const distanceToBottom = viewportElement.scrollHeight - scrollTop - viewportElement.clientHeight;
+      if (distanceToBottom <= 2) {
+        if (!isStreaming || autoFollowEnabledRef.current || movedDown) {
+          autoFollowEnabledRef.current = true;
+          setShowScrollToBottom(false);
+        } else {
+          setShowScrollToBottom(true);
+        }
         return;
       }
 
-      userHasScrolledRef.current = true;
-      setShowScrollToBottom(true);
+      const nearBottom = distanceToBottom < 50;
+      if (isStreaming && !autoFollowEnabledRef.current) {
+        setShowScrollToBottom(true);
+        return;
+      }
+
+      if (isStreaming) {
+        setShowScrollToBottom(false);
+        return;
+      }
+      setShowScrollToBottom(!nearBottom);
     };
 
-    lastScrollTopRef.current = viewportElement.scrollTop;
     syncScrollState();
     viewportElement.addEventListener('scroll', syncScrollState, { passive: true });
 
     return () => {
       viewportElement.removeEventListener('scroll', syncScrollState);
     };
-  }, [viewportElement, isNearBottom]);
-
-  useEffect(() => {
-    return () => {
-      if (programmaticScrollUnlockTimerRef.current !== null) {
-        window.clearTimeout(programmaticScrollUnlockTimerRef.current);
-      }
-    };
-  }, []);
+  }, [viewportElement, isStreaming]);
 
   useEffect(() => {
     if (!viewportElement) return;
 
+    const intentElements = Array.from(
+      new Set([viewportElement, containerRef.current].filter(Boolean))
+    ) as HTMLElement[];
     let lastTouchY: number | null = null;
 
-    const handleWheelIntent = (event: WheelEvent) => {
-      if (event.deltaY < 0) {
-        releaseAutoScrollForUserIntent();
-      }
+    const markUserScrollIntent = () => {
+      lastObservedScrollTopRef.current = viewportElement.scrollTop;
+      autoFollowEnabledRef.current = false;
+      setShowScrollToBottom(true);
     };
 
-    const handleTouchStart = (event: TouchEvent) => {
+    const handleWheelIntent = (event: WheelEvent) => {
+      if (event.deltaY < 0) markUserScrollIntent();
+    };
+    const handleTouchStartIntent = (event: TouchEvent) => {
       lastTouchY = event.touches[0]?.clientY ?? null;
     };
-
-    const handleTouchMove = (event: TouchEvent) => {
+    const handleTouchMoveIntent = (event: TouchEvent) => {
       const nextY = event.touches[0]?.clientY ?? null;
       if (lastTouchY !== null && nextY !== null && nextY > lastTouchY) {
-        releaseAutoScrollForUserIntent();
+        markUserScrollIntent();
       }
       lastTouchY = nextY;
     };
-
-    viewportElement.addEventListener('wheel', handleWheelIntent, { passive: true, capture: true });
-    viewportElement.addEventListener('touchstart', handleTouchStart, { passive: true });
-    viewportElement.addEventListener('touchmove', handleTouchMove, { passive: true });
-
-    return () => {
-      viewportElement.removeEventListener('wheel', handleWheelIntent, { capture: true });
-      viewportElement.removeEventListener('touchstart', handleTouchStart);
-      viewportElement.removeEventListener('touchmove', handleTouchMove);
+    const handleKeyIntent = (event: KeyboardEvent) => {
+      if (
+        event.key === 'ArrowUp'
+        || event.key === 'PageUp'
+        || event.key === 'Home'
+        || (event.key === ' ' && event.shiftKey)
+      ) {
+        markUserScrollIntent();
+      }
     };
-  }, [viewportElement, releaseAutoScrollForUserIntent]);
+
+    intentElements.forEach((element) => {
+      element.addEventListener('wheel', handleWheelIntent, { passive: true, capture: true });
+      element.addEventListener('touchstart', handleTouchStartIntent, { passive: true, capture: true });
+      element.addEventListener('touchmove', handleTouchMoveIntent, { passive: true, capture: true });
+      element.addEventListener('keydown', handleKeyIntent, { passive: true, capture: true });
+    });
+    return () => {
+      intentElements.forEach((element) => {
+        element.removeEventListener('wheel', handleWheelIntent, { capture: true });
+        element.removeEventListener('touchstart', handleTouchStartIntent, { capture: true });
+        element.removeEventListener('touchmove', handleTouchMoveIntent, { capture: true });
+        element.removeEventListener('keydown', handleKeyIntent, { capture: true });
+      });
+    };
+  }, [isStreaming, viewportElement]);
 
   // 🖱️ 平滑滚轮惯性 + 第一时间检测向上滚动意图（ChatGPT/Claude 同级手感）
   useSmoothWheel(containerRef.current, {
-    onUserScrollUp: releaseAutoScrollForUserIntent,
+    onUserScrollUp: () => {
+      autoFollowEnabledRef.current = false;
+      setShowScrollToBottom(true);
+    },
+    getScrollElement: () => viewportElement,
   });
 
   // 🚀 P1优化：流式生成时使用 rAF 自动滚动（替代 setInterval）
   useEffect(() => {
     if (!isStreaming || !viewportElement) {
       isAutoScrollingRef.current = false;
+      lastAutoScrollTopRef.current = null;
       if (rafIdRef.current) {
         cancelAnimationFrame(rafIdRef.current);
         rafIdRef.current = null;
@@ -398,36 +394,30 @@ const MessageListInner: React.FC<MessageListProps> = ({
     isAutoScrollingRef.current = true;
 
     // 使用 rAF 循环，仅在流式时执行
-    // 大块内容（代码块/图片）出现时用 easing 平滑追赶，逐行文本用 instant 紧跟
     const scrollLoop = () => {
       if (!isAutoScrollingRef.current) return;
 
+      const currentScrollTop = viewportElement.scrollTop;
+      if (
+        lastAutoScrollTopRef.current !== null
+        && currentScrollTop < lastAutoScrollTopRef.current - 2
+      ) {
+        autoFollowEnabledRef.current = false;
+        setShowScrollToBottom(true);
+        lastAutoScrollTopRef.current = currentScrollTop;
+        rafIdRef.current = requestAnimationFrame(scrollLoop);
+        return;
+      }
+
       // 用户已主动滚离底部 → 停止自动滚动，尊重用户意图
-      if (userHasScrolledRef.current) {
+      if (!autoFollowEnabledRef.current) {
         rafIdRef.current = requestAnimationFrame(scrollLoop);
         return;
       }
 
-      const maxScroll = viewportElement.scrollHeight - viewportElement.clientHeight;
-      const currentBottom = viewportElement.scrollTop + viewportElement.clientHeight;
-      const distance = maxScroll + viewportElement.clientHeight - currentBottom;
-
-      if (distance <= 0) {
-        rafIdRef.current = requestAnimationFrame(scrollLoop);
-        return;
-      }
-
-      // 大块内容（>200px，如代码块/图片）→ easing 追赶，避免视觉跳动
-      // 小块内容（逐行文本）→ instant 紧跟
-      if (distance > 200) {
-        const eased = currentBottom + distance * 0.35 - viewportElement.clientHeight;
-        programmaticScrollLockRef.current = true;
-        viewportElement.scrollTop = Math.min(eased, maxScroll);
-      } else {
-        programmaticScrollLockRef.current = true;
-        viewportElement.scrollTop = maxScroll;
-      }
-      scheduleProgrammaticScrollUnlock(50);
+      const maxScroll = Math.max(0, viewportElement.scrollHeight - viewportElement.clientHeight);
+      viewportElement.scrollTop = maxScroll;
+      lastAutoScrollTopRef.current = viewportElement.scrollTop;
 
       rafIdRef.current = requestAnimationFrame(scrollLoop);
     };
@@ -454,17 +444,13 @@ const MessageListInner: React.FC<MessageListProps> = ({
 
     // 流式刚开始 → 用户刚发了新消息，定位用户消息到顶部
     // 流式开始后由 rAF 循环接管，默认跟随 AI 输出滚动到底部
-    // 用户向上滚动时 rAF 检测到 userHasScrolledRef 后暂停跟随，让用户接管
+    // 用户滚动时关闭自动跟随，让用户接管
     if (isStreaming && !wasStreaming) {
-      autoFollowPausedByUserRef.current = false;
-      userHasScrolledRef.current = false;
+      autoFollowEnabledRef.current = true;
+      lastAutoScrollTopRef.current = null;
       setShowScrollToBottom(false);
       requestAnimationFrame(() => {
         if (!viewportElement) return;
-        // 程序化滚动锁：防止 scrollIntoView 触发的原生 scroll 事件
-        // 被 syncScrollState 误判为"用户滚动"，从而错误地阻断 rAF 自动跟随
-        programmaticScrollLockRef.current = true;
-        scheduleProgrammaticScrollUnlock(300);
         if (useDirectRender) {
           // viewportElement.lastElementChild 是 div[role="log"] 包装元素
           // 其内部 children 按 messageOrder 排列，末尾两条是 [用户消息, 助手占位]
@@ -474,12 +460,16 @@ const MessageListInner: React.FC<MessageListProps> = ({
           if (messageItems && messageItems.length >= 2) {
             const userMessageEl = messageItems[messageItems.length - 2] as HTMLElement;
             userMessageEl.scrollIntoView({ block: 'start', behavior: 'instant' as ScrollBehavior });
+            lastAutoScrollTopRef.current = viewportElement.scrollTop;
+            lastObservedScrollTopRef.current = viewportElement.scrollTop;
             return;
           }
         }
         // 虚拟模式下用 scrollToIndex 定位用户消息（倒数第二条）
         if (messageOrder.length >= 2) {
           virtualizer.scrollToIndex(messageOrder.length - 2, { align: 'start', behavior: 'auto' });
+          lastAutoScrollTopRef.current = null;
+          lastObservedScrollTopRef.current = viewportElement.scrollTop;
           return;
         }
         scrollToBottom();
@@ -489,16 +479,16 @@ const MessageListInner: React.FC<MessageListProps> = ({
 
     // 流式结束 → 确保停在底部
     if (!isStreaming && wasStreaming) {
-      if (!userHasScrolledRef.current) {
+      if (autoFollowEnabledRef.current) {
         requestAnimationFrame(() => { scrollToBottom(); });
       }
     }
-  }, [isStreaming, viewportElement, scrollToBottom]);
+  }, [isStreaming, messageOrder.length, scrollToBottom, useDirectRender, viewportElement, virtualizer]);
 
   // 非流式期间新消息到达时滚动到底部（如加载历史记录）
   useEffect(() => {
     if (messageOrder.length > prevMessageCountRef.current) {
-      if (!isStreaming && !userHasScrolledRef.current) {
+      if (!isStreaming && autoFollowEnabledRef.current) {
         requestAnimationFrame(() => { scrollToBottom(); });
       }
     }

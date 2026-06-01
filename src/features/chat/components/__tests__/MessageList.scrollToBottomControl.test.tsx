@@ -137,10 +137,11 @@ function configureViewportMetrics(
   } = {}
 ) {
   let currentScrollTop = scrollTop;
+  let currentScrollHeight = scrollHeight;
 
   Object.defineProperty(viewport, 'scrollHeight', {
     configurable: true,
-    get: () => scrollHeight,
+    get: () => currentScrollHeight,
   });
   Object.defineProperty(viewport, 'clientHeight', {
     configurable: true,
@@ -169,6 +170,9 @@ function configureViewportMetrics(
     getScrollTop: () => currentScrollTop,
     setScrollTop: (value: number) => {
       currentScrollTop = value;
+    },
+    setScrollHeight: (value: number) => {
+      currentScrollHeight = value;
     },
   };
 }
@@ -210,6 +214,9 @@ describe('MessageList scroll-to-bottom control', () => {
 
     const viewport = requireViewport();
     const { scrollTo, getScrollTop } = configureViewportMetrics(viewport, { scrollTop: 240 });
+    const host = viewport.parentElement;
+    const cancelListener = vi.fn();
+    host?.addEventListener('smooth-wheel:cancel', cancelListener);
 
     fireEvent.scroll(viewport);
 
@@ -218,8 +225,9 @@ describe('MessageList scroll-to-bottom control', () => {
 
     fireEvent.click(button);
 
-    expect(scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: 'smooth' });
-    expect(getScrollTop()).toBe(1000);
+    expect(cancelListener).toHaveBeenCalledTimes(1);
+    expect(scrollTo).toHaveBeenCalledWith({ top: 600, behavior: 'auto' });
+    expect(getScrollTop()).toBe(600);
     expect(animatedContainer).toHaveAttribute('data-open', 'false');
     expect(animatedContainer).toHaveAttribute('aria-hidden', 'true');
 
@@ -290,6 +298,144 @@ describe('MessageList scroll-to-bottom control', () => {
     queuedFrame?.(0);
 
     expect(getScrollTop()).toBe(575);
+  });
+
+  it('releases streaming auto-scroll when wheel intent lands on the scroll host', async () => {
+    const rafQueue: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      rafQueue.push(callback);
+      return rafQueue.length;
+    });
+
+    mockSessionStatus = 'streaming';
+    mockMessageOrder = ['message-user', 'message-assistant'];
+
+    renderMessageList();
+
+    const viewport = requireViewport();
+    const host = viewport.parentElement as HTMLElement;
+    const { getScrollTop } = configureViewportMetrics(viewport, {
+      scrollHeight: 1200,
+      clientHeight: 400,
+      scrollTop: 760,
+    });
+
+    fireEvent.wheel(host, { deltaY: -20 });
+
+    const button = await screen.findByRole('button', { name: 'Scroll to bottom' });
+    expect(button.parentElement).toHaveAttribute('data-open', 'true');
+
+    const queuedFrame = rafQueue.shift();
+    expect(queuedFrame).toBeTypeOf('function');
+    queuedFrame?.(0);
+
+    expect(getScrollTop()).toBe(760);
+  });
+
+  it('resumes streaming auto-follow after the scroll-to-bottom control is clicked', async () => {
+    const rafQueue: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      rafQueue.push(callback);
+      return rafQueue.length;
+    });
+
+    mockSessionStatus = 'streaming';
+    mockMessageOrder = ['message-user', 'message-assistant'];
+
+    renderMessageList();
+
+    const viewport = requireViewport();
+    const { getScrollTop, setScrollHeight } = configureViewportMetrics(viewport, {
+      scrollHeight: 1200,
+      clientHeight: 400,
+      scrollTop: 500,
+    });
+
+    fireEvent.wheel(viewport, { deltaY: -120 });
+    const button = await screen.findByRole('button', { name: 'Scroll to bottom' });
+    expect(button.parentElement).toHaveAttribute('data-open', 'true');
+
+    fireEvent.click(button);
+    expect(getScrollTop()).toBe(800);
+
+    setScrollHeight(1400);
+    for (let i = 0; i < 5 && getScrollTop() !== 1000; i += 1) {
+      const queuedFrame = rafQueue.shift();
+      expect(queuedFrame).toBeTypeOf('function');
+      queuedFrame?.(0);
+    }
+
+    expect(getScrollTop()).toBe(1000);
+    expect(button.parentElement).toHaveAttribute('data-open', 'false');
+  });
+
+  it('keeps streaming auto-follow after programmatic user-message positioning', async () => {
+    const rafQueue: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      rafQueue.push(callback);
+      return rafQueue.length;
+    });
+
+    mockSessionStatus = 'idle';
+    mockMessageOrder = ['message-user', 'message-assistant'];
+
+    const store = {
+      getState: () => ({
+        getMessage: (messageId: string) => ({
+          id: messageId,
+          role: messageId.includes('user') ? 'user' : 'assistant',
+        }),
+      }),
+    } as unknown as StoreApi<ChatStore>;
+
+    const { rerender } = render(<MessageList store={store} className="idle" />);
+    const viewport = requireViewport();
+    const { getScrollTop, setScrollTop } = configureViewportMetrics(viewport, {
+      scrollHeight: 1200,
+      clientHeight: 400,
+      scrollTop: 700,
+    });
+
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: vi.fn(() => {
+        setScrollTop(320);
+        fireEvent.scroll(viewport);
+      }),
+    });
+
+    rafQueue.length = 0;
+    mockSessionStatus = 'streaming';
+    rerender(<MessageList store={store} className="streaming" />);
+
+    const autoFollowFrame = rafQueue.shift();
+    const positioningFrame = rafQueue.shift();
+    expect(autoFollowFrame).toBeTypeOf('function');
+    expect(positioningFrame).toBeTypeOf('function');
+
+    autoFollowFrame?.(0);
+    expect(getScrollTop()).toBe(800);
+
+    positioningFrame?.(0);
+    expect(getScrollTop()).toBe(320);
+
+    const nextAutoFollowFrame = rafQueue.shift();
+    expect(nextAutoFollowFrame).toBeTypeOf('function');
+    nextAutoFollowFrame?.(0);
+
+    expect(getScrollTop()).toBe(800);
+    expect(screen.getByRole('button', { hidden: true, name: 'Scroll to bottom' }).parentElement)
+      .toHaveAttribute('data-open', 'false');
+
+    if (originalScrollIntoView) {
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+        configurable: true,
+        value: originalScrollIntoView,
+      });
+    } else {
+      delete (HTMLElement.prototype as HTMLElement & { scrollIntoView?: unknown }).scrollIntoView;
+    }
   });
 
   it('does not treat streaming auto-scroll writes as user scroll intent', async () => {

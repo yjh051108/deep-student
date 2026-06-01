@@ -47,12 +47,14 @@ describe('MessageList scroll-to-bottom source contract', () => {
   });
 
   it('keeps user-paused streaming follow separate from the near-bottom threshold', () => {
-    expect(source).toContain('const autoFollowPausedByUserRef = useRef(false);');
-    expect(source).toContain('autoFollowPausedByUserRef.current = true;');
-    expect(source).toContain('const scrolledTowardBottom = viewportElement.scrollTop >= previousScrollTop;');
-    expect(source).toContain('nearBottom && (!autoFollowPausedByUserRef.current || scrolledTowardBottom)');
-    expect(source).toContain('programmaticScrollLockRef.current = true;');
-    expect(source).toContain('scheduleProgrammaticScrollUnlock(50);');
+    expect(source).toContain('const autoFollowEnabledRef = useRef(true);');
+    expect(source).toContain('autoFollowEnabledRef.current = false;');
+    expect(source).toContain('autoFollowEnabledRef.current = true;');
+    expect(source).toContain('lastAutoScrollTopRef.current = null;');
+    expect(source).toContain('lastAutoScrollTopRef.current = viewportElement.scrollTop;');
+    expect(source).toContain("containerRef.current?.dispatchEvent(new CustomEvent('smooth-wheel:cancel'))");
+    expect(source).not.toContain('programmaticScrollLockRef');
+    expect(source).not.toContain('scheduleProgrammaticScrollUnlock');
   });
 
   it('uses transitions-dev panel reveal semantics for fade-out', () => {
