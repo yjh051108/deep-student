@@ -82,18 +82,14 @@ impl VfsFileRepo {
                 "[VFS::FileRepo] File with same sha256 already exists: {} (status: {:?})",
                 existing.id, existing.status
             );
-            if existing.status != "active" {
+            let resource_deleted =
+                Self::resource_is_deleted_with_conn(conn, existing.resource_id.as_deref())?;
+            if existing.status != "active" || existing.deleted_at.is_some() || resource_deleted {
                 info!(
                     "[VFS::FileRepo] Restoring soft-deleted file: {} from status {:?} to active",
                     existing.id, existing.status
                 );
-                let now = chrono::Utc::now()
-                    .format("%Y-%m-%dT%H:%M:%S%.3fZ")
-                    .to_string();
-                conn.execute(
-                    "UPDATE files SET status = 'active', deleted_at = NULL, updated_at = ?1 WHERE id = ?2",
-                    params![now, existing.id],
-                )?;
+                Self::restore_file_with_conn(conn, &existing.id)?;
                 return Self::get_file_with_conn(conn, &existing.id)?.ok_or_else(|| {
                     VfsError::Database(format!("File {} not found after restore", existing.id))
                 });
@@ -354,18 +350,14 @@ impl VfsFileRepo {
                     VfsFolderRepo::add_item_to_folder_with_conn(conn, &folder_item)
                 };
 
-                if existing.status != "active" {
+                let resource_deleted =
+                    Self::resource_is_deleted_with_conn(conn, existing.resource_id.as_deref())?;
+                if existing.status != "active" || existing.deleted_at.is_some() || resource_deleted {
                     info!(
                         "[VFS::FileRepo] Restoring soft-deleted file: {} from status {:?} to active",
                         existing.id, existing.status
                     );
-                    let now = chrono::Utc::now()
-                        .format("%Y-%m-%dT%H:%M:%S%.3fZ")
-                        .to_string();
-                    conn.execute(
-                        "UPDATE files SET status = 'active', deleted_at = NULL, updated_at = ?1 WHERE id = ?2",
-                        params![now, existing.id],
-                    )?;
+                    Self::restore_file_with_conn(conn, &existing.id)?;
                     ensure_folder_assignment(&existing.id)?;
                     return Self::get_file_with_conn(conn, &existing.id)?.ok_or_else(|| {
                         VfsError::Database(format!("File {} not found after restore", existing.id))
@@ -612,6 +604,21 @@ impl VfsFileRepo {
             .optional()?;
 
         Ok(file)
+    }
+
+    fn resource_is_deleted_with_conn(
+        conn: &Connection,
+        resource_id: Option<&str>,
+    ) -> VfsResult<bool> {
+        let Some(resource_id) = resource_id else {
+            return Ok(false);
+        };
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM resources WHERE id = ?1 AND deleted_at IS NOT NULL)",
+            params![resource_id],
+            |row| row.get(0),
+        )
+        .map_err(VfsError::from)
     }
 
     // ========================================================================
@@ -914,10 +921,17 @@ impl VfsFileRepo {
         )?;
 
         if updated == 0 {
-            return Err(VfsError::NotFound {
-                resource_type: "File".to_string(),
-                id: file_id.to_string(),
-            });
+            let exists: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM files WHERE id = ?1)",
+                params![file_id],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                return Err(VfsError::NotFound {
+                    resource_type: "File".to_string(),
+                    id: file_id.to_string(),
+                });
+            }
         }
 
         // ★ CONC-02 修复：恢复 folder_items 中的关联记录
@@ -2247,5 +2261,61 @@ mod tests {
             .expect("File should be active again");
         assert_eq!(restored.status, "active");
         assert!(restored.deleted_at.is_none());
+    }
+
+    #[test]
+    fn test_dedup_restore_clears_resource_tombstone() {
+        let (_temp_dir, db) = setup_test_db();
+
+        let file = VfsFileRepo::create_file(
+            &db,
+            "sha-dedup-resource-tombstone",
+            "ghost.txt",
+            8,
+            "file",
+            None,
+            None,
+            None,
+        )
+        .expect("Create should succeed");
+
+        let conn = db.get_conn_safe().unwrap();
+        let resource_id = file.resource_id.as_deref().unwrap();
+        conn.execute(
+            "UPDATE resources SET deleted_at = ?1, deleted_reason = 'test', index_state = 'disabled', mm_index_state = 'disabled' WHERE id = ?2",
+            params![chrono::Utc::now().timestamp_millis(), resource_id],
+        )
+        .unwrap();
+
+        let restored = VfsFileRepo::create_file(
+            &db,
+            "sha-dedup-resource-tombstone",
+            "ghost.txt",
+            8,
+            "file",
+            None,
+            None,
+            None,
+        )
+        .expect("Dedup should reuse restored file");
+        assert_eq!(restored.id, file.id);
+
+        let (deleted_at, deleted_reason, index_state, mm_index_state): (
+            Option<i64>,
+            Option<String>,
+            String,
+            String,
+        ) = conn
+            .query_row(
+                "SELECT deleted_at, deleted_reason, index_state, mm_index_state FROM resources WHERE id = ?1",
+                params![resource_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+
+        assert!(deleted_at.is_none());
+        assert!(deleted_reason.is_none());
+        assert_eq!(index_state, "pending");
+        assert_eq!(mm_index_state, "pending");
     }
 }

@@ -158,7 +158,7 @@ describe("VfsFileRepo folder item deletion contract", () => {
 
   it("emits delete watch events with real paths and stable resource ids", () => {
     expect(dstuHandlersSource).toContain(
-      "DstuWatchEvent::deleted(&path).with_resource(id.clone(), resource_type.clone())",
+      "DstuWatchEvent::deleted(&path)\n                .with_resource(delete_id.clone(), delete_type.clone())",
     );
     expect(dstuHandlersSource).not.toContain(
       'DstuWatchEvent::deleted(format!("/{id}"))',
