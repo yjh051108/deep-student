@@ -446,6 +446,7 @@ export function LearningHubSidebar({
     if (item.type !== 'folder' && currentPath.viewKind !== 'trash') {
       addRecent({
         id: item.id,
+        resourceId: item.resourceId,
         path: item.path,
         name: item.name,
         type: item.type,

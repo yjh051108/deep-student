@@ -8,11 +8,15 @@ describe('LearningHub deleted tab identity contract', () => {
     'utf-8'
   );
 
-  it('closes deleted resource tabs by explicit event id before path fallback', () => {
+  it('closes deleted resource tabs by every stable identity from the event', () => {
     expect(source).toContain('const getDstuResourceIdFromPath = (path?: string | null): string | null =>');
-    expect(source).toContain('const affectedPath = event.path || event.oldPath;');
-    expect(source).toContain('const affectedResourceId = event.id ?? getDstuResourceIdFromPath(affectedPath);');
-    expect(source).toContain('prev.tabs.filter(tab => tab.resourceId !== affectedResourceId)');
+    expect(source).toContain('const collectAffectedDstuIds = (event:');
+    expect(source).toContain('event.node?.resourceId');
+    expect(source).toContain('event.node?.sourceId');
+    expect(source).toContain('getDstuResourceIdFromPath(event.oldPath)');
+    expect(source).toContain('const affectedIds = collectAffectedDstuIds(event);');
+    expect(source).toContain('prev.tabs.filter(tab => !affectedIds.has(tab.resourceId))');
+    expect(source).not.toContain('const affectedResourceId = event.id ?? getDstuResourceIdFromPath(affectedPath);');
     expect(source).not.toContain("affectedPath.split('/').filter(Boolean).pop()");
   });
 });

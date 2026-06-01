@@ -98,6 +98,19 @@ const getDstuResourceIdFromPath = (path?: string | null): string | null => {
   return segments?.[segments.length - 1] ?? null;
 };
 
+const collectAffectedDstuIds = (event: { id?: string; path?: string; oldPath?: string; node?: { id?: string; resourceId?: string; sourceId?: string } }): Set<string> => {
+  return new Set(
+    [
+      event.id,
+      event.node?.id,
+      event.node?.resourceId,
+      event.node?.sourceId,
+      getDstuResourceIdFromPath(event.path),
+      getDstuResourceIdFromPath(event.oldPath),
+    ].filter((id): id is string => Boolean(id))
+  );
+};
+
 /**
  * Learning Hub 全屏页面组件
  *
@@ -250,19 +263,18 @@ export const LearningHubPage: React.FC = () => {
         return;
       }
 
-      const affectedPath = event.path || event.oldPath;
-      const affectedResourceId = event.id ?? getDstuResourceIdFromPath(affectedPath);
-      if (!affectedResourceId) return;
+      const affectedIds = collectAffectedDstuIds(event);
+      if (affectedIds.size === 0) return;
       const wasActiveTabAffected = tabsRef.current.some(
-        tab => tab.resourceId === affectedResourceId && tab.tabId === activeTabIdRef.current
+        tab => affectedIds.has(tab.resourceId) && tab.tabId === activeTabIdRef.current
       );
 
       const removedRightTab = tabsRef.current.some(
-        tab => tab.resourceId === affectedResourceId && tab.tabId === splitView?.rightTabId
+        tab => affectedIds.has(tab.resourceId) && tab.tabId === splitView?.rightTabId
       );
 
       setTabState(prev => {
-        const next = prev.tabs.filter(tab => tab.resourceId !== affectedResourceId);
+        const next = prev.tabs.filter(tab => !affectedIds.has(tab.resourceId));
         if (next.length === prev.tabs.length) {
           return prev;
         }

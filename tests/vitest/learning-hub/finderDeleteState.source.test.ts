@@ -26,9 +26,14 @@ describe('learning hub delete state contract', () => {
 
   it('removes deleted resources from visible finder state and recent state by id or path', () => {
     expect(recentStoreSource).toContain('removeRecentByIdentity');
+    expect(recentStoreSource).toContain('resourceId?: string;');
+    expect(recentStoreSource).toContain('const pathId = path?.split');
+    expect(recentStoreSource).toContain('i.resourceId !== id');
+    expect(recentStoreSource).toContain('i.resourceId !== pathId');
     expect(sidebarSource).toContain('const pruneFinderResource = (resourceId: string, path?: string | null)');
     expect(sidebarSource).toContain('item.resourceId !== resourceId');
     expect(sidebarSource).toContain('(!path || item.path !== path)');
+    expect(sidebarSource).toContain('resourceId: item.resourceId');
     expect(sidebarSource).toContain('removeRecentByIdentity(resourceId, event.path)');
     expect(sidebarSource).toContain('pruneFinderResource(resourceId, event.path)');
     expect(sidebarSource).toContain('const visiblePath = resourcePath ?? deletePath');
@@ -71,5 +76,17 @@ describe('learning hub delete state contract', () => {
 
     expect(deleteManyBody.indexOf('const nodeIds = await collectNodeIdsForInvalidation(paths);'))
       .toBeLessThan(deleteManyBody.indexOf("invoke<number>('dstu_delete_many'"));
+  });
+
+  it('resolves /res_* paths before dstu_get enters type-specific repos', () => {
+    const getBody = dstuHandlersSource.slice(
+      dstuHandlersSource.indexOf('pub async fn dstu_get'),
+      dstuHandlersSource.indexOf('/// 列出指定路径下的资源', dstuHandlersSource.indexOf('pub async fn dstu_get'))
+    );
+
+    expect(getBody).toContain('matches!(resource_type.as_str(), "resources" | "resource")');
+    expect(getBody).toContain('resolve_delete_target_with_conn(&conn, &resource_type, &id)?');
+    expect(getBody.indexOf('resolve_delete_target_with_conn(&conn, &resource_type, &id)?'))
+      .toBeLessThan(getBody.indexOf('is_hidden_by_deleted_folder_mapping'));
   });
 });

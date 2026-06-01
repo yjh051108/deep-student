@@ -425,6 +425,12 @@ pub async fn dstu_get(
             return Err(e.to_string());
         }
     };
+    let (resource_type, id) = if matches!(resource_type.as_str(), "resources" | "resource") {
+        let conn = vfs_db.get_conn_safe().map_err(|e| e.to_string())?;
+        resolve_delete_target_with_conn(&conn, &resource_type, &id)?
+    } else {
+        (resource_type, id)
+    };
 
     if !matches!(resource_type.as_str(), "folders" | "folder")
         && is_hidden_by_deleted_folder_mapping(&vfs_db, &id)?

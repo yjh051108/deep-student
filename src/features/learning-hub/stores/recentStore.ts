@@ -18,6 +18,8 @@ import type { DstuNodeType } from '@/dstu/types';
 export interface RecentItem {
   /** 资源 ID */
   id: string;
+  /** VFS resources 表 ID */
+  resourceId?: string;
   /** 资源路径（DSTU 虚拟路径） */
   path: string;
   /** 资源名称 */
@@ -110,8 +112,14 @@ export const useRecentStore = create<RecentState>()(
       },
 
       removeRecentByIdentity: (id, path) => {
+        const pathId = path?.split('/').filter(Boolean).pop();
         set({
-          items: get().items.filter(i => i.id !== id && (!path || i.path !== path)),
+          items: get().items.filter(i => (
+            i.id !== id &&
+            i.resourceId !== id &&
+            (!pathId || (i.id !== pathId && i.resourceId !== pathId)) &&
+            (!path || i.path !== path)
+          )),
         });
       },
 
