@@ -146,6 +146,19 @@ describe('Index status state source contract', () => {
     expect(multimodalServiceSource).toContain('WHERE resource_id = ?4 AND mm_required = 1');
   });
 
+  it('reconciles text indexing only from text units and text segments', () => {
+    const start = handlerSource.indexOf('fn reconcile_completed_text_indexing_resources');
+    const end = handlerSource.indexOf('/// 批量索引待处理资源', start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const reconcileSource = handlerSource.slice(start, end);
+
+    expect(reconcileSource).toContain('JOIN vfs_index_units su ON su.id = s.unit_id');
+    expect(reconcileSource).toContain('AND su.text_required = 1');
+    expect(reconcileSource).toContain("AND s.modality = 'text'");
+    expect(reconcileSource).toContain("AND u.text_state IN ('pending', 'indexing', 'failed')");
+  });
+
   it('does not silently skip index status rows when list parsing fails', () => {
     expect(handlerSource).toContain('fn read_optional_millis(');
     expect(handlerSource).toContain('fn read_optional_i32(');

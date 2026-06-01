@@ -3886,6 +3886,8 @@ fn reconcile_completed_text_indexing_resources(
                 FROM vfs_index_segments s
                 JOIN vfs_index_units su ON su.id = s.unit_id
                 WHERE su.resource_id = resources.id
+                  AND su.text_required = 1
+                  AND s.modality = 'text'
             )
             OR EXISTS (
               SELECT 1
