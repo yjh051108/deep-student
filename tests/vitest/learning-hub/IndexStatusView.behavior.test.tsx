@@ -125,6 +125,7 @@ const summary = (overrides = {}) => ({
   failedCount: 0,
   disabledCount: 0,
   staleCount: 0,
+  textQueueCount: 0,
   displayTotalResources: 10,
   displayIndexedCount: 8,
   displayPendingCount: 2,
@@ -176,6 +177,7 @@ describe('IndexStatusView behavior', () => {
     getAllIndexStatusMock.mockResolvedValue(summary({
       indexedCount: 7,
       pendingCount: 2,
+      textQueueCount: 2,
       displayPendingCount: 2,
       resources: [],
     }));
@@ -233,6 +235,7 @@ describe('IndexStatusView behavior', () => {
     getAllIndexStatusMock.mockResolvedValue(summary({
       indexedCount: 7,
       pendingCount: 2,
+      textQueueCount: 2,
       displayPendingCount: 2,
       resources: [],
     }));

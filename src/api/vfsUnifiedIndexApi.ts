@@ -68,6 +68,7 @@ export interface ResourceIndexStatusSummary {
   failedCount: number;
   disabledCount: number;
   staleCount: number;
+  textQueueCount: number;
   displayTotalResources: number;
   displayIndexedCount: number;
   displayPendingCount: number;

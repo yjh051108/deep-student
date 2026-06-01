@@ -645,7 +645,7 @@ export const IndexStatusView: React.FC = () => {
       return;
     }
 
-    const textWorkCount = summary.pendingCount + summary.failedCount;
+    const textWorkCount = summary.textQueueCount;
     const mmResources = MULTIMODAL_INDEX_ENABLED
       ? summary.resources.filter(isPendingMultimodalResource)
       : [];

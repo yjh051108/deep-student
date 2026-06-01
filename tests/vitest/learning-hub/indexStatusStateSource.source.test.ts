@@ -75,7 +75,7 @@ describe('Index status state source contract', () => {
   });
 
   it('derives one-click workload from backend summary and lets backend drain pending work', () => {
-    expect(viewSource).toContain('const textWorkCount = summary.pendingCount + summary.failedCount;');
+    expect(viewSource).toContain('const textWorkCount = summary.textQueueCount;');
     expect(viewSource).toContain('const pendingMmCount = mmResources.length;');
     expect(viewSource).toContain('await batchIndexPending();');
     expect(viewSource).toContain('if (textWorkCount === 0 && pendingMmCount === 0) {');
@@ -96,6 +96,7 @@ describe('Index status state source contract', () => {
       'utf-8'
     );
     expect(apiSource).toContain('displayIndexState: string;');
+    expect(apiSource).toContain('textQueueCount: number;');
     expect(apiSource).toContain('displayTotalResources: number;');
     expect(apiSource).toContain('displayIndexedCount: number;');
     expect(apiSource).toContain('includeImageIndex?: boolean;');
@@ -120,12 +121,14 @@ describe('Index status state source contract', () => {
 
   it('computes display state and display counts in the backend contract', () => {
     expect(handlerSource).toContain('pub display_index_state: String');
+    expect(handlerSource).toContain('pub text_queue_count: i32');
     expect(handlerSource).toContain('pub display_total_resources: i32');
     expect(handlerSource).toContain('fn display_index_state_sql(');
     expect(handlerSource).toContain('include_image_index: Option<bool>');
     expect(handlerSource).toContain('{display_state} as display_index_state');
     expect(handlerSource).toContain('list_conditions.push(format!("({}) = ?", list_display_state_sql));');
     expect(handlerSource).toContain("COALESCE(SUM(CASE WHEN {display_state} = 'indexed' THEN 1 ELSE 0 END), 0) as display_indexed");
+    expect(handlerSource).toContain('as text_queue_count');
   });
 
   it('does not silently skip index status rows when list parsing fails', () => {

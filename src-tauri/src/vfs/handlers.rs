@@ -4431,6 +4431,8 @@ pub struct IndexStatusSummary {
     pub disabled_count: i32,
     /// 索引过时数（内容已更新但索引未更新）
     pub stale_count: i32,
+    /// 当前筛选范围内可被一键索引实际排队的文字资源数（与后端 claim 队列同口径）
+    pub text_queue_count: i32,
     // ========== 显示状态统计 ==========
     /// 显示总资源数（与资源列表同一状态口径）
     pub display_total_resources: i32,
@@ -4627,6 +4629,10 @@ pub async fn vfs_get_all_index_status(
 
     let conn = vfs_db.get_conn_safe().map_err(|e| e.to_string())?;
     let include_image_index = include_image_index.unwrap_or(false);
+    let max_retries = VfsIndexingService::new(Arc::clone(&vfs_db))
+        .get_indexing_config()
+        .map(|config| config.max_retries)
+        .unwrap_or(3);
 
     // 检查必要的列和表是否存在
     let has_index_state = has_index_state_column(&conn);
@@ -4695,6 +4701,7 @@ END
             failed_count: 0,
             disabled_count: 0,
             stale_count: 0,
+            text_queue_count: 0,
             display_total_resources: 0,
             display_indexed_count: 0,
             display_pending_count: 0,
@@ -5148,6 +5155,13 @@ END
                 WHEN COALESCE(r.index_state, 'pending') = 'indexed'
                      AND r.index_hash IS NOT NULL AND r.index_hash != r.hash
                 THEN 1 ELSE 0 END), 0) as stale
+            ,COALESCE(SUM(CASE
+                WHEN COALESCE(r.index_state, 'pending') != 'disabled'
+                     AND (
+                        ({effective_text_state}) = 'pending'
+                        OR (({effective_text_state}) = 'failed' AND COALESCE(r.index_retry_count, 0) < {max_retries})
+                     )
+                THEN 1 ELSE 0 END), 0) as text_queue_count
             ,COUNT(*) as display_total
             ,COALESCE(SUM(CASE WHEN {display_state} = 'indexed' THEN 1 ELSE 0 END), 0) as display_indexed
             ,COALESCE(SUM(CASE WHEN {display_state} = 'pending' THEN 1 ELSE 0 END), 0) as display_pending
@@ -5216,7 +5230,8 @@ COALESCE(
 )
 "#,
             include_image_index
-        )
+        ),
+        max_retries = max_retries
     );
 
     // 构建统计查询的参数（使用 stats_params，不包括 state_filter）
@@ -5231,6 +5246,7 @@ COALESCE(
         failed,
         disabled,
         stale,
+        text_queue_count,
         display_total,
         display_indexed,
         display_pending,
@@ -5244,6 +5260,7 @@ COALESCE(
         mm_failed,
         mm_disabled,
     ): (
+        i32,
         i32,
         i32,
         i32,
@@ -5288,6 +5305,7 @@ COALESCE(
                     row.get(16)?,
                     row.get(17)?,
                     row.get(18)?,
+                    row.get(19)?,
                 ))
             },
         )
@@ -5306,6 +5324,7 @@ COALESCE(
         failed_count: failed,
         disabled_count: disabled,
         stale_count: stale,
+        text_queue_count,
         display_total_resources: display_total,
         display_indexed_count: display_indexed,
         display_pending_count: display_pending,

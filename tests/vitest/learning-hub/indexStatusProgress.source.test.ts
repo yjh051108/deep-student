@@ -37,7 +37,7 @@ describe('IndexStatusView progress display contract', () => {
 
   it('does not run image indexing when the backend reports multimodal indexing unavailable', () => {
     expect(source).toContain("const canRunImageIndex = imageIndexCapability === 'ready';");
-    expect(source).toContain('const textWorkCount = summary.pendingCount + summary.failedCount;');
+    expect(source).toContain('const textWorkCount = summary.textQueueCount;');
     expect(source).toContain('const pendingMmCount = mmResources.length;');
     expect(source).toContain('textWorkCount === 0 && pendingMmCount > 0 && !canRunImageIndex');
     expect(source).toContain('if (mmResources.length > 0 && canRunImageIndex)');
