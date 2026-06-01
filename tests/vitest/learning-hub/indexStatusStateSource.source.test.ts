@@ -19,6 +19,10 @@ describe('Index status state source contract', () => {
     resolve(process.cwd(), 'src-tauri/src/vfs/repos/embedding_repo.rs'),
     'utf-8'
   );
+  const multimodalServiceSource = readFileSync(
+    resolve(process.cwd(), 'src-tauri/src/vfs/multimodal_service.rs'),
+    'utf-8'
+  );
 
   it('uses backend multimodal capability instead of duplicating model matching in the UI', () => {
     expect(viewSource).toContain("invoke<MultimodalIndexCapability>('vfs_get_multimodal_index_capability')");
@@ -129,6 +133,15 @@ describe('Index status state source contract', () => {
     expect(handlerSource).toContain('list_conditions.push(format!("({}) = ?", list_display_state_sql));');
     expect(handlerSource).toContain("COALESCE(SUM(CASE WHEN {display_state} = 'indexed' THEN 1 ELSE 0 END), 0) as display_indexed");
     expect(handlerSource).toContain('as text_queue_count');
+  });
+
+  it('keeps multimodal business state and unit state in sync at the backend writer', () => {
+    expect(multimodalServiceSource).toContain('fn update_mm_index_state_in_business_table');
+    expect(multimodalServiceSource).toContain('UPDATE resources SET mm_index_state = ?1');
+    expect(multimodalServiceSource).toContain('UPDATE vfs_index_units');
+    expect(multimodalServiceSource).toContain("SET mm_state = 'indexed'");
+    expect(multimodalServiceSource).toContain('WHERE resource_id = ?3 AND mm_required = 1');
+    expect(multimodalServiceSource).toContain('WHERE resource_id = ?4 AND mm_required = 1');
   });
 
   it('does not silently skip index status rows when list parsing fails', () => {

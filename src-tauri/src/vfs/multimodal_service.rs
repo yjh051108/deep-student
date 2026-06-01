@@ -942,6 +942,31 @@ impl VfsMultimodalService {
                 "UPDATE resources SET mm_index_state = ?1, mm_index_error = ?2, updated_at = ?3 WHERE id = ?4",
                 params![state, error_val, now, res_id],
             );
+
+            if matches!(state, "pending" | "indexing" | "indexed" | "failed" | "disabled") {
+                let now_ms = chrono::Utc::now().timestamp_millis();
+                if state == "indexed" {
+                    let _ = conn.execute(
+                        "UPDATE vfs_index_units
+                         SET mm_state = 'indexed',
+                             mm_error = NULL,
+                             mm_indexed_at = ?1,
+                             mm_embedding_dim = CASE WHEN ?2 > 0 THEN ?2 ELSE mm_embedding_dim END,
+                             updated_at = ?1
+                         WHERE resource_id = ?3 AND mm_required = 1",
+                        params![now_ms, _embedding_dim, res_id],
+                    );
+                } else {
+                    let _ = conn.execute(
+                        "UPDATE vfs_index_units
+                         SET mm_state = ?1,
+                             mm_error = ?2,
+                             updated_at = ?3
+                         WHERE resource_id = ?4 AND mm_required = 1",
+                        params![state, error_val, now_ms, res_id],
+                    );
+                }
+            }
         }
 
         Ok(())
