@@ -4523,6 +4523,54 @@ END
     )
 }
 
+fn effective_mm_index_state_sql(business_mm_state_sql: &str) -> String {
+    format!(
+        r#"
+CASE
+    WHEN r.type NOT IN ('textbook', 'file', 'exam', 'image')
+    THEN 'disabled'
+    WHEN ({business_mm_state}) = 'disabled'
+    THEN 'disabled'
+    WHEN EXISTS (
+        SELECT 1 FROM vfs_index_units u
+        WHERE u.resource_id = r.id
+          AND u.mm_required = 1
+          AND u.mm_state = 'failed'
+    )
+    THEN 'failed'
+    WHEN EXISTS (
+        SELECT 1 FROM vfs_index_units u
+        WHERE u.resource_id = r.id
+          AND u.mm_required = 1
+          AND u.mm_state = 'indexing'
+    )
+    THEN 'indexing'
+    WHEN EXISTS (
+        SELECT 1 FROM vfs_index_units u
+        WHERE u.resource_id = r.id
+          AND u.mm_required = 1
+          AND u.mm_state = 'pending'
+    )
+    THEN 'pending'
+    WHEN EXISTS (
+        SELECT 1 FROM vfs_index_units u
+        WHERE u.resource_id = r.id
+          AND u.mm_required = 1
+    )
+      AND NOT EXISTS (
+        SELECT 1 FROM vfs_index_units u
+        WHERE u.resource_id = r.id
+          AND u.mm_required = 1
+          AND u.mm_state != 'indexed'
+    )
+    THEN 'indexed'
+    ELSE ({business_mm_state})
+END
+"#,
+        business_mm_state = business_mm_state_sql
+    )
+}
+
 fn read_optional_millis(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<Option<i64>> {
     use rusqlite::types::{Type, ValueRef};
 
@@ -4720,16 +4768,21 @@ END
         });
     }
 
-    let list_mm_state_sql = r#"
+    let list_business_mm_state_sql = r#"
 CASE
     WHEN r.type IN ('textbook', 'file', 'image') THEN COALESCE(fr.mm_index_state, fs.mm_index_state, r.mm_index_state, 'pending')
     WHEN r.type = 'exam' THEN COALESCE(ei.mm_index_state, es_src.mm_index_state, r.mm_index_state, 'pending')
     ELSE 'disabled'
 END
 "#;
+    let list_mm_state_sql = if has_index_tables {
+        effective_mm_index_state_sql(list_business_mm_state_sql)
+    } else {
+        list_business_mm_state_sql.to_string()
+    };
     let list_display_state_sql = display_index_state_sql(
         effective_text_state_sql,
-        list_mm_state_sql,
+        &list_mm_state_sql,
         include_image_index,
     );
 
@@ -5132,6 +5185,18 @@ END
     // ========== 统计查询（同样使用 JOIN 优化）==========
     // ★ 2026-01 修复：统一统计逻辑，indexed 包含所有 index_state='indexed' 的资源
     // 使用 LEFT JOIN 替代原来的 6 次 mm_state_expr 关联子查询
+    let stats_business_mm_state_sql = r#"
+COALESCE(
+    CASE WHEN r.type IN ('textbook', 'file', 'image') THEN COALESCE(fm.mm_index_state, fs_mm.mm_index_state) END,
+    CASE WHEN r.type = 'exam' THEN COALESCE(em.mm_index_state, es_mm.mm_index_state) END,
+    COALESCE(r.mm_index_state, 'pending')
+)
+"#;
+    let stats_mm_state_sql = if has_index_tables {
+        effective_mm_index_state_sql(stats_business_mm_state_sql)
+    } else {
+        stats_business_mm_state_sql.to_string()
+    };
     let stats_query = format!(
         r#"
         WITH file_mm AS (
@@ -5172,35 +5237,15 @@ END
             ,COALESCE(SUM(CASE WHEN {display_state} = 'disabled' THEN 1 ELSE 0 END), 0) as display_disabled
             ,COALESCE(SUM(CASE WHEN r.type IN ('textbook', 'file', 'exam', 'image') THEN 1 ELSE 0 END), 0) as mm_total
             ,COALESCE(SUM(CASE WHEN r.type IN ('textbook', 'file', 'exam', 'image')
-                AND COALESCE(
-                    CASE WHEN r.type IN ('textbook', 'file', 'image') THEN COALESCE(fm.mm_index_state, fs_mm.mm_index_state) END,
-                    CASE WHEN r.type = 'exam' THEN COALESCE(em.mm_index_state, es_mm.mm_index_state) END,
-                    COALESCE(r.mm_index_state, 'pending')
-                ) = 'indexed' THEN 1 ELSE 0 END), 0) as mm_indexed
+                AND ({stats_mm_state}) = 'indexed' THEN 1 ELSE 0 END), 0) as mm_indexed
             ,COALESCE(SUM(CASE WHEN r.type IN ('textbook', 'file', 'exam', 'image')
-                AND COALESCE(
-                    CASE WHEN r.type IN ('textbook', 'file', 'image') THEN COALESCE(fm.mm_index_state, fs_mm.mm_index_state) END,
-                    CASE WHEN r.type = 'exam' THEN COALESCE(em.mm_index_state, es_mm.mm_index_state) END,
-                    COALESCE(r.mm_index_state, 'pending')
-                ) = 'pending' THEN 1 ELSE 0 END), 0) as mm_pending
+                AND ({stats_mm_state}) = 'pending' THEN 1 ELSE 0 END), 0) as mm_pending
             ,COALESCE(SUM(CASE WHEN r.type IN ('textbook', 'file', 'exam', 'image')
-                AND COALESCE(
-                    CASE WHEN r.type IN ('textbook', 'file', 'image') THEN COALESCE(fm.mm_index_state, fs_mm.mm_index_state) END,
-                    CASE WHEN r.type = 'exam' THEN COALESCE(em.mm_index_state, es_mm.mm_index_state) END,
-                    COALESCE(r.mm_index_state, 'pending')
-                ) = 'indexing' THEN 1 ELSE 0 END), 0) as mm_indexing
+                AND ({stats_mm_state}) = 'indexing' THEN 1 ELSE 0 END), 0) as mm_indexing
             ,COALESCE(SUM(CASE WHEN r.type IN ('textbook', 'file', 'exam', 'image')
-                AND COALESCE(
-                    CASE WHEN r.type IN ('textbook', 'file', 'image') THEN COALESCE(fm.mm_index_state, fs_mm.mm_index_state) END,
-                    CASE WHEN r.type = 'exam' THEN COALESCE(em.mm_index_state, es_mm.mm_index_state) END,
-                    COALESCE(r.mm_index_state, 'pending')
-                ) = 'failed' THEN 1 ELSE 0 END), 0) as mm_failed
+                AND ({stats_mm_state}) = 'failed' THEN 1 ELSE 0 END), 0) as mm_failed
             ,COALESCE(SUM(CASE WHEN r.type IN ('textbook', 'file', 'exam', 'image')
-                AND COALESCE(
-                    CASE WHEN r.type IN ('textbook', 'file', 'image') THEN COALESCE(fm.mm_index_state, fs_mm.mm_index_state) END,
-                    CASE WHEN r.type = 'exam' THEN COALESCE(em.mm_index_state, es_mm.mm_index_state) END,
-                    COALESCE(r.mm_index_state, 'pending')
-                ) = 'disabled' THEN 1 ELSE 0 END), 0) as mm_disabled
+                AND ({stats_mm_state}) = 'disabled' THEN 1 ELSE 0 END), 0) as mm_disabled
         FROM resources r
         LEFT JOIN file_mm fm ON fm.resource_id = r.id
         LEFT JOIN files fs_mm ON fs_mm.id = r.source_id AND fs_mm.status = 'active' AND fs_mm.deleted_at IS NULL
@@ -5222,17 +5267,8 @@ END
         folder_join,
         stats_where_clause,
         effective_text_state = effective_text_state_sql,
-        display_state = display_index_state_sql(
-            effective_text_state_sql,
-            r#"
-COALESCE(
-    CASE WHEN r.type IN ('textbook', 'file', 'image') THEN COALESCE(fm.mm_index_state, fs_mm.mm_index_state) END,
-    CASE WHEN r.type = 'exam' THEN COALESCE(em.mm_index_state, es_mm.mm_index_state) END,
-    COALESCE(r.mm_index_state, 'pending')
-)
-"#,
-            include_image_index
-        ),
+        display_state = display_index_state_sql(effective_text_state_sql, &stats_mm_state_sql, include_image_index),
+        stats_mm_state = stats_mm_state_sql,
         max_retries = max_retries
     );
 
