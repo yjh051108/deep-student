@@ -49,12 +49,13 @@ const FLOWTOKEN_SUPPORTED_BLOCK_TYPES = new Set<MarkdownBlock['type']>([
 function shouldUseFullFlowTokenEffect(
   block: MarkdownBlock,
   isStreamingBlock: boolean,
+  hasExtendedMarkdownFeatures: boolean,
 ): boolean {
   if (!isStreamingBlock || !FLOWTOKEN_SUPPORTED_BLOCK_TYPES.has(block.type)) {
     return false;
   }
 
-  return true;
+  return canUseDirectFlowTokenMarkdown(block.raw, hasExtendedMarkdownFeatures);
 }
 
 // ─── MemoizedBlock ───────────────────────────────────────────────────────────
@@ -79,6 +80,7 @@ const MemoizedBlock = memo<MemoizedBlockProps>(({
   const shouldUseFlowToken = shouldUseFullFlowTokenEffect(
     block,
     isActive && isStreaming,
+    false,
   );
   const motionLayer = isActive && isStreaming ? 'inline' : 'block';
 

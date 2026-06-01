@@ -6,9 +6,34 @@ import { StreamingMarkdownRenderer } from '../StreamingMarkdownRenderer';
 import { StreamingBlockRenderer } from '../StreamingBlockRenderer';
 import { FlowTokenMarkdownRenderer } from '../FlowTokenMarkdownRenderer';
 import { ThinkingBlock } from '../../../plugins/blocks/thinking';
+import { makeCitationRemarkPlugin } from '../../../utils/citationRemarkPlugin';
 
 vi.mock('@tauri-apps/api/core', () => ({
   convertFileSrc: (path: string) => `asset://mock${path}`,
+}));
+
+vi.mock('@/features/chat/components/MindmapCitationCard', () => ({
+  MindmapCitationCard: ({
+    mindmapId,
+    versionId,
+    displayTitle,
+    embedHeight = 280,
+  }: {
+    mindmapId?: string;
+    versionId?: string;
+    displayTitle?: string;
+    embedHeight?: number;
+  }) => (
+    <div
+      data-testid="mindmap-citation-card"
+      data-mindmap-id={mindmapId ?? ''}
+      data-version-id={versionId ?? ''}
+      data-title={displayTitle ?? ''}
+      data-embed-height={embedHeight}
+    >
+      {displayTitle || mindmapId || versionId}
+    </div>
+  ),
 }));
 
 const FLOWTOKEN_ANIMATION_SELECTOR =
@@ -46,6 +71,19 @@ describe('MarkdownRenderer flowtoken streaming animation', () => {
       <StreamingBlockRenderer content="当前聊天流式块正在输出。" isStreaming />
     );
 
+    expect(container.querySelector(FLOWTOKEN_ANIMATION_SELECTOR)).not.toBeNull();
+  });
+
+  it('keeps plain chat text on flowtoken even when citation plugins are registered', () => {
+    const { container } = render(
+      <StreamingBlockRenderer
+        content="当前聊天流式块正在输出。"
+        isStreaming
+        extraRemarkPlugins={[makeCitationRemarkPlugin()]}
+      />
+    );
+
+    expect(container.querySelector('.stream-block')?.getAttribute('data-flowtoken')).toBe('true');
     expect(container.querySelector(FLOWTOKEN_ANIMATION_SELECTOR)).not.toBeNull();
   });
 
@@ -91,15 +129,15 @@ describe('MarkdownRenderer flowtoken streaming animation', () => {
     expect(container.querySelector('.think-content [style*="animation-name: ft-fadeIn"]')).not.toBeNull();
   });
 
-  it('uses flowtoken for citation-like streaming blocks (content gate removed)', () => {
+  it('keeps citation-like streaming blocks on the app markdown renderer', () => {
     const { container } = render(
       <StreamingBlockRenderer content="参考这个结论 [知识库-1]" isStreaming />
     );
 
-    expect(container.querySelector('.stream-block')?.getAttribute('data-flowtoken')).toBe('true');
+    expect(container.querySelector('.stream-block')?.getAttribute('data-flowtoken')).toBe('false');
   });
 
-  it('keeps streaming blocks on flowtoken while content grows (content gate removed)', () => {
+  it('keeps citation-like streaming blocks on the app renderer while content grows', () => {
     const { container, rerender } = render(
       <StreamingBlockRenderer content="参考这个结论 [知识库-1]" isStreaming />
     );
@@ -109,8 +147,39 @@ describe('MarkdownRenderer flowtoken streaming animation', () => {
     );
 
     const block = container.querySelector('.stream-block');
-    expect(block?.getAttribute('data-flowtoken')).toBe('true');
+    expect(block?.getAttribute('data-flowtoken')).toBe('false');
     expect(block?.getAttribute('data-motion-layer')).toBe('inline');
+  });
+
+  it('defers mindmap citation cards while streaming and mounts them after completion', () => {
+    const citationPlugins = [makeCitationRemarkPlugin()];
+    const content = '生成好了 [思维导图:mv_demo_001:函数结构]';
+
+    const { container, rerender, queryByTestId } = render(
+      <StreamingBlockRenderer
+        content={content}
+        isStreaming
+        extraRemarkPlugins={citationPlugins}
+      />
+    );
+
+    expect(container.querySelector('.stream-block')?.getAttribute('data-flowtoken')).toBe('false');
+    expect(queryByTestId('mindmap-citation-card')).toBeNull();
+    expect(container.querySelector('.mindmap-citation-placeholder')?.textContent).toContain('函数结构');
+
+    rerender(
+      <StreamingBlockRenderer
+        content={content}
+        isStreaming={false}
+        extraRemarkPlugins={citationPlugins}
+      />
+    );
+
+    const card = queryByTestId('mindmap-citation-card');
+    expect(card).not.toBeNull();
+    expect(card).toHaveAttribute('data-version-id', 'mv_demo_001');
+    expect(card).toHaveAttribute('data-title', '函数结构');
+    expect(card).toHaveAttribute('data-embed-height', '280');
   });
 
   it('keeps dangling markdown text visible in the flowtoken streaming path', () => {
@@ -122,13 +191,13 @@ describe('MarkdownRenderer flowtoken streaming animation', () => {
     expect(container.querySelector('.stream-block')?.getAttribute('data-flowtoken')).toBe('true');
   });
 
-  it('uses flowtoken for bare LaTeX streaming blocks (content gate removed)', () => {
+  it('keeps bare LaTeX streaming blocks on the app markdown renderer', () => {
     const { container } = render(
       <StreamingBlockRenderer content={'score(Q, K) = \\\\frac{QK^T}{\\\\sqrt{d_k}}'} isStreaming />
     );
 
-    expect(container.querySelector('.stream-block')?.getAttribute('data-flowtoken')).toBe('true');
-    expect(container.querySelector('.flowtoken-markdown')).not.toBeNull();
+    expect(container.querySelector('.stream-block')?.getAttribute('data-flowtoken')).toBe('false');
+    expect(container.querySelector('.flowtoken-markdown')).toBeNull();
     expect(container.textContent).not.toContain('[object Object]');
   });
 

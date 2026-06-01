@@ -1,4 +1,6 @@
 const FLOWTOKEN_CITATION_RE = /\[[^\]]+?-\d+(?::图片)?\]/;
+const FLOWTOKEN_MINDMAP_CITATION_RE =
+  /\[(?:思维导图|导图|脑图|MindMap|mindmap):(?:mm_|mv_)[a-zA-Z0-9_-]+(?::[^\]]+)?\]/i;
 const FLOWTOKEN_MATH_RE = /(^|[^\\])\$(?!\$)|\\\(|\\\[|\\begin\{/;
 const FLOWTOKEN_HTML_RE = /<\/?[a-zA-Z][\s\S]*?>/;
 const FLOWTOKEN_IMAGE_RE = /!\[[^\]]*]\(([^)]+)\)/;
@@ -19,6 +21,7 @@ export function canUseDirectFlowTokenMarkdown(
 
   if (
     FLOWTOKEN_CITATION_RE.test(content) ||
+    FLOWTOKEN_MINDMAP_CITATION_RE.test(content) ||
     FLOWTOKEN_MATH_RE.test(content) ||
     FLOWTOKEN_HTML_RE.test(content) ||
     FLOWTOKEN_BARE_LATEX_RE.test(content)
