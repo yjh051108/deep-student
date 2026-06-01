@@ -47,6 +47,8 @@ use super::handler_utils::{
     is_hidden_by_deleted_folder_mapping,
     is_uuid_format, // UUID 格式检测
     item_type_to_dstu_node_type,
+    lookup_resource_id_for_delete_target_with_conn,
+    resolve_delete_target_with_conn,
     // 列表辅助函数
     list_resources_by_type_with_folder_path,
     list_unassigned_essays,
@@ -1410,26 +1412,16 @@ pub async fn dstu_delete(
         }
     }
 
+    let (delete_type, delete_id) = if matches!(resource_type.as_str(), "resources" | "resource") {
+        let conn = vfs_db.get_conn_safe().map_err(|e| e.to_string())?;
+        resolve_delete_target_with_conn(&conn, &resource_type, &id)?
+    } else {
+        (resource_type.clone(), id.clone())
+    };
+
     // ★ P1 修复：在删除前查找 resource_id，用于删除后清理向量索引
     let resource_id: Option<String> = vfs_db.get_conn_safe().ok().and_then(|conn| {
-        let sql = match resource_type.as_str() {
-            "notes" | "note" => Some("SELECT resource_id FROM notes WHERE id = ?1"),
-            "textbooks" | "textbook" | "images" | "image" | "files" | "file" | "attachments"
-            | "attachment" => Some("SELECT resource_id FROM files WHERE id = ?1"),
-            "exams" | "exam" => Some("SELECT resource_id FROM exam_sheets WHERE id = ?1"),
-            "translations" | "translation" => {
-                Some("SELECT resource_id FROM translations WHERE id = ?1")
-            }
-            "mindmaps" | "mindmap" => Some("SELECT resource_id FROM mindmaps WHERE id = ?1"),
-            _ => None,
-        };
-        sql.and_then(|s| {
-            conn.query_row(s, rusqlite::params![id], |row| {
-                row.get::<_, Option<String>>(0)
-            })
-            .ok()
-            .flatten()
-        })
+        lookup_resource_id_for_delete_target_with_conn(&conn, &delete_type, &delete_id)
     });
 
     let folder_delete_targets = if matches!(resource_type.as_str(), "folders" | "folder") {
@@ -1442,13 +1434,14 @@ pub async fn dstu_delete(
     };
 
     // 使用辅助函数执行删除
-    delete_resource_by_type(&vfs_db, &resource_type, &id)?;
+    delete_resource_by_type(&vfs_db, &delete_type, &delete_id)?;
 
     if folder_delete_targets.is_empty() {
         // 发射删除事件：path 保持真实资源路径，id 用于前端精确清理派生状态
         emit_watch_event(
             &window,
-            DstuWatchEvent::deleted(&path).with_resource(id.clone(), resource_type.clone()),
+            DstuWatchEvent::deleted(&path)
+                .with_resource(delete_id.clone(), delete_type.clone()),
         );
     } else {
         for target in folder_delete_targets {
@@ -1476,8 +1469,8 @@ pub async fn dstu_delete(
 
     log::info!(
         "[DSTU::handlers] dstu_delete: deleted type={}, id={}",
-        resource_type,
-        id
+        delete_type,
+        delete_id
     );
     Ok(())
 }
@@ -3941,122 +3934,129 @@ pub async fn dstu_restore(
         }
     };
 
+    let (restore_type, restore_id) = if matches!(resource_type.as_str(), "resources" | "resource") {
+        let conn = vfs_db.get_conn_safe().map_err(|e| e.to_string())?;
+        resolve_delete_target_with_conn(&conn, &resource_type, &id)?
+    } else {
+        (resource_type.clone(), id.clone())
+    };
+
     // 使用统一的 restore_resource_by_type 处理所有类型
-    if let Err(e) = restore_resource_by_type(&vfs_db, &resource_type, &id) {
+    if let Err(e) = restore_resource_by_type(&vfs_db, &restore_type, &restore_id) {
         log::error!(
             "[DSTU::handlers] dstu_restore: FAILED - type={}, id={}, error={}",
-            resource_type,
-            id,
+            restore_type,
+            restore_id,
             e
         );
         return Err(e);
     }
 
     // 恢复成功后获取资源节点信息
-    let node = match resource_type.as_str() {
-        "notes" | "note" => match VfsNoteRepo::get_note(&vfs_db, &id) {
+    let node = match restore_type.as_str() {
+        "notes" | "note" => match VfsNoteRepo::get_note(&vfs_db, &restore_id) {
             Ok(Some(n)) => Some(note_to_dstu_node(&n)),
             Ok(None) => {
                 log::warn!(
                     "[DSTU::handlers] dstu_restore: note not found after restore, id={}",
-                    id
+                    restore_id
                 );
                 None
             }
             Err(e) => {
                 log::warn!(
                     "[DSTU::handlers] dstu_restore: get_note error, id={}, error={}",
-                    id,
+                    restore_id,
                     e
                 );
                 None
             }
         },
-        "textbooks" | "textbook" => match VfsTextbookRepo::get_textbook(&vfs_db, &id) {
+        "textbooks" | "textbook" => match VfsTextbookRepo::get_textbook(&vfs_db, &restore_id) {
             Ok(Some(t)) => Some(textbook_to_dstu_node(&t)),
             Ok(None) => {
                 log::warn!(
                     "[DSTU::handlers] dstu_restore: textbook not found after restore, id={}",
-                    id
+                    restore_id
                 );
                 None
             }
             Err(e) => {
                 log::warn!(
                     "[DSTU::handlers] dstu_restore: get_textbook error, id={}, error={}",
-                    id,
+                    restore_id,
                     e
                 );
                 None
             }
         },
-        "translations" | "translation" => match VfsTranslationRepo::get_translation(&vfs_db, &id) {
+        "translations" | "translation" => match VfsTranslationRepo::get_translation(&vfs_db, &restore_id) {
             Ok(Some(t)) => Some(translation_to_dstu_node(&t)),
             Ok(None) => {
                 log::warn!(
                     "[DSTU::handlers] dstu_restore: translation not found after restore, id={}",
-                    id
+                    restore_id
                 );
                 None
             }
             Err(e) => {
                 log::warn!(
                     "[DSTU::handlers] dstu_restore: get_translation error, id={}, error={}",
-                    id,
+                    restore_id,
                     e
                 );
                 None
             }
         },
-        "exams" | "exam" => match VfsExamRepo::get_exam_sheet(&vfs_db, &id) {
+        "exams" | "exam" => match VfsExamRepo::get_exam_sheet(&vfs_db, &restore_id) {
             Ok(Some(e)) => Some(exam_to_dstu_node(&e)),
             Ok(None) => {
                 log::warn!(
                     "[DSTU::handlers] dstu_restore: exam not found after restore, id={}",
-                    id
+                    restore_id
                 );
                 None
             }
             Err(e) => {
                 log::warn!(
                     "[DSTU::handlers] dstu_restore: get_exam_sheet error, id={}, error={}",
-                    id,
+                    restore_id,
                     e
                 );
                 None
             }
         },
         "essays" | "essay" => {
-            if id.starts_with("essay_session_") {
-                match VfsEssayRepo::get_session(&vfs_db, &id) {
+            if restore_id.starts_with("essay_session_") {
+                match VfsEssayRepo::get_session(&vfs_db, &restore_id) {
                     Ok(Some(s)) => Some(session_to_dstu_node(&s)),
                     Ok(None) => {
-                        log::warn!("[DSTU::handlers] dstu_restore: essay_session not found after restore, id={}", id);
+                        log::warn!("[DSTU::handlers] dstu_restore: essay_session not found after restore, id={}", restore_id);
                         None
                     }
                     Err(e) => {
                         log::warn!(
                             "[DSTU::handlers] dstu_restore: get_session error, id={}, error={}",
-                            id,
+                            restore_id,
                             e
                         );
                         None
                     }
                 }
             } else {
-                match VfsEssayRepo::get_essay(&vfs_db, &id) {
+                match VfsEssayRepo::get_essay(&vfs_db, &restore_id) {
                     Ok(Some(e)) => Some(essay_to_dstu_node(&e)),
                     Ok(None) => {
                         log::warn!(
                             "[DSTU::handlers] dstu_restore: essay not found after restore, id={}",
-                            id
+                            restore_id
                         );
                         None
                     }
                     Err(e) => {
                         log::warn!(
                             "[DSTU::handlers] dstu_restore: get_essay error, id={}, error={}",
-                            id,
+                            restore_id,
                             e
                         );
                         None
@@ -4064,57 +4064,57 @@ pub async fn dstu_restore(
                 }
             }
         }
-        "folders" | "folder" => match VfsFolderRepo::get_folder(&vfs_db, &id) {
+        "folders" | "folder" => match VfsFolderRepo::get_folder(&vfs_db, &restore_id) {
             Ok(Some(f)) => Some(DstuNode::folder(&f.id, &path, &f.title)),
             Ok(None) => {
                 log::warn!(
                     "[DSTU::handlers] dstu_restore: folder not found after restore, id={}",
-                    id
+                    restore_id
                 );
                 None
             }
             Err(e) => {
                 log::warn!(
                     "[DSTU::handlers] dstu_restore: get_folder error, id={}, error={}",
-                    id,
+                    restore_id,
                     e
                 );
                 None
             }
         },
         "images" | "files" | "attachments" | "image" | "file" | "attachment" => {
-            match VfsFileRepo::get_file(&vfs_db, &id) {
+            match VfsFileRepo::get_file(&vfs_db, &restore_id) {
                 Ok(Some(f)) => Some(file_to_dstu_node(&f)),
                 Ok(None) => {
                     log::warn!(
                         "[DSTU::handlers] dstu_restore: file not found after restore, id={}",
-                        id
+                        restore_id
                     );
                     None
                 }
                 Err(e) => {
                     log::warn!(
                         "[DSTU::handlers] dstu_restore: get_file error, id={}, error={}",
-                        id,
+                        restore_id,
                         e
                     );
                     None
                 }
             }
         }
-        "mindmaps" | "mindmap" => match VfsMindMapRepo::get_mindmap(&vfs_db, &id) {
+        "mindmaps" | "mindmap" => match VfsMindMapRepo::get_mindmap(&vfs_db, &restore_id) {
             Ok(Some(m)) => Some(mindmap_to_dstu_node(&m)),
             Ok(None) => {
                 log::warn!(
                     "[DSTU::handlers] dstu_restore: mindmap not found after restore, id={}",
-                    id
+                    restore_id
                 );
                 None
             }
             Err(e) => {
                 log::warn!(
                     "[DSTU::handlers] dstu_restore: get_mindmap error, id={}, error={}",
-                    id,
+                    restore_id,
                     e
                 );
                 None
@@ -4167,9 +4167,16 @@ pub async fn dstu_purge(
         }
     };
 
+    let (purge_type, purge_id) = if matches!(resource_type.as_str(), "resources" | "resource") {
+        let conn = vfs_db.get_conn_safe().map_err(|e| e.to_string())?;
+        resolve_delete_target_with_conn(&conn, &resource_type, &id)?
+    } else {
+        (resource_type.clone(), id.clone())
+    };
+
     // ★ P1 防护：验证资源已在回收站，防止对活跃资源执行永久删除
     {
-        let trash_check_type = match resource_type.as_str() {
+        let trash_check_type = match purge_type.as_str() {
             "notes" | "note" => "note",
             "textbooks" | "textbook" => "textbook",
             "images" | "image" | "files" | "file" | "attachments" | "attachment" => "file",
@@ -4180,47 +4187,30 @@ pub async fn dstu_purge(
             "mindmaps" | "mindmap" => "mindmap",
             _ => "",
         };
-        if !trash_check_type.is_empty() && !is_resource_in_trash(&vfs_db, trash_check_type, &id) {
+        if !trash_check_type.is_empty() && !is_resource_in_trash(&vfs_db, trash_check_type, &purge_id) {
             log::warn!(
                 "[DSTU::handlers] dstu_purge: REJECTED - resource not in trash, type={}, id={}",
-                resource_type,
-                id
+                purge_type,
+                purge_id
             );
             return Err(format!(
                 "资源 {} (type={}) 不在回收站中，无法永久删除。请先将其移到回收站。",
-                id, resource_type
+                purge_id, purge_type
             ));
         }
     }
 
     // ★ P1 修复：在 purge 之前查找 resource_id（purge 会删除数据库记录）
     let resource_id: Option<String> = vfs_db.get_conn_safe().ok().and_then(|conn| {
-        let sql = match resource_type.as_str() {
-            "notes" | "note" => Some("SELECT resource_id FROM notes WHERE id = ?1"),
-            "textbooks" | "textbook" | "images" | "image" | "files" | "file" | "attachments"
-            | "attachment" => Some("SELECT resource_id FROM files WHERE id = ?1"),
-            "exams" | "exam" => Some("SELECT resource_id FROM exam_sheets WHERE id = ?1"),
-            "translations" | "translation" => {
-                Some("SELECT resource_id FROM translations WHERE id = ?1")
-            }
-            "mindmaps" | "mindmap" => Some("SELECT resource_id FROM mindmaps WHERE id = ?1"),
-            _ => None,
-        };
-        sql.and_then(|s| {
-            conn.query_row(s, rusqlite::params![id], |row| {
-                row.get::<_, Option<String>>(0)
-            })
-            .ok()
-            .flatten()
-        })
+        lookup_resource_id_for_delete_target_with_conn(&conn, &purge_type, &purge_id)
     });
 
     // 使用统一的 purge_resource_by_type 处理所有类型
-    if let Err(e) = purge_resource_by_type(&vfs_db, &resource_type, &id) {
+    if let Err(e) = purge_resource_by_type(&vfs_db, &purge_type, &purge_id) {
         log::error!(
             "[DSTU::handlers] dstu_purge: FAILED - type={}, id={}, error={}",
-            resource_type,
-            id,
+            purge_type,
+            purge_id,
             e
         );
         return Err(e);
@@ -5017,30 +5007,7 @@ pub async fn dstu_delete_many(
             parsed_items
                 .iter()
                 .filter_map(|(_, resource_type, id)| {
-                    let sql = match resource_type.as_str() {
-                        "notes" | "note" => Some("SELECT resource_id FROM notes WHERE id = ?1"),
-                        "textbooks" | "textbook" | "images" | "image" | "files" | "file"
-                        | "attachments" | "attachment" => {
-                            Some("SELECT resource_id FROM files WHERE id = ?1")
-                        }
-                        "exams" | "exam" => {
-                            Some("SELECT resource_id FROM exam_sheets WHERE id = ?1")
-                        }
-                        "translations" | "translation" => {
-                            Some("SELECT resource_id FROM translations WHERE id = ?1")
-                        }
-                        "mindmaps" | "mindmap" => {
-                            Some("SELECT resource_id FROM mindmaps WHERE id = ?1")
-                        }
-                        _ => None,
-                    };
-                    sql.and_then(|s| {
-                        conn.query_row(s, rusqlite::params![id], |row| {
-                            row.get::<_, Option<String>>(0)
-                        })
-                        .ok()
-                        .flatten()
-                    })
+                    lookup_resource_id_for_delete_target_with_conn(&conn, resource_type, id)
                 })
                 .collect()
         } else {
@@ -5069,11 +5036,13 @@ pub async fn dstu_delete_many(
                     } else {
                         Vec::new()
                     };
+                let (delete_type, delete_id) =
+                    resolve_delete_target_with_conn(&conn, resource_type, id)?;
 
                 // 使用支持外部事务的删除函数
-                delete_resource_by_type_with_conn(&conn, resource_type, id)?;
+                delete_resource_by_type_with_conn(&conn, &delete_type, &delete_id)?;
                 if folder_delete_targets.is_empty() {
-                    deleted.push((path.clone(), resource_type.clone(), id.clone()));
+                    deleted.push((path.clone(), delete_type, delete_id));
                 } else {
                     deleted.extend(
                         folder_delete_targets

@@ -45,8 +45,9 @@ pub use list_helpers::{
 
 // 重导出删除辅助函数
 pub use delete_helpers::{
-    delete_resource_by_type, delete_resource_by_type_with_conn, purge_resource_by_type,
-    restore_resource_by_type, restore_resource_by_type_with_conn,
+    delete_resource_by_type, delete_resource_by_type_with_conn,
+    lookup_resource_id_for_delete_target_with_conn, purge_resource_by_type,
+    resolve_delete_target_with_conn, restore_resource_by_type, restore_resource_by_type_with_conn,
 };
 
 // 重导出内容辅助函数
