@@ -281,6 +281,7 @@ export const IndexStatusView: React.FC = () => {
   const [batchIndexing, setBatchIndexing] = useState(false);
   const [batchProgress, setBatchProgress] = useState(0);
   const [batchMessage, setBatchMessage] = useState('');
+  const batchCompletionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ========== 数据透视状态 ==========
   const [inspectingResourceId, setInspectingResourceId] = useState<string | null>(null);
@@ -377,7 +378,13 @@ export const IndexStatusView: React.FC = () => {
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+      if (batchCompletionTimerRef.current) {
+        clearTimeout(batchCompletionTimerRef.current);
+        batchCompletionTimerRef.current = null;
+      }
+    };
   }, []);
 
   // ========== 监听后端索引进度事件 ==========
@@ -409,6 +416,10 @@ export const IndexStatusView: React.FC = () => {
 
         switch (payload.type) {
           case 'batch_started':
+            if (batchCompletionTimerRef.current) {
+              clearTimeout(batchCompletionTimerRef.current);
+              batchCompletionTimerRef.current = null;
+            }
             setBatchIndexing(true);
             setBatchProgress(0);
             setBatchMessage(payload.message || t('indexStatus.notification.batchStarting'));
@@ -435,7 +446,7 @@ export const IndexStatusView: React.FC = () => {
             setBatchMessage(payload.message || t('indexStatus.notification.autoOcrCompleted'));
             break;
           case 'batch_completed':
-            setBatchIndexing(false);
+            setBatchIndexing(true);
             setBatchProgress(100);
             setBatchMessage(payload.message || t('indexStatus.notification.batchCompleted'));
             if ((payload.total ?? 0) === 0) {
@@ -444,12 +455,16 @@ export const IndexStatusView: React.FC = () => {
               showGlobalNotification('success', t('indexStatus.notification.batchCompleted'), t('indexStatus.notification.batchCompletedDetail', { success: payload.successCount, fail: payload.failCount }));
             }
             loadData(); // 刷新列表
-            // ★ 2026-02 修复：setTimeout 添加卸载保护
-            setTimeout(() => {
+            if (batchCompletionTimerRef.current) {
+              clearTimeout(batchCompletionTimerRef.current);
+            }
+            batchCompletionTimerRef.current = setTimeout(() => {
+              batchCompletionTimerRef.current = null;
               if (!mountedRef.current) return;
+              setBatchIndexing(false);
               setBatchProgress(0);
               setBatchMessage('');
-            }, 2000);
+            }, 600);
             break;
           case 'started':
           case 'completed':
@@ -659,7 +674,9 @@ export const IndexStatusView: React.FC = () => {
       let batchFailed = false;
       try {
         await batchIndexPending();
-        setBatchIndexing(false);
+        if (!batchCompletionTimerRef.current) {
+          setBatchIndexing(false);
+        }
         await loadData();
       } catch (err: unknown) {
         debugLog.error('[IndexStatusView] OCR 文本索引失败:', err);
@@ -1545,7 +1562,7 @@ export const IndexStatusView: React.FC = () => {
           </div>
 
           {/* 进度条（如果有） */}
-          {(batchIndexing || batchProgress > 0) && (
+          {batchIndexing && (
             <div className="space-y-1 bg-muted/30 p-2 rounded-md">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-medium truncate">{batchMessage}</span>
@@ -1661,7 +1678,7 @@ export const IndexStatusView: React.FC = () => {
             {/* 动态提示与进度 */}
             <div className="space-y-2">
               {/* 批量索引进度条 */}
-              {(batchIndexing || batchProgress > 0) && (
+              {batchIndexing && (
                 <div className="space-y-1.5 bg-muted/30 p-2 rounded-md">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-medium">{batchMessage}</span>

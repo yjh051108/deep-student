@@ -1,6 +1,6 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const invokeMock = vi.fn();
 const getAllIndexStatusMock = vi.fn();
@@ -8,13 +8,17 @@ const batchIndexPendingMock = vi.fn();
 const listDimensionsMock = vi.fn();
 const showGlobalNotificationMock = vi.fn();
 const vfsIndexResourceBySourceMock = vi.fn();
+const eventListeners = new Map<string, Array<(event: { payload: unknown }) => void>>();
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
 }));
 
 vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn(async () => vi.fn()),
+  listen: vi.fn(async (event: string, callback: (event: { payload: unknown }) => void) => {
+    eventListeners.set(event, [...(eventListeners.get(event) ?? []), callback]);
+    return vi.fn();
+  }),
 }));
 
 vi.mock('@/hooks/useBreakpoint', () => ({
@@ -140,6 +144,8 @@ const summary = (overrides = {}) => ({
 describe('IndexStatusView behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
+    eventListeners.clear();
     listDimensionsMock.mockResolvedValue([]);
     batchIndexPendingMock.mockResolvedValue({ successCount: 2, failCount: 0, total: 2 });
     vfsIndexResourceBySourceMock.mockResolvedValue({ indexedPages: 1 });
@@ -150,6 +156,10 @@ describe('IndexStatusView behavior', () => {
       modelName: 'VL Embedding',
       model: 'vl-embedding',
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('renders text, image, and aggregate progress from distinct backend counters', async () => {
@@ -213,5 +223,53 @@ describe('IndexStatusView behavior', () => {
       'indexStatus.notification.hint',
       'indexStatus.progress.imageIndexCapability.notConfigured'
     );
+  });
+
+  it('keeps batch completion visible until the completion timer clears it', async () => {
+    let resolveBatch: (value: unknown) => void = () => {};
+    batchIndexPendingMock.mockReturnValue(new Promise((resolve) => {
+      resolveBatch = resolve;
+    }));
+    getAllIndexStatusMock.mockResolvedValue(summary({
+      indexedCount: 7,
+      pendingCount: 2,
+      displayPendingCount: 2,
+      resources: [],
+    }));
+
+    render(<IndexStatusView />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /indexStatus\.action\.oneClickIndex/ }));
+    await waitFor(() => expect(batchIndexPendingMock).toHaveBeenCalledTimes(1));
+
+    vi.useFakeTimers();
+    act(() => {
+      for (const listener of eventListeners.get('vfs-index-progress') ?? []) {
+        listener({
+          payload: {
+            type: 'batch_completed',
+            total: 2,
+            successCount: 2,
+            failCount: 0,
+            message: 'Done',
+          },
+        });
+      }
+    });
+
+    expect(screen.getAllByRole('progressbar').some((node) => node.getAttribute('aria-valuenow') === '100')).toBe(true);
+
+    await act(async () => {
+      resolveBatch({ successCount: 2, failCount: 0, total: 2 });
+      await Promise.resolve();
+    });
+    expect(screen.getAllByRole('progressbar').some((node) => node.getAttribute('aria-valuenow') === '100')).toBe(true);
+
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(screen.queryByText('Done')).toBeNull();
+
+    vi.useRealTimers();
   });
 });
