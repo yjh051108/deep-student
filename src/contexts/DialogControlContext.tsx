@@ -8,7 +8,10 @@ import {
   type McpServer,
   type McpTool,
 } from '../mcp/builtinMcpServer';
-import { setAvailableSearchEngines as updateSearchEngineCache } from '../mcp/searchEngineAvailability';
+import {
+  setAvailableSearchEngines as updateSearchEngineCache,
+  setSelectedSearchEngines as updateSelectedSearchEngineCache,
+} from '../mcp/searchEngineAvailability';
 
 export type { McpServer, McpTool };
 
@@ -507,6 +510,10 @@ export const DialogControlProvider: React.FC<{ children: React.ReactNode }> = ({
   loadPersistedSelectionsRef.current = loadPersistedSelections;
   const cleanSelectionsRef = React.useRef(cleanSelectionsAgainstAvailability);
   cleanSelectionsRef.current = cleanSelectionsAgainstAvailability;
+
+  React.useEffect(() => {
+    updateSelectedSearchEngineCache(selectedSearchEngines);
+  }, [selectedSearchEngines]);
 
   React.useEffect(() => {
     const handler = async (event: Event) => {

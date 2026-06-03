@@ -64,7 +64,7 @@ import { skillRegistry } from '../skills/registry';
 import { SKILL_INSTRUCTION_TYPE_ID } from '../skills/types';
 import { groupCache } from '../core/store/groupCache';
 import { BUILTIN_SERVER_ID } from '@/mcp/builtinMcpServer';
-import { getAvailableSearchEngines } from '@/mcp/searchEngineAvailability';
+import { getActiveSearchEngines } from '@/mcp/searchEngineAvailability';
 import { debugLog } from '@/debug-panel/debugMasterSwitch';
 import {
   LOAD_SKILLS_TOOL_SCHEMA,
@@ -4013,19 +4013,19 @@ export class ChatV2TauriAdapter {
     }
 
     const loadedTools = Array.from(loadedToolsByKey.values());
-    const availableEngines = getAvailableSearchEngines();
+    const activeSearchEngines = getActiveSearchEngines();
     for (const tool of loadedTools) {
       let inputSchema = tool.inputSchema;
       // 🔧 动态注入可用搜索引擎到 web_search 工具，避免 LLM 尝试未配置的引擎
-      if (tool.name === 'builtin-web_search' && availableEngines.length > 0) {
+      if (tool.name === 'builtin-web_search' && activeSearchEngines.length > 0) {
         const schemaObj = inputSchema as unknown as Record<string, unknown>;
         const existingProps = (schemaObj?.properties as Record<string, unknown>) ?? {};
         const newProps = {
           ...existingProps,
           engine: {
             type: 'string',
-            enum: availableEngines,
-            description: `可用的搜索引擎：${availableEngines.join(', ')}。如果不指定，使用默认配置的引擎。`,
+            enum: activeSearchEngines,
+            description: `可用的搜索引擎：${activeSearchEngines.join(', ')}。如果不指定，使用默认配置的引擎。`,
           },
         };
         inputSchema = { ...schemaObj, properties: newProps } as unknown as typeof inputSchema;

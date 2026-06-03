@@ -844,6 +844,21 @@ impl ProviderKeys {
             _ => false,
         }
     }
+
+    pub fn first_configured_engine(&self) -> Option<String> {
+        [
+            "tavily",
+            "google_cse",
+            "brave",
+            "serpapi",
+            "searxng",
+            "bocha",
+            "zhipu",
+        ]
+        .into_iter()
+        .find(|engine| self.has_valid_keys(engine))
+        .map(str::to_string)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -983,6 +998,29 @@ impl Default for ToolConfig {
 }
 
 impl ToolConfig {
+    fn resolve_engine(&self, requested: Option<String>) -> String {
+        if let Some(engine) = requested.as_ref() {
+            if self.keys.has_valid_keys(engine) {
+                return engine.clone();
+            }
+        }
+
+        if let Some(engine) = self.keys.first_configured_engine() {
+            if let Some(requested_engine) = requested.as_ref() {
+                log::info!(
+                    "[web_search] requested engine '{}' is not configured; using configured engine '{}'",
+                    requested_engine,
+                    engine
+                );
+            }
+            return engine;
+        }
+
+        requested
+            .or_else(|| self.default_engine.clone())
+            .unwrap_or_else(|| "zhipu".into())
+    }
+
     /// 统一应用数据库配置覆盖。所有搜索执行路径必须调用此方法。
     ///
     /// - `get_s`: 读取非敏感设置 (对应 `db.get_setting`)
@@ -2670,12 +2708,11 @@ pub async fn do_search(cfg: &ToolConfig, mut input: SearchInput) -> ToolResult {
         }
     }
 
-    let engine = input
-        .force_engine
-        .clone()
-        .or_else(|| input.engine.clone())
-        .or_else(|| cfg.default_engine.clone())
-        .unwrap_or_else(|| "zhipu".into()); // 默认使用智谱作为国内可用的搜索引擎
+    let engine = if let Some(force_engine) = input.force_engine.clone() {
+        force_engine
+    } else {
+        cfg.resolve_engine(input.engine.clone().or_else(|| cfg.default_engine.clone()))
+    };
 
     if let Some(custom_range) = input
         .time_range
@@ -2987,5 +3024,24 @@ mod tests {
         }
         assert!(host_allowed(&cfg, "https://www.example.com/page"));
         assert!(!host_allowed(&cfg, "https://othersite.org/page"));
+    }
+
+    #[test]
+    fn t_resolve_engine_uses_configured_provider_when_requested_provider_has_no_key() {
+        let mut cfg = ToolConfig::default();
+        cfg.default_engine = Some("zhipu".into());
+        cfg.keys.tavily = Some("tvly-test-key".into());
+        cfg.keys.zhipu = None;
+
+        assert_eq!(cfg.resolve_engine(Some("zhipu".into())), "tavily");
+    }
+
+    #[test]
+    fn t_resolve_engine_keeps_requested_provider_with_valid_key() {
+        let mut cfg = ToolConfig::default();
+        cfg.keys.tavily = Some("tvly-test-key".into());
+        cfg.keys.zhipu = Some("zhipu-test-key".into());
+
+        assert_eq!(cfg.resolve_engine(Some("zhipu".into())), "zhipu");
     }
 }

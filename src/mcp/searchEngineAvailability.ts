@@ -10,6 +10,7 @@ import { debugLog } from '../debug-panel/debugMasterSwitch';
 
 // 模块级缓存
 let cachedAvailableEngines: string[] = [];
+let cachedSelectedEngines: string[] = [];
 let cacheTimestamp = 0;
 
 // 缓存有效期（5 分钟）
@@ -28,6 +29,12 @@ export function setAvailableSearchEngines(engines: string[]): void {
   debugLog.log('[SearchEngineAvailability] Updated cache:', cachedAvailableEngines);
 }
 
+export function setSelectedSearchEngines(engines: string[]): void {
+  cachedSelectedEngines = engines.filter(
+    (e): e is SearchEngineId => ALL_SEARCH_ENGINE_IDS.includes(e as SearchEngineId)
+  );
+}
+
 /**
  * 获取可用的搜索引擎列表
  * 需要用户配置 API Key 才能使用搜索引擎
@@ -42,6 +49,13 @@ export function getAvailableSearchEngines(): string[] {
   return [];
 }
 
+export function getActiveSearchEngines(): string[] {
+  const available = getAvailableSearchEngines();
+  if (cachedSelectedEngines.length === 0) return available;
+  const availableSet = new Set(available);
+  return cachedSelectedEngines.filter((engine) => availableSet.has(engine));
+}
+
 /**
  * 检查缓存是否已初始化
  */
@@ -54,5 +68,6 @@ export function isSearchEnginesCacheReady(): boolean {
  */
 export function clearSearchEnginesCache(): void {
   cachedAvailableEngines = [];
+  cachedSelectedEngines = [];
   cacheTimestamp = 0;
 }

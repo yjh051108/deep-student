@@ -683,33 +683,32 @@ impl Tool for WebSearchTool {
         // 1.5) 强校验引擎可用性（测试模式下跳过此检查）
         let is_test_mode = ctx.stage == Some("test");
         if !is_test_mode {
+            input.force_engine = None;
+        }
+        if !is_test_mode {
             if let Some(db) = ctx.db {
                 if let Ok(Some(selected_engines)) =
                     db.get_setting("session.selected_search_engines")
                 {
-                    let allowed_engines: std::collections::HashSet<String> = selected_engines
+                    let allowed_engine_list: Vec<String> = selected_engines
                         .split(',')
                         .map(|s| s.trim().to_string())
                         .filter(|s| !s.is_empty())
                         .collect();
+                    let allowed_engines: std::collections::HashSet<String> =
+                        allowed_engine_list.iter().cloned().collect();
 
-                    // 如果指定了引擎参数，检查是否在允许列表中
+                    // 如果模型指定了未启用的引擎，收敛到用户当前选择，避免误走旧默认 provider。
                     if let Some(ref engine) = input.engine {
                         if !allowed_engines.contains(engine) {
-                            let allowed_list: Vec<String> =
-                                allowed_engines.iter().cloned().collect();
-                            return (
-                                false,
-                                None,
-                                Some(format!(
-                                    "引擎 '{}' 不在允许列表中。可用引擎: {}。请到设置页配置相应API密钥。",
+                            if let Some(selected) = allowed_engine_list.first().cloned() {
+                                log::info!(
+                                    "LLM 指定引擎 '{}' 未在当前选择中，改用用户选择的引擎 '{}'",
                                     engine,
-                                    allowed_list.join(", ")
-                                )),
-                                Some(json!({"elapsed_ms": 0, "available_engines": allowed_list})),
-                                None,
-                                None,
-                            );
+                                    selected
+                                );
+                                input.engine = Some(selected);
+                            }
                         }
                     }
                 }
@@ -730,26 +729,6 @@ impl Tool for WebSearchTool {
                 );
             }
         };
-
-        // 检查搜索引擎选择状态 - 如果未选择搜索引擎，工具和注入都不生效
-        // 但测试模式不受此限制（复用前面定义的 is_test_mode）
-        if !is_test_mode {
-            if let Some(db) = ctx.db {
-                if let Ok(Some(selected_engines)) =
-                    db.get_setting("session.selected_search_engines")
-                {
-                    if selected_engines.trim().is_empty() {
-                        let error_msg = "请在输入栏选择搜索引擎以启用外部搜索功能";
-                        log::debug!("外部搜索工具被跳过: 未选择搜索引擎");
-                        return (false, None, Some(error_msg.to_string()), None, None, None);
-                    }
-                } else {
-                    let error_msg = "请在输入栏选择搜索引擎以启用外部搜索功能";
-                    log::debug!("外部搜索工具被跳过: 未配置搜索引擎");
-                    return (false, None, Some(error_msg.to_string()), None, None, None);
-                }
-            }
-        }
 
         // Apply DB overrides if available — 使用统一方法
         if let Some(db) = ctx.db {

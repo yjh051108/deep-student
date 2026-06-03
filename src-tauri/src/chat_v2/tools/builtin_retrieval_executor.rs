@@ -1543,13 +1543,18 @@ impl BuiltinRetrievalExecutor {
                 );
             }
 
-            // 如果 LLM 没有指定引擎，使用用户选择的第一个引擎
-            if engine.is_none() && !selected_engines.is_empty() {
-                engine = Some(selected_engines[0].clone());
-                log::info!(
-                    "[BuiltinRetrievalExecutor] Using user-selected engine: {:?}",
-                    engine
-                );
+            if !selected_engines.is_empty() {
+                let requested_is_allowed = engine
+                    .as_deref()
+                    .map(|id| selected_engines.iter().any(|e| e == id))
+                    .unwrap_or(false);
+                if !requested_is_allowed {
+                    engine = Some(selected_engines[0].clone());
+                    log::info!(
+                        "[BuiltinRetrievalExecutor] Using user-selected engine: {:?}",
+                        engine
+                    );
+                }
             }
         }
 
