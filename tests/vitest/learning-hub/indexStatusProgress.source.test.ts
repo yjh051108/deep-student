@@ -17,8 +17,8 @@ describe('IndexStatusView progress display contract', () => {
   });
 
   it('renders text and image progress from their backend counters', () => {
-    expect(source).toContain('indexed: summary.indexedCount,');
-    expect(source).toContain('total: summary.totalResources,');
+    expect(source).toContain('indexed: summary.textIndexedCount,');
+    expect(source).toContain('total: summary.textTotalResources,');
     expect(source).toContain('indexed: summary.mmIndexedCount,');
     expect(source).toContain('total: summary.mmTotalResources,');
     expect(source).toContain("renderCount(textProgress.indexed, textProgress.total, t('indexStatus.progress.textIndexProgress'))");

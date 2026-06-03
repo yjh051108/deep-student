@@ -106,6 +106,8 @@ describe('Index status state source contract', () => {
     expect(apiSource).toContain('displayIndexState: string;');
     expect(apiSource).toContain('textIndexRetryable: boolean;');
     expect(apiSource).toContain('textQueueCount: number;');
+    expect(apiSource).toContain('textTotalResources: number;');
+    expect(apiSource).toContain('textIndexedCount: number;');
     expect(apiSource).toContain('displayTotalResources: number;');
     expect(apiSource).toContain('displayIndexedCount: number;');
     expect(apiSource).toContain('includeImageIndex?: boolean;');
@@ -132,6 +134,8 @@ describe('Index status state source contract', () => {
     expect(handlerSource).toContain('pub display_index_state: String');
     expect(handlerSource).toContain('pub text_index_retryable: bool');
     expect(handlerSource).toContain('pub text_queue_count: i32');
+    expect(handlerSource).toContain('pub text_total_resources: i32');
+    expect(handlerSource).toContain('pub text_indexed_count: i32');
     expect(handlerSource).toContain('pub display_total_resources: i32');
     expect(handlerSource).toContain('fn display_index_state_sql(');
     expect(handlerSource).toContain('fn effective_mm_index_state_sql(');
@@ -140,6 +144,8 @@ describe('Index status state source contract', () => {
     expect(handlerSource).toContain('list_conditions.push(format!("({}) = ?", list_display_state_sql));');
     expect(handlerSource).toContain("COALESCE(SUM(CASE WHEN {display_state} = 'indexed' THEN 1 ELSE 0 END), 0) as display_indexed");
     expect(handlerSource).toContain('as text_queue_count');
+    expect(handlerSource).toContain("COALESCE(SUM(CASE WHEN r.type != 'image' THEN 1 ELSE 0 END), 0) as text_total");
+    expect(handlerSource).toContain("COALESCE(SUM(CASE WHEN r.type != 'image'");
     expect(handlerSource).toContain('as text_index_retryable');
     expect(handlerSource).toContain('let list_business_mm_state_sql =');
     expect(handlerSource).toContain('let stats_business_mm_state_sql =');

@@ -4456,6 +4456,19 @@ pub struct IndexStatusSummary {
     pub stale_count: i32,
     /// 当前筛选范围内可被一键索引实际排队的文字资源数（与后端 claim 队列同口径）
     pub text_queue_count: i32,
+    // ========== 文字索引统计 ==========
+    /// 文字索引总资源数（不包含纯图片资源）
+    pub text_total_resources: i32,
+    /// 文字索引已完成数
+    pub text_indexed_count: i32,
+    /// 文字索引待处理数
+    pub text_pending_count: i32,
+    /// 文字索引处理中数
+    pub text_indexing_count: i32,
+    /// 文字索引失败数
+    pub text_failed_count: i32,
+    /// 文字索引禁用数
+    pub text_disabled_count: i32,
     // ========== 显示状态统计 ==========
     /// 显示总资源数（与资源列表同一状态口径）
     pub display_total_resources: i32,
@@ -4771,6 +4784,12 @@ END
             disabled_count: 0,
             stale_count: 0,
             text_queue_count: 0,
+            text_total_resources: 0,
+            text_indexed_count: 0,
+            text_pending_count: 0,
+            text_indexing_count: 0,
+            text_failed_count: 0,
+            text_disabled_count: 0,
             display_total_resources: 0,
             display_indexed_count: 0,
             display_pending_count: 0,
@@ -5252,12 +5271,24 @@ COALESCE(
                      AND r.index_hash IS NOT NULL AND r.index_hash != r.hash
                 THEN 1 ELSE 0 END), 0) as stale
             ,COALESCE(SUM(CASE
-                WHEN COALESCE(r.index_state, 'pending') != 'disabled'
+                WHEN r.type != 'image'
+                     AND COALESCE(r.index_state, 'pending') != 'disabled'
                      AND (
                         ({effective_text_state}) = 'pending'
                         OR (({effective_text_state}) = 'failed' AND COALESCE(r.index_retry_count, 0) < {max_retries})
                      )
                 THEN 1 ELSE 0 END), 0) as text_queue_count
+            ,COALESCE(SUM(CASE WHEN r.type != 'image' THEN 1 ELSE 0 END), 0) as text_total
+            ,COALESCE(SUM(CASE WHEN r.type != 'image'
+                AND {effective_text_state} = 'indexed' THEN 1 ELSE 0 END), 0) as text_indexed
+            ,COALESCE(SUM(CASE WHEN r.type != 'image'
+                AND {effective_text_state} = 'pending' THEN 1 ELSE 0 END), 0) as text_pending
+            ,COALESCE(SUM(CASE WHEN r.type != 'image'
+                AND {effective_text_state} = 'indexing' THEN 1 ELSE 0 END), 0) as text_indexing
+            ,COALESCE(SUM(CASE WHEN r.type != 'image'
+                AND {effective_text_state} = 'failed' THEN 1 ELSE 0 END), 0) as text_failed
+            ,COALESCE(SUM(CASE WHEN r.type != 'image'
+                AND {effective_text_state} = 'disabled' THEN 1 ELSE 0 END), 0) as text_disabled
             ,COUNT(*) as display_total
             ,COALESCE(SUM(CASE WHEN {display_state} = 'indexed' THEN 1 ELSE 0 END), 0) as display_indexed
             ,COALESCE(SUM(CASE WHEN {display_state} = 'pending' THEN 1 ELSE 0 END), 0) as display_pending
@@ -5296,7 +5327,11 @@ COALESCE(
         folder_join,
         stats_where_clause,
         effective_text_state = effective_text_state_sql,
-        display_state = display_index_state_sql(effective_text_state_sql, &stats_mm_state_sql, include_image_index),
+        display_state = display_index_state_sql(
+            effective_text_state_sql,
+            &stats_mm_state_sql,
+            include_image_index
+        ),
         stats_mm_state = stats_mm_state_sql,
         max_retries = max_retries
     );
@@ -5314,6 +5349,12 @@ COALESCE(
         disabled,
         stale,
         text_queue_count,
+        text_total,
+        text_indexed,
+        text_pending,
+        text_indexing,
+        text_failed,
+        text_disabled,
         display_total,
         display_indexed,
         display_pending,
@@ -5327,6 +5368,12 @@ COALESCE(
         mm_failed,
         mm_disabled,
     ): (
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
         i32,
         i32,
         i32,
@@ -5373,6 +5420,12 @@ COALESCE(
                     row.get(17)?,
                     row.get(18)?,
                     row.get(19)?,
+                    row.get(20)?,
+                    row.get(21)?,
+                    row.get(22)?,
+                    row.get(23)?,
+                    row.get(24)?,
+                    row.get(25)?,
                 ))
             },
         )
@@ -5391,6 +5444,12 @@ COALESCE(
         disabled_count: disabled,
         stale_count: stale,
         text_queue_count,
+        text_total_resources: text_total,
+        text_indexed_count: text_indexed,
+        text_pending_count: text_pending,
+        text_indexing_count: text_indexing,
+        text_failed_count: text_failed,
+        text_disabled_count: text_disabled,
         display_total_resources: display_total,
         display_indexed_count: display_indexed,
         display_pending_count: display_pending,

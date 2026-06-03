@@ -954,8 +954,8 @@ export const IndexStatusView: React.FC = () => {
     const imageIndexReady = imageIndexCapability === 'ready';
     const imageIndexMessage = t(`indexStatus.progress.imageIndexCapability.${imageIndexCapability}`);
     const textProgress = {
-      indexed: summary.indexedCount,
-      total: summary.totalResources,
+      indexed: summary.textIndexedCount,
+      total: summary.textTotalResources,
     };
     const imageProgress = {
       indexed: summary.mmIndexedCount,
