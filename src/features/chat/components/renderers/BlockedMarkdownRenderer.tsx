@@ -31,7 +31,6 @@ interface BlockedMarkdownRendererProps {
 interface SingleBlockProps {
   block: MarkdownBlock;
   isStreamingBlock: boolean;
-  deferRichEmbeds: boolean;
   onLinkClick?: (url: string) => void;
   extraRemarkPlugins?: any[];
   onCitationClick?: (type: string, index: number) => void;
@@ -45,7 +44,6 @@ const SingleBlock: React.FC<SingleBlockProps> = memo(
   ({
     block,
     isStreamingBlock,
-    deferRichEmbeds,
     onLinkClick,
     extraRemarkPlugins,
     onCitationClick,
@@ -55,7 +53,6 @@ const SingleBlock: React.FC<SingleBlockProps> = memo(
       <MarkdownRenderer
         content={block.raw}
         isStreaming={isStreamingBlock}
-        deferRichEmbeds={deferRichEmbeds}
         onLinkClick={onLinkClick}
         extraRemarkPlugins={extraRemarkPlugins}
         onCitationClick={onCitationClick}
@@ -71,7 +68,6 @@ const SingleBlock: React.FC<SingleBlockProps> = memo(
       prev.block.id === next.block.id &&
       prev.block.raw === next.block.raw &&
       prev.isStreamingBlock === next.isStreamingBlock &&
-      prev.deferRichEmbeds === next.deferRichEmbeds &&
       prev.onLinkClick === next.onLinkClick &&
       prev.extraRemarkPlugins === next.extraRemarkPlugins &&
       prev.onCitationClick === next.onCitationClick &&
@@ -111,7 +107,6 @@ export const BlockedMarkdownRenderer: React.FC<BlockedMarkdownRendererProps> = m
               key={block.id}
               block={block}
               isStreamingBlock={isStreamingBlock}
-              deferRichEmbeds={isStreaming}
               onLinkClick={onLinkClick}
               extraRemarkPlugins={extraRemarkPlugins}
               onCitationClick={onCitationClick}

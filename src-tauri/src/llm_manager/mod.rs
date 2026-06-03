@@ -969,6 +969,40 @@ mod tests {
     }
 
     #[test]
+    fn convert_openai_tool_call_rejects_lossy_mindmap_create_arg_repair() {
+        let tool_call = json!({
+            "id": "call_mindmap",
+            "type": "function",
+            "function": {
+                "name": "builtin-mindmap_create",
+                "arguments": r#"{"title":"复杂导图","content":{"version":"1.0","root":{"id":"root","text":"复杂导图","children":[{"id":"n1","text":"第一分支","children":[{"id":"n1-1","text":"半截节点""#
+            }
+        });
+
+        let err = LLMManager::convert_openai_tool_call(&tool_call)
+            .expect_err("mindmap create args must not be lossy-repaired and executed");
+        assert!(err.contains("builtin-mindmap_create"));
+        assert!(err.contains("without lossy repair"));
+    }
+
+    #[test]
+    fn convert_openai_tool_call_still_repairs_truncated_read_only_args() {
+        let tool_call = json!({
+            "id": "call_search",
+            "type": "function",
+            "function": {
+                "name": "resource_search",
+                "arguments": r#"{"query":"电磁场","types":["note""#
+            }
+        });
+
+        let converted = LLMManager::convert_openai_tool_call(&tool_call)
+            .expect("non-mutating tools can still use existing JSON repair");
+        assert_eq!(converted.tool_name, "resource_search");
+        assert_eq!(converted.args_json["query"], "电磁场");
+    }
+
+    #[test]
     fn registry_inference_matches_siliconflow_glm_46v() {
         let inferred = LLMManager::infer_capability_overrides_from_registry(
             "zai-org/GLM-4.6V",
@@ -5376,6 +5410,12 @@ impl LLMManager {
         let args_json: Value = match serde_json::from_str(arguments_str) {
             Ok(v) => v,
             Err(e) => {
+                if Self::reject_lossy_tool_arg_repair(&tool_name) {
+                    return Err(format!(
+                        "Failed to parse arguments JSON for {} without lossy repair: {}",
+                        tool_name, e
+                    ));
+                }
                 // 检测是否为截断导致的 EOF 错误
                 let err_msg = e.to_string();
                 if err_msg.contains("EOF")
@@ -5414,6 +5454,17 @@ impl LLMManager {
             tool_name,
             args_json,
         })
+    }
+
+    fn reject_lossy_tool_arg_repair(tool_name: &str) -> bool {
+        let normalized = tool_name
+            .trim()
+            .trim_start_matches("builtin-")
+            .trim_start_matches("builtin_");
+        matches!(
+            normalized,
+            "mindmap_create" | "mindmap_update" | "mindmap_edit_nodes"
+        )
     }
 
     /// 尝试修复被截断的工具调用 JSON

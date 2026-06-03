@@ -1926,6 +1926,20 @@ impl BuiltinResourceExecutor {
         }
 
         if let Some(obj) = node.as_object_mut() {
+            let has_valid_id = obj
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false);
+            if !has_valid_id {
+                let generated_id = if depth == 0 {
+                    "root".to_string()
+                } else {
+                    format!("n_{}", nanoid::nanoid!(8))
+                };
+                obj.insert("id".to_string(), json!(generated_id));
+            }
+
             // 如果没有 text 字段，尝试从 name/label/title/value 获取
             if !obj.contains_key("text")
                 || obj
@@ -1946,7 +1960,7 @@ impl BuiltinResourceExecutor {
             }
 
             // 确保有 children 数组
-            if !obj.contains_key("children") {
+            if !obj.get("children").map(|v| v.is_array()).unwrap_or(false) {
                 obj.insert("children".to_string(), json!([]));
             }
 
@@ -2039,6 +2053,12 @@ impl BuiltinResourceExecutor {
 
         // 🔧 修复：将 LLM 可能使用的错误字段名（name/label/title）映射到 text
         let content = Self::fix_mindmap_content(&raw_content);
+        if let Err(e) = Self::parse_mindmap_document(&content) {
+            return Err(format!(
+                "Invalid mindmap_create content: {}. The `content` argument must be a complete JSON object, not a partial JSON string. Retry with a much smaller skeleton: root + 3-5 top-level branches + at most 2 children per branch, then add details with mindmap_edit_nodes.",
+                e
+            ));
+        }
 
         let explicit_folder_id =
             resource_scope::normalize_folder_arg(call.arguments.get("folder_id"));
@@ -3547,6 +3567,23 @@ mod tests {
             BuiltinResourceExecutor::sanitize_read_resource_id("sourceId=exam_111。"),
             "exam_111"
         );
+    }
+
+    #[test]
+    fn test_fix_mindmap_content_normalizes_ids_and_children() {
+        let fixed = BuiltinResourceExecutor::fix_mindmap_content(
+            r#"{"root":{"title":"知识图谱","children":[{"label":"概念","children":null}]}}"#,
+        );
+        let doc: Value = serde_json::from_str(&fixed).unwrap();
+        let root = &doc["root"];
+        let child = &root["children"][0];
+
+        assert_eq!(root["id"], json!("root"));
+        assert_eq!(root["text"], json!("知识图谱"));
+        assert!(root["children"].is_array());
+        assert!(child["id"].as_str().unwrap_or("").starts_with("n_"));
+        assert_eq!(child["text"], json!("概念"));
+        assert_eq!(child["children"], json!([]));
     }
 
     #[test]

@@ -90,6 +90,18 @@ const markdownSanitizeSchema = {
   },
 };
 
+function containsMindmapCitation(children: React.ReactNode): boolean {
+  return React.Children.toArray(children).some((child) => {
+    if (!React.isValidElement(child)) return false;
+    if (child.type === MindmapCitationCard) return true;
+
+    const props = child.props as Record<string, unknown>;
+    if (props['data-mindmap-citation'] === 'true') return true;
+
+    return containsMindmapCitation(props.children as React.ReactNode);
+  });
+}
+
 function getCachedPdfPageImage(resourceId: string, pageIndex: number): string | undefined {
   const key = `${resourceId}:${pageIndex}`;
   return pdfPageImageCache.get(key);
@@ -124,8 +136,6 @@ interface MarkdownRendererProps {
   className?: string;
   // 当处于流式输出时，禁止触发 mermaid 运行
   isStreaming?: boolean;
-  // 整条消息仍在流式输出时，延迟挂载 ReactFlow 等重型内嵌预览
-  deferRichEmbeds?: boolean;
   // 可选的链接点击处理函数
   onLinkClick?: (url: string) => void;
   extraRemarkPlugins?: any[];
@@ -452,7 +462,6 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({
   content,
   className = '',
   isStreaming = false,
-  deferRichEmbeds = false,
   onLinkClick,
   extraRemarkPlugins = EMPTY_REMARK_PLUGINS,
   enableCitations,
@@ -686,12 +695,8 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({
             );
           },
           p: ({ children, ...props }: any) => {
-            const childArray = React.Children.toArray(children);
-            const hasMindmapCard = childArray.some((child) =>
-              React.isValidElement(child) && child.type === MindmapCitationCard
-            );
-            if (hasMindmapCard) {
-              return <div className="my-3">{children}</div>;
+            if (containsMindmapCitation(children)) {
+              return <div className="my-3 w-full min-w-0">{children}</div>;
             }
             return <p {...props}>{children}</p>;
           },
@@ -707,21 +712,21 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({
               const mindmapVersionId = props['data-mindmap-version-id'] as string | undefined;
               // ★ 2026-02 修复：读取 LLM 提供的标题信息，在加载期间显示
               const rawTitle = props['data-mindmap-title'] as string | undefined;
-              const displayTitle = rawTitle ? decodeURIComponent(rawTitle) : undefined;
-              if (isStreaming || deferRichEmbeds) {
-                return (
-                  <span className="mindmap-citation-placeholder">
-                    {displayTitle || mindmapId || mindmapVersionId || '思维导图'}
-                  </span>
-                );
-              }
-
+              const displayTitle = (() => {
+                if (!rawTitle) return undefined;
+                try {
+                  return decodeURIComponent(rawTitle);
+                } catch {
+                  return rawTitle;
+                }
+              })();
+              const citationId = mindmapId || mindmapVersionId;
+              if (!citationId) return null;
               return (
                 <MindmapCitationCard
                   mindmapId={mindmapId}
                   versionId={mindmapVersionId}
                   displayTitle={displayTitle}
-                  embedHeight={280}
                 />
               );
             }

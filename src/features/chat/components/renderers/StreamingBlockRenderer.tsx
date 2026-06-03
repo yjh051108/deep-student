@@ -77,10 +77,15 @@ const MemoizedBlock = memo<MemoizedBlockProps>(({
   blockId,
   messageId,
 }) => {
+  const hasExtendedMarkdownFeatures = Boolean(
+    onCitationClick ||
+    resolveCitationImage ||
+    (extraRemarkPlugins && extraRemarkPlugins.length > 0),
+  );
   const shouldUseFlowToken = shouldUseFullFlowTokenEffect(
     block,
     isActive && isStreaming,
-    false,
+    hasExtendedMarkdownFeatures,
   );
   const motionLayer = isActive && isStreaming ? 'inline' : 'block';
 
@@ -106,7 +111,6 @@ const MemoizedBlock = memo<MemoizedBlockProps>(({
         <MarkdownRenderer
           content={block.raw}
           isStreaming={isActive && isStreaming}
-          deferRichEmbeds={isStreaming}
           onLinkClick={onLinkClick}
           extraRemarkPlugins={extraRemarkPlugins}
           onCitationClick={onCitationClick}
@@ -120,7 +124,6 @@ const MemoizedBlock = memo<MemoizedBlockProps>(({
   if (prev.block.isComplete && next.block.isComplete && prev.block.raw === next.block.raw) {
     return (
       prev.isNew === next.isNew &&
-      prev.isStreaming === next.isStreaming &&
       prev.onLinkClick === next.onLinkClick &&
       prev.extraRemarkPlugins === next.extraRemarkPlugins
     );

@@ -44,8 +44,6 @@ export interface MindMapEmbedProps {
   versionId?: string;
   /** 容器高度（默认 300px） */
   height?: number;
-  /** 是否允许大图按节点数扩高；聊天气泡内应保持固定高度以避免流式布局跳动 */
-  autoExpandLargeMap?: boolean;
   /** 自定义类名 */
   className?: string;
   /** 点击打开回调 */
@@ -54,8 +52,10 @@ export interface MindMapEmbedProps {
   showOpenButton?: boolean;
   /** 外部传入的显示标题（加载期间 fallback 显示） */
   displayTitle?: string;
-  /** 预览不可用时是否使用紧凑错误态；聊天气泡内避免留下大空框 */
-  compactErrorFallback?: boolean;
+  /** 大导图是否扩展外层高度；聊天气泡内应关闭，避免流式结束后跳高留白 */
+  expandLargeMaps?: boolean;
+  /** 是否允许滚轮缩放；聊天气泡内应关闭，避免吞掉消息列表滚动 */
+  zoomOnScroll?: boolean;
 }
 
 interface LoadState {
@@ -66,6 +66,8 @@ interface LoadState {
   /** ★ 2026-02-13: 版本引用时保存父导图 ID，用于"打开导图"导航 */
   parentMindmapId: string | null;
 }
+
+const embedLoadCache = new Map<string, LoadState>();
 
 // 节点数阈值：超过此数量时使用 2 倍高度
 const LARGE_MAP_NODE_THRESHOLD = 10;
@@ -91,17 +93,21 @@ function countNodes(node: MindMapDocument['root']): number {
 interface MindMapEmbedInnerProps {
   document: MindMapDocument;
   metadata: VfsMindMap | null;
+  zoomOnScroll: boolean;
 }
 
-const MindMapEmbedInner: React.FC<MindMapEmbedInnerProps> = ({ document }) => {
+const MindMapEmbedInner: React.FC<MindMapEmbedInnerProps> = ({ document, zoomOnScroll }) => {
   ensureInitialized();
   const { t } = useTranslation('mindmap');
   const { fitView, zoomIn, zoomOut } = useReactFlow();
+  const containerRef = useRef<HTMLDivElement>(null);
   const hasFitView = useRef(false);
+  const fitViewRafRef = useRef<number | null>(null);
+  const lastFitSizeRef = useRef({ width: 0, height: 0 });
 
   // ★ 2026-02 修复：Embed 使用独立的默认配置，不订阅全局 store
   // 避免主编辑器切换布局/样式时导致所有 Embed 实例重新渲染
-  const measuredNodeHeights: Record<string, number> = {};
+  const measuredNodeHeights = useMemo<Record<string, number>>(() => ({}), []);
   const [isBothLayout, setIsBothLayout] = useState(true);
   const layoutId = isBothLayout ? 'balanced' : 'tree';
   const layoutDirection = isBothLayout ? 'both' : 'right';
@@ -138,6 +144,34 @@ const MindMapEmbedInner: React.FC<MindMapEmbedInnerProps> = ({ document }) => {
   const handleZoomIn = useCallback(() => zoomIn({ duration: 200 }), [zoomIn]);
   const handleZoomOut = useCallback(() => zoomOut({ duration: 200 }), [zoomOut]);
   const handleFitView = useCallback(() => fitView({ padding: 0.15, duration: 200 }), [fitView]);
+  const scheduleFitView = useCallback((duration = 0, force = false) => {
+    if (fitViewRafRef.current !== null) {
+      cancelAnimationFrame(fitViewRafRef.current);
+    }
+    fitViewRafRef.current = requestAnimationFrame(() => {
+      fitViewRafRef.current = requestAnimationFrame(() => {
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect || rect.width < 2 || rect.height < 2) {
+          fitViewRafRef.current = null;
+          return;
+        }
+
+        const previous = lastFitSizeRef.current;
+        if (
+          !force &&
+          Math.abs(rect.width - previous.width) < 2 &&
+          Math.abs(rect.height - previous.height) < 2
+        ) {
+          fitViewRafRef.current = null;
+          return;
+        }
+
+        lastFitSizeRef.current = { width: rect.width, height: rect.height };
+        fitView({ padding: 0.18, duration });
+        fitViewRafRef.current = null;
+      });
+    });
+  }, [fitView]);
 
   // 计算布局
   const { nodes, edges } = useMemo(() => {
@@ -217,23 +251,36 @@ const MindMapEmbedInner: React.FC<MindMapEmbedInnerProps> = ({ document }) => {
     if (nodes.length === 0) return;
     if (!hasFitView.current) {
       hasFitView.current = true;
-      // 延迟执行 fitView，确保 ReactFlow 已完成初始化
-      const timer = setTimeout(() => {
-        fitView({ padding: 0.15, duration: 0 });
-      }, 100);
-      return () => clearTimeout(timer);
+      scheduleFitView(0, true);
     }
-  }, [nodes.length, fitView, isBothLayout]);
+  }, [nodes.length, isBothLayout, scheduleFitView]);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element || nodes.length === 0) return;
+    const observer = new ResizeObserver(() => {
+      scheduleFitView(0);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [nodes.length, scheduleFitView]);
+
+  useEffect(() => {
+    return () => {
+      if (fitViewRafRef.current !== null) {
+        cancelAnimationFrame(fitViewRafRef.current);
+      }
+    };
+  }, []);
 
   return (
-    <div className="w-full h-full relative">
+    <div ref={containerRef} className="w-full h-full relative">
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         defaultEdgeOptions={{ type: defaultEdgeType }}
-        fitView
         fitViewOptions={{ padding: REACTFLOW_CONFIG.fitViewPadding }}
         minZoom={0.1}
         maxZoom={1.5}
@@ -242,7 +289,7 @@ const MindMapEmbedInner: React.FC<MindMapEmbedInnerProps> = ({ document }) => {
         nodesConnectable={false}
         elementsSelectable={false}
         panOnScroll={false}
-        zoomOnScroll={true}
+        zoomOnScroll={zoomOnScroll}
         zoomOnDoubleClick={false}
         panOnDrag={true}
         // 隐藏交互元素
@@ -322,23 +369,26 @@ export const MindMapEmbed: React.FC<MindMapEmbedProps> = ({
   mindmapId,
   versionId,
   height = 280,
-  autoExpandLargeMap = true,
   className,
   onOpen,
   showOpenButton = true,
   displayTitle,
-  compactErrorFallback = false,
+  expandLargeMaps = true,
+  zoomOnScroll = true,
 }) => {
   const { t } = useTranslation('mindmap');
-  const [state, setState] = useState<LoadState>({
-    loading: true,
-    error: null,
-    metadata: null,
-    document: null,
-    parentMindmapId: null,
-  });
-
   const targetId = mindmapId || versionId;
+  const [state, setState] = useState<LoadState>(() => {
+    const cached = targetId ? embedLoadCache.get(targetId) : null;
+    return cached ?? {
+      loading: true,
+      error: null,
+      metadata: null,
+      document: null,
+      parentMindmapId: null,
+    };
+  });
+  const placeholderHeight = expandLargeMaps ? Math.min(height, 144) : height;
 
   // 计算节点数量
   const nodeCount = useMemo(() => {
@@ -350,9 +400,12 @@ export const MindMapEmbed: React.FC<MindMapEmbedProps> = ({
   const actualHeight = useMemo(() => {
     if (!state.document?.root) return height;
     const nodeCount = countNodes(state.document.root);
+    if (!expandLargeMaps) {
+      return height;
+    }
     // 节点数超过阈值时使用 2 倍高度
-    return autoExpandLargeMap && nodeCount > LARGE_MAP_NODE_THRESHOLD ? height * 2 : height;
-  }, [autoExpandLargeMap, state.document, height]);
+    return nodeCount > LARGE_MAP_NODE_THRESHOLD ? height * 2 : height;
+  }, [expandLargeMaps, state.document, height]);
 
   // 加载思维导图数据
   useEffect(() => {
@@ -360,12 +413,18 @@ export const MindMapEmbed: React.FC<MindMapEmbedProps> = ({
 
     const loadMindMap = async () => {
       try {
-        setState(prev => ({ ...prev, loading: true, error: null }));
-
         if (!targetId) {
           setState(prev => ({ ...prev, loading: false, error: t('embed.notFound') }));
           return;
         }
+
+        const cached = embedLoadCache.get(targetId);
+        if (cached) {
+          setState(cached);
+          return;
+        }
+
+        setState(prev => ({ ...prev, loading: true, error: null }));
 
         const isVersionRef = targetId.startsWith('mv_');
         let metadata: VfsMindMap | null = null;
@@ -440,14 +499,16 @@ export const MindMapEmbed: React.FC<MindMapEmbedProps> = ({
           } as MindMapDocument;
         }
 
-        setState({
+        const nextState: LoadState = {
           loading: false,
           error: null,
           metadata,
           document,
           // ★ 2026-02-13: 版本引用时保存父导图 ID，用于打开按钮导航
           parentMindmapId: parentMmId,
-        });
+        };
+        embedLoadCache.set(targetId, nextState);
+        setState(nextState);
       } catch (err: unknown) {
         if (cancelled) return;
         console.error('[MindMapEmbed] Load failed:', err);
@@ -493,7 +554,7 @@ export const MindMapEmbed: React.FC<MindMapEmbedProps> = ({
           'bg-muted/30 border border-border/50',
           className
         )}
-        style={{ height }}
+        style={{ height: placeholderHeight }}
       >
         {displayTitle && (
           <span className="text-sm font-medium text-foreground/70 mb-2 truncate max-w-[80%]">
@@ -510,27 +571,6 @@ export const MindMapEmbed: React.FC<MindMapEmbedProps> = ({
 
   // 渲染错误状态
   if (state.error) {
-    if (compactErrorFallback) {
-      return (
-        <button
-          type="button"
-          onClick={handleOpen}
-          disabled={!showOpenButton}
-          className={cn(
-            'inline-flex max-w-full items-center gap-2 rounded-md px-2.5 py-1.5',
-            'bg-destructive/5 border border-destructive/20 text-destructive',
-            showOpenButton ? 'cursor-pointer hover:bg-destructive/10' : 'cursor-default',
-            className
-          )}
-        >
-          <WarningCircle size={16} className="shrink-0" />
-          <span className="truncate text-sm">
-            {displayTitle || state.metadata?.title || state.error}
-          </span>
-        </button>
-      );
-    }
-
     return (
       <div
         className={cn(
@@ -538,7 +578,7 @@ export const MindMapEmbed: React.FC<MindMapEmbedProps> = ({
           'bg-destructive/5 border border-destructive/20',
           className
         )}
-        style={{ height }}
+        style={{ height: placeholderHeight }}
       >
         <div className="flex items-center gap-2 text-destructive">
           <WarningCircle size={20} />
@@ -552,7 +592,7 @@ export const MindMapEmbed: React.FC<MindMapEmbedProps> = ({
   return (
     <div
       className={cn(
-        'mindmap-container relative rounded-lg overflow-hidden',
+        'mindmap-container relative w-full max-w-full min-w-0 rounded-lg overflow-hidden',
         'border border-border/50',
         'group',
         className
@@ -564,6 +604,7 @@ export const MindMapEmbed: React.FC<MindMapEmbedProps> = ({
         <MindMapEmbedInner
           document={state.document!}
           metadata={state.metadata}
+          zoomOnScroll={zoomOnScroll}
         />
       </ReactFlowProvider>
 

@@ -27,7 +27,7 @@ export interface MindmapCitationCardProps {
   displayTitle?: string;
   /** 自定义类名 */
   className?: string;
-  /** 嵌入式预览高度（默认 280px） */
+  /** 嵌入式预览高度（默认 220px） */
   embedHeight?: number;
 }
 
@@ -48,20 +48,24 @@ export const MindmapCitationCard: React.FC<MindmapCitationCardProps> = ({
   versionId,
   displayTitle,
   className,
-  embedHeight = 280,
+  embedHeight = 220,
 }) => {
+  if (!mindmapId && !versionId) {
+    return null;
+  }
+
   return (
-    <div className={cn('my-3 w-full', className)}>
+    <div className={cn('mindmap-citation-card my-3 block w-full max-w-full min-w-0', className)}>
       <MindMapEmbed
         mindmapId={mindmapId}
         versionId={versionId}
         height={embedHeight}
-        autoExpandLargeMap={false}
         // ★ 2026-02-13 修复：版本引用也显示打开按钮
         // MindMapEmbed 内部会自动从版本元数据获取父导图 ID 进行导航
         showOpenButton
         displayTitle={displayTitle}
-        compactErrorFallback
+        expandLargeMaps={false}
+        zoomOnScroll={false}
       />
     </div>
   );
