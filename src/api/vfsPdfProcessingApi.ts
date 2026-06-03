@@ -29,6 +29,8 @@ export interface PdfProcessingStatusResponse {
   mediaType?: string;
   /** 错误信息（error 状态时存在） */
   error?: string;
+  /** 已完成但存在问题的处理阶段 */
+  failedStages?: Array<{ stage: string; message: string; retriable?: boolean }>;
 }
 
 /**
@@ -38,6 +40,15 @@ export interface BatchPdfProcessingStatusResponse {
   /** 文件 ID 到状态的映射 */
   statuses: Record<string, PdfProcessingStatusResponse>;
 }
+
+export type PdfProcessingStartStage =
+  | 'pending'
+  | 'text_extraction'
+  | 'page_rendering'
+  | 'page_compression'
+  | 'image_compression'
+  | 'ocr_processing'
+  | 'vector_indexing';
 
 type BackendProgressShape = {
   stage?: string;
@@ -50,6 +61,8 @@ type BackendProgressShape = {
   ready_modes?: string[];
   mediaType?: string;
   media_type?: string;
+  failedStages?: Array<{ stage: string; message: string; retriable?: boolean }>;
+  failed_stages?: Array<{ stage: string; message: string; retriable?: boolean }>;
 };
 
 type BackendStatusShape = {
@@ -63,6 +76,8 @@ type BackendStatusShape = {
   ready_modes?: string[];
   mediaType?: string;
   media_type?: string;
+  failedStages?: Array<{ stage: string; message: string; retriable?: boolean }>;
+  failed_stages?: Array<{ stage: string; message: string; retriable?: boolean }>;
   error?: string | null;
   progress?: BackendProgressShape;
 };
@@ -88,6 +103,7 @@ function normalizeStatus(raw: BackendStatusShape | null | undefined): PdfProcess
     percent: progress.percent ?? raw.percent ?? 0,
     readyModes: progress.readyModes ?? progress.ready_modes ?? raw.readyModes ?? raw.ready_modes ?? [],
     mediaType: progress.mediaType ?? progress.media_type ?? raw.mediaType ?? raw.media_type,
+    failedStages: progress.failedStages ?? progress.failed_stages ?? raw.failedStages ?? raw.failed_stages,
     error: raw.error ?? undefined,
   };
 }
@@ -198,8 +214,11 @@ export async function retryPdfProcessing(fileId: string): Promise<void> {
  * console.log('已启动处理');
  * ```
  */
-export async function startPdfProcessing(fileId: string): Promise<void> {
-  return invoke<void>('vfs_start_pdf_processing', { fileId });
+export async function startPdfProcessing(
+  fileId: string,
+  startFromStage?: PdfProcessingStartStage
+): Promise<void> {
+  return invoke<void>('vfs_start_pdf_processing', { fileId, startFromStage });
 }
 
 // ========== 便捷对象导出 ==========

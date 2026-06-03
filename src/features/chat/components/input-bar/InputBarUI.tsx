@@ -308,6 +308,8 @@ function getStageLabel(
       return t('chatV2:inputBar.stage.vectorIndexing');
     case 'completed':
       return t('chatV2:inputBar.stage.completed');
+    case 'completed_with_issues':
+      return t('chatV2:inputBar.stage.completedWithIssues');
     case 'error':
       return t('chatV2:inputBar.stage.error');
     default:
@@ -380,6 +382,39 @@ function hasAnyReadyMode(
   return selectedModes.some((mode) => readySet.has(mode));
 }
 
+function areSelectedModesReady(
+  selectedModes: MediaInjectMode[],
+  readyModes?: MediaInjectMode[]
+): boolean {
+  return getMissingModes(selectedModes, readyModes).length === 0;
+}
+
+function isTerminalMediaStage(status: PdfProcessingStatus | undefined): boolean {
+  return status?.stage === 'completed'
+    || status?.stage === 'completed_with_issues'
+    || status?.stage === 'error';
+}
+
+function findBlockingIssue(
+  status: PdfProcessingStatus | undefined,
+  missingModes: MediaInjectMode[]
+): { stage: string; message: string; retriable?: boolean } | undefined {
+  if (!status?.failedStages?.length) return undefined;
+  if (missingModes.includes('ocr')) {
+    return status.failedStages.find(issue => issue.stage === 'ocr_processing') ?? status.failedStages[0];
+  }
+  if (missingModes.includes('image')) {
+    return status.failedStages.find(issue =>
+      issue.stage === 'image_compression'
+      || issue.stage === 'page_rendering'
+      || issue.stage === 'page_compression'
+    ) ?? status.failedStages[0];
+  }
+  if (missingModes.includes('text')) {
+    return status.failedStages.find(issue => issue.stage === 'text_extraction') ?? status.failedStages[0];
+  }
+  return status.failedStages[0];
+}
 
 // ============================================================================
 // 辅助 Hooks
@@ -819,7 +854,7 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
             const percent = uploadResult.processingPercent ?? 25;
             const VALID_MODES = new Set(['text', 'ocr', 'image']);
             const rawModes = (uploadResult.readyModes || []).filter(m => VALID_MODES.has(m));
-            const readyModes = (rawModes.length > 0 ? rawModes : ['text']) as ('text' | 'image' | 'ocr')[];
+            const readyModes = rawModes as ('text' | 'image' | 'ocr')[];
             const isCompleted = stage === 'completed' || stage === 'completed_with_issues';
 
             onUpdateAttachment(attachmentId, {
@@ -857,14 +892,17 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
             });
             console.log('[MediaProcessing] PDF init store:', { sourceId: uploadResult.sourceId, stage, percent, readyModes });
           } else if (isImageFile) {
-            // 图片上传完成后设为 processing 状态，等待预处理流水线
+            // 图片原图已可用于多模态注入时，不把整张附件显示成解析中。
+            // 后台压缩/OCR 继续更新 processingStatus，只有用户选择未就绪模式时才等待。
             // ★ v2.1: 使用后端返回的实际处理状态（从 uploadResult 获取）
-            // ★ P0 架构改造：默认 readyModes 为空，image 需要等压缩完成
             const stage = uploadResult.processingStatus || 'image_compression';
             const percent = uploadResult.processingPercent ?? 10;
             const VALID_IMG_MODES = new Set(['text', 'ocr', 'image']);
             const readyModes = (uploadResult.readyModes || []).filter(m => VALID_IMG_MODES.has(m)) as ('text' | 'image' | 'ocr')[];
-            const isCompleted = stage === 'completed' || stage === 'completed_with_issues';
+            const hasImageModeReady = readyModes.includes('image');
+            const isCompleted = hasImageModeReady
+              || stage === 'completed'
+              || stage === 'completed_with_issues';
 
             onUpdateAttachment(attachmentId, {
               status: isCompleted ? 'ready' : 'processing',
@@ -874,7 +912,7 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
               uploadProgress: undefined,
               uploadStage: undefined,
               processingStatus: {
-                stage: stage as 'image_compression' | 'ocr_processing' | 'vector_indexing' | 'completed',
+                stage: stage as 'image_compression' | 'ocr_processing' | 'vector_indexing' | 'completed' | 'completed_with_issues',
                 percent,
                 readyModes,
                 mediaType: 'image',
@@ -884,7 +922,7 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
             // 同时更新 pdfProcessingStore
             // ★ P0 修复：使用 sourceId (file_id) 作为 key，与后端事件保持一致
             usePdfProcessingStore.getState().update(uploadResult.sourceId, {
-              stage: stage as 'image_compression' | 'ocr_processing' | 'vector_indexing' | 'completed',
+              stage: stage as 'image_compression' | 'ocr_processing' | 'vector_indexing' | 'completed' | 'completed_with_issues',
               percent,
               readyModes,
               mediaType: 'image',
@@ -1172,10 +1210,17 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
       if (att.status !== 'ready' && att.status !== 'processing') return false;
       const status = att.sourceId ? (pdfStatusMap.get(att.sourceId) || att.processingStatus) : att.processingStatus;
       const readyModes = getEffectiveReadyModes(status, mediaType, att);
-      return hasAnyReadyMode(selectedModes, readyModes);
+      return areSelectedModesReady(selectedModes, readyModes);
     });
   }, [attachments, pdfStatusMap]);
-  const canSendWithAttachments = hasText || hasSendableAttachments;
+  const hasMediaAwaitingPreparation = useMemo(() => {
+    return attachments.some(att => {
+      const isPdf = att.mimeType === 'application/pdf' || att.name.toLowerCase().endsWith('.pdf');
+      const isImage = att.mimeType?.startsWith('image/') || false;
+      return (isPdf || isImage) && (att.status === 'ready' || att.status === 'processing');
+    });
+  }, [attachments]);
+  const canSendWithAttachments = hasText || hasSendableAttachments || hasMediaAwaitingPreparation;
 
   // 🆕 检查 PDF/图片 附件的选中模式是否就绪
   // ★ P0 修复：传入 mediaType 参数，正确判断图片模式的默认就绪状态
@@ -1196,7 +1241,8 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
       const mediaType = isPdf ? 'pdf' : 'image';
       const status = att.sourceId ? (pdfStatusMap.get(att.sourceId) || att.processingStatus) : att.processingStatus;
       const readyModes = getEffectiveReadyModes(status, mediaType, att);
-      return !hasAnyReadyMode(selectedModes, readyModes);
+      if (isTerminalMediaStage(status)) return false;
+      return !areSelectedModesReady(selectedModes, readyModes);
     });
   }, [attachments, pdfStatusMap]);
 
@@ -1211,12 +1257,15 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
       const mediaType = isPdf ? 'pdf' : 'image';
       const status = att.sourceId ? (pdfStatusMap.get(att.sourceId) || att.processingStatus) : att.processingStatus;
       const readyModes = getEffectiveReadyModes(status, mediaType, att);
-      if (!hasAnyReadyMode(selectedModes, readyModes)) {
-        const missingModes = getMissingModes(selectedModes, readyModes);
+      const missingModes = getMissingModes(selectedModes, readyModes);
+      if (missingModes.length > 0) {
         return {
           name: att.name,
           missingModes,
           stage: status?.stage,
+          terminal: isTerminalMediaStage(status),
+          issue: findBlockingIssue(status, missingModes),
+          error: status?.error,
         };
       }
     }
@@ -1230,6 +1279,10 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
       return t('chatV2:inputBar.attachmentsUploading');
     }
     if (firstBlockingAttachment) {
+      const issueMessage = firstBlockingAttachment.error || firstBlockingAttachment.issue?.message;
+      if (issueMessage) {
+        return `${firstBlockingAttachment.name}: ${issueMessage}`;
+      }
       const missingLabel = formatModeList(firstBlockingAttachment.missingModes);
       return missingLabel
         ? t('chatV2:inputBar.attachmentNotReady', {
@@ -1244,7 +1297,7 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
   }, [queueFull, disabledReason, hasUploadingAttachments, firstBlockingAttachment, formatModeList, t]);
 
   const processingIndicatorLabel = useMemo(() => {
-    if (!firstBlockingAttachment) return undefined;
+    if (!firstBlockingAttachment || firstBlockingAttachment.terminal) return undefined;
     const missingLabel = formatModeList(firstBlockingAttachment.missingModes);
     return missingLabel
       ? t('chatV2:inputBar.processingIndicatorPartial')
@@ -1267,7 +1320,7 @@ export const InputBarUI: React.FC<InputBarUIProps> = ({
   // 🆕 队列模式：队列已满时禁用发送
   const disabledSend = showStop
     ? false
-    : !!disabledReason || !canSendWithAttachments || !effectiveCanSubmit || hasUploadingAttachments || hasProcessingMedia || queueFull;
+    : !!disabledReason || !canSendWithAttachments || !effectiveCanSubmit || hasUploadingAttachments || queueFull;
 
   // ========== 回调函数 ==========
 

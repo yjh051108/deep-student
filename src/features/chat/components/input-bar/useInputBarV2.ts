@@ -17,14 +17,40 @@ import i18n from 'i18next';
 import type { ModelInfo } from '../../utils/parseModelMentions';
 import { isMultiModelSelectEnabled } from '@/config/featureFlags';
 import { usePdfProcessingStore } from '@/features/pdf/stores/pdfProcessingStore';
+import { retryPdfProcessing, startPdfProcessing } from '@/api/vfsPdfProcessingApi';
 import { isModelMultimodalAsync } from '@/features/chat/hooks/useAvailableModels';
 import {
   areAttachmentInjectModesReady,
   downgradeInjectModesForNonMultimodal,
   getMissingInjectModesForAttachment,
-  hasAnySelectedInjectModeReady,
 } from './injectModeUtils';
 import { resolveChatReadiness, triggerOpenSettingsModels } from '@/features/chat/readiness/readinessGate';
+
+function isTerminalProcessingStage(status: PdfProcessingStatus | undefined): boolean {
+  return status?.stage === 'completed'
+    || status?.stage === 'completed_with_issues'
+    || status?.stage === 'error';
+}
+
+async function ensureChatImageOcrProcessing(
+  attachment: AttachmentMeta,
+  status: PdfProcessingStatus | undefined
+): Promise<void> {
+  if (!attachment.sourceId) return;
+  const missingModes = getMissingInjectModesForAttachment(attachment, status);
+  if (!missingModes.includes('ocr')) return;
+
+  if (isTerminalProcessingStage(status)) {
+    if (status?.stage === 'completed') {
+      await startPdfProcessing(attachment.sourceId, 'ocr_processing');
+      return;
+    }
+    await retryPdfProcessing(attachment.sourceId);
+    return;
+  }
+
+  await startPdfProcessing(attachment.sourceId, 'ocr_processing');
+}
 // ============================================================================
 // InputBar 选项
 // ============================================================================
@@ -239,7 +265,9 @@ export function useInputBarV2(
       ? (selectedModels.length >= 2 && multiModelSelectEnabled
           ? selectedModels.map(m => m.id)
           : [selectedModels[selectedModels.length - 1].id])
-      : (state.chatParams.modelId ? [state.chatParams.modelId] : []);
+      : ((state.chatParams.model2OverrideId || state.chatParams.modelId)
+          ? [state.chatParams.model2OverrideId || state.chatParams.modelId].filter((id): id is string => !!id)
+          : []);
 
     let hasNonMultimodalTarget = false;
     let hasMultimodalTarget = false;
@@ -256,6 +284,7 @@ export function useInputBarV2(
     if (shouldDowngradeForTextOnlyTargets) {
       let adjustedCount = 0;
       let unresolvedCount = 0;
+      const ocrKickoffTasks: Promise<void>[] = [];
       effectiveAttachments = currentAttachments.map((attachment) => {
         const injectModes = downgradeInjectModesForNonMultimodal(attachment);
         if (!injectModes) {
@@ -264,12 +293,6 @@ export function useInputBarV2(
 
         const nextAttachment: AttachmentMeta = { ...attachment, injectModes };
         const status = getAttachmentStatus(attachment);
-        if (!areAttachmentInjectModesReady(nextAttachment, status)) {
-          unresolvedCount += 1;
-          return attachment;
-        }
-
-        adjustedCount += 1;
         state.updateAttachment(attachment.id, { injectModes });
         if (attachment.resourceId) {
           state.updateContextRefInjectModes(attachment.resourceId, {
@@ -277,6 +300,36 @@ export function useInputBarV2(
             pdf: injectModes.pdf,
           });
         }
+
+        if (!areAttachmentInjectModesReady(nextAttachment, status)) {
+          const missingModes = getMissingInjectModesForAttachment(nextAttachment, status);
+          if (attachment.sourceId && missingModes.includes('ocr')) {
+            const isPdf = attachment.mimeType === 'application/pdf' || attachment.name.toLowerCase().endsWith('.pdf');
+            const mediaType = isPdf ? 'pdf' : 'image';
+            const processingStatus: PdfProcessingStatus = {
+              stage: 'ocr_processing',
+              percent: Math.max(status?.percent ?? 0, 40),
+              readyModes: (status?.readyModes ?? []) as Array<'text' | 'ocr' | 'image'>,
+              failedStages: status?.failedStages,
+              mediaType,
+            };
+            state.updateAttachment(attachment.id, {
+              status: 'processing',
+              error: undefined,
+              processingStatus,
+            });
+            usePdfProcessingStore.getState().update(attachment.sourceId, processingStatus);
+          }
+          unresolvedCount += 1;
+          ocrKickoffTasks.push(
+            ensureChatImageOcrProcessing(nextAttachment, status).catch((error) => {
+              console.warn('[useInputBarV2] Failed to start chat image OCR:', error);
+            })
+          );
+          return nextAttachment;
+        }
+
+        adjustedCount += 1;
         return nextAttachment;
       });
 
@@ -291,6 +344,9 @@ export function useInputBarV2(
       }
 
       if (unresolvedCount > 0) {
+        if (ocrKickoffTasks.length > 0) {
+          void Promise.allSettled(ocrKickoffTasks);
+        }
         showGlobalNotification(
           'warning',
           i18n.t('chatV2:inputBar.nonMultimodalImageFallbackUnavailable', {
@@ -322,7 +378,7 @@ export function useInputBarV2(
         return false;
       }
       const status = getAttachmentStatus(attachment);
-      return !hasAnySelectedInjectModeReady(attachment, status);
+      return !areAttachmentInjectModesReady(attachment, status);
     });
 
     if (blockingModeAttachment) {
@@ -334,7 +390,7 @@ export function useInputBarV2(
         i18n.t('chatV2:inputBar.attachmentNotReady', {
           name: blockingModeAttachment.name,
           modes: missingLabel || missingModes.join(', '),
-          defaultValue: `附件未就绪：${blockingModeAttachment.name}`,
+          defaultValue: `附件解析中：${blockingModeAttachment.name}`,
         })
       );
       return;
@@ -355,7 +411,7 @@ export function useInputBarV2(
       }
 
       const status = getAttachmentStatus(attachment);
-      return hasAnySelectedInjectModeReady(attachment, status);
+      return areAttachmentInjectModesReady(attachment, status);
     });
 
     // ========== PDF 页码引用注入 ==========
