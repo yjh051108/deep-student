@@ -15,7 +15,7 @@
  * - 打开资源时自动切换到右侧应用视图
  */
 
-import React, { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PanelGroup, Panel, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels';
 import { registerOpenResourceHandler, type OpenResourceHandler } from '@/dstu/openResource';
@@ -28,7 +28,6 @@ import type { ResourceListItem, ResourceType } from './types';
 import { cn } from '@/lib/utils';
 import { DotsSixVertical, SquaresFour, Gear } from '@phosphor-icons/react';
 import { NotionButton } from '@/components/ui/NotionButton';
-import { useDesktopShellSidebarPortal } from '@/app/shell/DesktopShellSidebarPortal';
 import { useUIStore } from '@/stores/uiStore';
 import { useMobileHeader } from '@/components/layout';
 import { MobileBreadcrumb } from './components/MobileBreadcrumb';
@@ -125,7 +124,6 @@ export const LearningHubPage: React.FC = () => {
 
   // ========== 响应式布局 ==========
   const { isSmallScreen } = useBreakpoint();
-  const desktopShellSidebarTarget = useDesktopShellSidebarPortal('learning-hub');
 
   // ========== ★ 标签页状态 ==========
   const [tabState, setTabState] = useState<{ tabs: OpenTab[]; activeTabId: string | null }>({
@@ -587,11 +585,6 @@ export const LearningHubPage: React.FC = () => {
     if (!collapsed && globalLeftPanelCollapsed) {
       useUIStore.getState().setLeftPanelCollapsed(false);
     }
-    if (collapsed) {
-      sidebarPanelRef.current?.collapse();
-    } else {
-      sidebarPanelRef.current?.expand();
-    }
   }, [globalLeftPanelCollapsed]);
 
   // 侧边栏面板引用
@@ -936,25 +929,17 @@ export const LearningHubPage: React.FC = () => {
   const appPanelRef = useRef<ImperativePanelHandle>(null);
   
   // ★ 当标签页打开/全部关闭时同步桌面面板宽度与移动端位置
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (tabs.length > 0) {
-      if (hadOpenAppRef.current) {
+      const wasOpen = hadOpenAppRef.current;
+      hadOpenAppRef.current = true;
+      if (wasOpen) {
         return;
       }
-      const showAppPanel = () => {
-        if (!appPanelRef.current || !sidebarPanelRef.current) {
-          return false;
-        }
-        sidebarPanelRef.current.expand();
-        appPanelRef.current.expand();
-        sidebarPanelRef.current.resize(35);
-        appPanelRef.current.resize(65);
-        hadOpenAppRef.current = true;
-        return true;
-      };
-      if (showAppPanel()) return;
-
-      const frame = window.requestAnimationFrame(showAppPanel);
+      const frame = window.requestAnimationFrame(() => {
+        sidebarPanelRef.current?.resize(35);
+        appPanelRef.current?.resize(65);
+      });
       return () => window.cancelAnimationFrame(frame);
     }
 
@@ -1065,11 +1050,7 @@ export const LearningHubPage: React.FC = () => {
         <Panel
           ref={sidebarPanelRef}
           defaultSize={25}
-          minSize={hasOpenApp ? 20 : 15}
-          collapsible={hasOpenApp}
-          collapsedSize={8}
-          onCollapse={() => setLocalSidebarCollapsed(true)}
-          onExpand={() => setLocalSidebarCollapsed(false)}
+          minSize={hasOpenApp ? (sidebarCollapsed ? 8 : 20) : 15}
           id="learning-hub-sidebar"
           order={1}
           className="h-full min-w-0 overflow-hidden"
@@ -1081,11 +1062,9 @@ export const LearningHubPage: React.FC = () => {
               onOpenApp={handleOpenApp}
               className="w-full h-full"
               isCollapsed={sidebarCollapsed}
-              onToggleCollapse={() => handleSidebarCollapsedChange(!sidebarCollapsed)}
               activeFileId={activeTab?.resourceId}
               hasOpenApp={hasOpenApp}
               onCloseApp={handleCloseApp}
-              quickAccessPortalTarget={desktopShellSidebarTarget}
             />
           </div>
         </Panel>
