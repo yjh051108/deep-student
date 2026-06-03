@@ -178,12 +178,10 @@ jobs:
 
       - name: Build Tauri app
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           SILICONFLOW_BUILTIN_TEXT_KEY: ${{ secrets.SILICONFLOW_BUILTIN_TEXT_KEY }}
           SILICONFLOW_BUILTIN_VISION_KEY: ${{ secrets.SILICONFLOW_BUILTIN_VISION_KEY }}
           SILICONFLOW_BUILTIN_EMBED_KEY: ${{ secrets.SILICONFLOW_BUILTIN_EMBED_KEY }}
-        run: npx tauri build --target ${{ matrix.target }}
+        run: npx tauri build --target ${{ matrix.target }} --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       - name: Verify bundled pdfium architecture
         run: |
@@ -275,12 +273,10 @@ jobs:
 
       - name: Build Tauri app
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           SILICONFLOW_BUILTIN_TEXT_KEY: ${{ secrets.SILICONFLOW_BUILTIN_TEXT_KEY }}
           SILICONFLOW_BUILTIN_VISION_KEY: ${{ secrets.SILICONFLOW_BUILTIN_VISION_KEY }}
           SILICONFLOW_BUILTIN_EMBED_KEY: ${{ secrets.SILICONFLOW_BUILTIN_EMBED_KEY }}
-        run: npx tauri build --target x86_64-pc-windows-msvc
+        run: npx tauri build --target x86_64-pc-windows-msvc --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -341,12 +337,10 @@ jobs:
 
       - name: Build Tauri app
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           SILICONFLOW_BUILTIN_TEXT_KEY: ${{ secrets.SILICONFLOW_BUILTIN_TEXT_KEY }}
           SILICONFLOW_BUILTIN_VISION_KEY: ${{ secrets.SILICONFLOW_BUILTIN_VISION_KEY }}
           SILICONFLOW_BUILTIN_EMBED_KEY: ${{ secrets.SILICONFLOW_BUILTIN_EMBED_KEY }}
-        run: npx tauri build --target x86_64-unknown-linux-gnu --bundles deb,rpm,appimage
+        run: npx tauri build --target x86_64-unknown-linux-gnu --bundles deb,rpm,appimage --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       - name: Rename updater artifacts with arch suffix
         run: |
@@ -555,8 +549,6 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          echo "${ANDROID_KEYSTORE_BASE64}" | base64 -d > /tmp/release.keystore
-
           UNSIGNED_APK=$(find src-tauri/gen/android -name "*-unsigned.apk" -type f | head -1)
           if [ -z "$UNSIGNED_APK" ]; then
             echo "::error::未找到未签名的 APK"
@@ -564,6 +556,18 @@ jobs:
             exit 1
           fi
           echo "找到 APK: $UNSIGNED_APK"
+
+          VERSION="${{ needs.verify.outputs.version }}"
+          mkdir -p android-output
+
+          if [ -z "${ANDROID_KEYSTORE_BASE64}" ] || [ -z "${ANDROID_KEYSTORE_PASSWORD}" ] || [ -z "${ANDROID_KEY_ALIAS}" ] || [ -z "${ANDROID_KEY_PASSWORD}" ]; then
+            cp "$UNSIGNED_APK" "android-output/Deep.Student_${VERSION}_arm64-unsigned.apk"
+            echo "::warning::Android signing secrets are incomplete; uploaded unsigned APK instead."
+            ls -lh android-output/
+            exit 0
+          fi
+
+          echo "${ANDROID_KEYSTORE_BASE64}" | base64 -d > /tmp/release.keystore
 
           BUILD_TOOLS=$(ls -d "${ANDROID_HOME}/build-tools/"* | sort -V | tail -1)
 
@@ -579,8 +583,6 @@ jobs:
 
           "${BUILD_TOOLS}/apksigner" verify --print-certs /tmp/signed.apk
 
-          VERSION="${{ needs.verify.outputs.version }}"
-          mkdir -p android-output
           cp /tmp/signed.apk "android-output/Deep.Student_${VERSION}_arm64.apk"
 
           rm -f /tmp/release.keystore
