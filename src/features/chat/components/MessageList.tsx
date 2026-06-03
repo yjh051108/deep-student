@@ -302,10 +302,9 @@ const MessageListInner: React.FC<MessageListProps> = ({
       }
 
       if (isStreaming) {
-        setShowScrollToBottom(false);
-        return;
+        autoFollowEnabledRef.current = false;
       }
-      setShowScrollToBottom(!nearBottom);
+      setShowScrollToBottom(!nearBottom && (!isStreaming || !autoFollowEnabledRef.current));
     };
 
     syncScrollState();
@@ -322,8 +321,6 @@ const MessageListInner: React.FC<MessageListProps> = ({
     const intentElements = Array.from(
       new Set([viewportElement, containerRef.current].filter(Boolean))
     ) as HTMLElement[];
-    let lastTouchY: number | null = null;
-
     const markUserScrollIntent = () => {
       lastObservedScrollTopRef.current = viewportElement.scrollTop;
       autoFollowEnabledRef.current = false;
@@ -331,17 +328,13 @@ const MessageListInner: React.FC<MessageListProps> = ({
     };
 
     const handleWheelIntent = (event: WheelEvent) => {
-      if (event.deltaY < 0) markUserScrollIntent();
+      if (isStreaming || event.deltaY < 0) markUserScrollIntent();
     };
-    const handleTouchStartIntent = (event: TouchEvent) => {
-      lastTouchY = event.touches[0]?.clientY ?? null;
+    const handleTouchMoveIntent = () => {
+      if (isStreaming) markUserScrollIntent();
     };
-    const handleTouchMoveIntent = (event: TouchEvent) => {
-      const nextY = event.touches[0]?.clientY ?? null;
-      if (lastTouchY !== null && nextY !== null && nextY > lastTouchY) {
-        markUserScrollIntent();
-      }
-      lastTouchY = nextY;
+    const handlePointerDownIntent = () => {
+      if (isStreaming) markUserScrollIntent();
     };
     const handleKeyIntent = (event: KeyboardEvent) => {
       if (
@@ -356,15 +349,15 @@ const MessageListInner: React.FC<MessageListProps> = ({
 
     intentElements.forEach((element) => {
       element.addEventListener('wheel', handleWheelIntent, { passive: true, capture: true });
-      element.addEventListener('touchstart', handleTouchStartIntent, { passive: true, capture: true });
       element.addEventListener('touchmove', handleTouchMoveIntent, { passive: true, capture: true });
+      element.addEventListener('pointerdown', handlePointerDownIntent, { passive: true, capture: true });
       element.addEventListener('keydown', handleKeyIntent, { passive: true, capture: true });
     });
     return () => {
       intentElements.forEach((element) => {
         element.removeEventListener('wheel', handleWheelIntent, { capture: true });
-        element.removeEventListener('touchstart', handleTouchStartIntent, { capture: true });
         element.removeEventListener('touchmove', handleTouchMoveIntent, { capture: true });
+        element.removeEventListener('pointerdown', handlePointerDownIntent, { capture: true });
         element.removeEventListener('keydown', handleKeyIntent, { capture: true });
       });
     };
@@ -447,7 +440,6 @@ const MessageListInner: React.FC<MessageListProps> = ({
     // 用户滚动时关闭自动跟随，让用户接管
     if (isStreaming && !wasStreaming) {
       autoFollowEnabledRef.current = true;
-      lastAutoScrollTopRef.current = null;
       setShowScrollToBottom(false);
       requestAnimationFrame(() => {
         if (!viewportElement) return;
@@ -460,16 +452,12 @@ const MessageListInner: React.FC<MessageListProps> = ({
           if (messageItems && messageItems.length >= 2) {
             const userMessageEl = messageItems[messageItems.length - 2] as HTMLElement;
             userMessageEl.scrollIntoView({ block: 'start', behavior: 'instant' as ScrollBehavior });
-            lastAutoScrollTopRef.current = viewportElement.scrollTop;
-            lastObservedScrollTopRef.current = viewportElement.scrollTop;
             return;
           }
         }
         // 虚拟模式下用 scrollToIndex 定位用户消息（倒数第二条）
         if (messageOrder.length >= 2) {
           virtualizer.scrollToIndex(messageOrder.length - 2, { align: 'start', behavior: 'auto' });
-          lastAutoScrollTopRef.current = null;
-          lastObservedScrollTopRef.current = viewportElement.scrollTop;
           return;
         }
         scrollToBottom();
@@ -586,10 +574,6 @@ const MessageListInner: React.FC<MessageListProps> = ({
       ref={containerRef}
       viewportRef={viewportCallbackRef}
       className={cn('h-full', className)}
-      viewportClassName="scroll-smooth"
-      viewportProps={{
-        // 无需底部 padding，布局已分离
-      }}
       hideTrackWhenIdle
     >
       {useDirectRender ? (
@@ -689,7 +673,7 @@ const MessageListInner: React.FC<MessageListProps> = ({
     {/* 回到底部浮动按钮 */}
     <div
       className="pointer-events-none absolute inset-x-0 bottom-2 px-4 md:bottom-3 md:px-8"
-      style={{ zIndex: Z_INDEX.inputBar - 10 }}
+      style={{ zIndex: Z_INDEX.inputBar + 1 }}
     >
       <ThreadContentShell className="pointer-events-none overflow-visible">
         <div
@@ -698,8 +682,8 @@ const MessageListInner: React.FC<MessageListProps> = ({
           aria-hidden={!showScrollToBottom}
           style={{
             ['--panel-translate-y' as string]: '12px',
-            ['--panel-open-dur' as string]: '300ms',
-            ['--panel-close-dur' as string]: '220ms',
+            ['--panel-open-dur' as string]: '180ms',
+            ['--panel-close-dur' as string]: '140ms',
           }}
         >
           <button

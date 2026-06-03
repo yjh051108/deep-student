@@ -15,14 +15,14 @@ describe('MessageList scroll-to-bottom source contract', () => {
     expect(source).toContain('aria-label={scrollToBottomLabel}');
     expect(source).toContain("title={scrollToBottomLabel}");
     expect(source).toContain('className="pointer-events-none absolute inset-x-0 bottom-2 px-4 md:bottom-3 md:px-8"');
-    expect(source).toContain('style={{ zIndex: Z_INDEX.inputBar - 10 }}');
+    expect(source).toContain('style={{ zIndex: Z_INDEX.inputBar + 1 }}');
     expect(source).toContain('<ThreadContentShell className="pointer-events-none overflow-visible">');
     expect(source).toContain('className="t-panel-slide ml-auto w-fit"');
     expect(source).toContain("data-open={showScrollToBottom ? 'true' : 'false'}");
     expect(source).toContain('aria-hidden={!showScrollToBottom}');
     expect(source).toContain("['--panel-translate-y' as string]: '12px'");
-    expect(source).toContain("['--panel-open-dur' as string]: '300ms'");
-    expect(source).toContain("['--panel-close-dur' as string]: '220ms'");
+    expect(source).toContain("['--panel-open-dur' as string]: '180ms'");
+    expect(source).toContain("['--panel-close-dur' as string]: '140ms'");
     expect(source).toContain('tabIndex={showScrollToBottom ? 0 : -1}');
     expect(source).toContain("'pointer-events-auto ml-auto flex h-10 w-10 items-center justify-center rounded-full'");
     expect(source).toContain("'border border-[color:var(--button-utility-border)] bg-[color:var(--button-utility-surface)]'");
@@ -40,21 +40,27 @@ describe('MessageList scroll-to-bottom source contract', () => {
 
   it('shows the control based on scroll position rather than streaming state alone', () => {
     expect(source).toContain("viewportElement.addEventListener('scroll', syncScrollState");
-    expect(source).toContain('setShowScrollToBottom(true);');
-    expect(source).toContain('setShowScrollToBottom(false);');
+    expect(source).toContain('const autoFollowEnabledRef = useRef(true);');
+    expect(source).toContain('const distanceToBottom = viewportElement.scrollHeight - scrollTop - viewportElement.clientHeight;');
+    expect(source).toContain('if (distanceToBottom <= 2) {');
+    expect(source).toContain('autoFollowEnabledRef.current = true;');
+    expect(source).toContain('const movedDown = scrollTop > previousScrollTop + 1;');
+    expect(source).toContain('if (isStreaming && !autoFollowEnabledRef.current) {');
+    expect(source).toContain('if (isStreaming) {');
+    expect(source).toContain('autoFollowEnabledRef.current = false;');
+    expect(source).toContain('setShowScrollToBottom(!nearBottom && (!isStreaming || !autoFollowEnabledRef.current));');
+    expect(source).toContain('if (isStreaming || event.deltaY < 0) markUserScrollIntent();');
+    expect(source).not.toContain('userScrollIntentHoldUntilRef');
+    expect(source).not.toContain('programmaticScrollLockRef');
     expect(source).toContain("data-open={showScrollToBottom ? 'true' : 'false'}");
     expect(source).not.toContain('{showScrollToBottom && isStreaming && (');
   });
 
-  it('keeps user-paused streaming follow separate from the near-bottom threshold', () => {
-    expect(source).toContain('const autoFollowEnabledRef = useRef(true);');
-    expect(source).toContain('autoFollowEnabledRef.current = false;');
-    expect(source).toContain('autoFollowEnabledRef.current = true;');
-    expect(source).toContain('lastAutoScrollTopRef.current = null;');
-    expect(source).toContain('lastAutoScrollTopRef.current = viewportElement.scrollTop;');
+  it('uses the virtualizer to jump to the last row in long history conversations', () => {
     expect(source).toContain("containerRef.current?.dispatchEvent(new CustomEvent('smooth-wheel:cancel'))");
-    expect(source).not.toContain('programmaticScrollLockRef');
-    expect(source).not.toContain('scheduleProgrammaticScrollUnlock');
+    expect(source).toContain("virtualizer.scrollToIndex(messageOrder.length - 1, { align: 'end', behavior })");
+    expect(source).toContain("virtualizer.scrollToIndex(messageOrder.length - 2, { align: 'start', behavior: 'auto' })");
+    expect(source).toContain('virtualizer.measure();');
   });
 
   it('uses transitions-dev panel reveal semantics for fade-out', () => {
