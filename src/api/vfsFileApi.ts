@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 
 export type FileType = 'document' | 'image' | 'audio' | 'video';
 
@@ -87,6 +87,10 @@ export interface FileContentResult {
   found: boolean;
 }
 
+async function getAttachmentContent(attachmentId: string): Promise<FileContentResult> {
+  return invoke('vfs_get_attachment_content', { attachmentId });
+}
+
 export const vfsFileApi = {
   async upload(params: UploadFileParams): Promise<UploadFileResult> {
     return invoke('vfs_upload_file', { params });
@@ -114,6 +118,18 @@ export const vfsFileApi = {
 
   async getContent(fileId: string): Promise<FileContentResult> {
     return invoke('vfs_get_file_content', { fileId });
+  },
+
+  async getFileLikeContent(fileId: string): Promise<FileContentResult> {
+    try {
+      const fileContent = await this.getContent(fileId);
+      if (fileContent?.found) {
+        return fileContent;
+      }
+    } catch (error) {
+      console.warn('[vfsFileApi] vfs_get_file_content failed, falling back to attachment content:', fileId, error);
+    }
+    return getAttachmentContent(fileId);
   },
 
   /**

@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
 import {
   Warning,
   Archive,
@@ -14,6 +13,7 @@ import {
 
 import { NotionButton } from '@/components/ui/NotionButton';
 import { showGlobalNotification } from '@/components/UnifiedNotification';
+import { invoke } from '@/runtime/native';
 import { getErrorMessage } from '@/utils/errorUtils';
 import type { ChatSession } from '@/features/chat/types/session';
 import type { SessionGroup } from '@/features/chat/types/group';

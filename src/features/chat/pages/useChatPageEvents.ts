@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { getErrorMessage } from '@/utils/errorUtils';
 import { showGlobalNotification } from '@/components/UnifiedNotification';
 import { pageLifecycleTracker } from '@/debug-panel/hooks/usePageLifecycle';

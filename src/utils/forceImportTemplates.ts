@@ -3,7 +3,7 @@
  * 使用新的内置模板导入机制
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { CustomAnkiTemplate } from '../types';
 
 interface ForceImportResult {

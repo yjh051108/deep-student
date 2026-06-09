@@ -13,8 +13,8 @@ use crate::vfs::lance_store::VfsLanceStore;
 
 use super::audit_log::{self, MemoryAuditLogItem};
 use super::service::{
-    MemoryConfigOutput, MemoryListItem, MemorySearchResult, MemoryService, MemoryWriteOutput,
-    SmartWriteOutput, WriteMode,
+    MemoryListItem, MemorySearchResult, MemoryService, MemoryWriteOutput, SmartWriteOutput,
+    WriteMode,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -454,16 +454,6 @@ fn trigger_immediate_index(
             }
         }
     });
-}
-
-#[tauri::command]
-pub async fn memory_get_config(
-    vfs_db: State<'_, Arc<VfsDatabase>>,
-    lance_store: State<'_, Arc<VfsLanceStore>>,
-    llm_manager: State<'_, Arc<LLMManager>>,
-) -> Result<MemoryConfigOutput, String> {
-    let service = get_memory_service(&vfs_db, &lance_store, &llm_manager);
-    service.get_config().map_err(|e| e.to_string())
 }
 
 #[tauri::command]

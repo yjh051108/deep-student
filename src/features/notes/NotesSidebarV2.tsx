@@ -38,7 +38,7 @@ import { buildTreeData, getPathToNote } from "./notesUtils";
 import { cn } from "../../lib/utils";
 import { NotesSidebarSearch } from "./components/NotesSidebarSearch";
 import { AddReferenceDropdown } from "./components/AddReferenceDropdown";
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { isReferenceId } from "./types/reference";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { CustomScrollArea } from "@/components/custom-scroll-area";

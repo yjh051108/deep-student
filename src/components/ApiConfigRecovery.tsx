@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NotionButton } from '@/components/ui/NotionButton';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke as nativeInvoke } from '@/runtime/native';
 import { useTranslation } from 'react-i18next';
 
 interface ConfigStatus {
@@ -22,7 +22,7 @@ const ApiConfigRecovery: React.FC = () => {
 
   const checkStatus = async () => {
     try {
-      const result = await invoke<ConfigStatus>('check_api_config_status');
+      const result = await nativeInvoke<ConfigStatus>('check_api_config_status');
       setStatus(result);
     } catch (error: unknown) {
       console.error(t('check_config_failed'), error);
@@ -35,7 +35,7 @@ const ApiConfigRecovery: React.FC = () => {
     setMessage(t('recovering_config'));
 
     try {
-      const result = await invoke<string>('restore_default_api_configs');
+      const result = await nativeInvoke<string>('restore_default_api_configs');
       setMessage(result);
       
       // 恢复成功后重新检查状态

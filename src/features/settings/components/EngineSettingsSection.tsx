@@ -15,15 +15,13 @@ import { AppSelect } from '@/components/ui/app-menu';
 import { SecurePasswordInput } from '@/components/SecurePasswordInput';
 import { showGlobalNotification } from '@/components/UnifiedNotification';
 import { getErrorMessage } from '@/utils/errorUtils';
-import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+import { testSearchEngine } from '@/utils/settingsApi';
+import { invoke as nativeInvoke } from '@/runtime/native';
 import {
   settingsQuietButtonIdleRowClassName,
   settingsQuietButtonSelectedRowClassName,
   settingsQuietInteractiveRowClassName,
 } from './SettingsCommon';
-
-const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__;
-const invoke = isTauri ? tauriInvoke : null;
 
 export interface WebSearchConfig {
   webSearchEngine?: string;
@@ -92,8 +90,7 @@ export const EngineSettingsSection: React.FC<{
   React.useEffect(() => {
     const loadData = async () => {
       try {
-        if (!invoke) return;
-        const res = await invoke('get_provider_strategies_config') as { provider_strategies?: ProviderStrategiesMap } | null;
+        const res = await nativeInvoke<{ provider_strategies?: ProviderStrategiesMap } | null>('get_provider_strategies_config');
         setProviderStrategies(res?.provider_strategies || null);
       } catch {
         setProviderStrategies(null);
@@ -117,10 +114,9 @@ export const EngineSettingsSection: React.FC<{
   }, []);
 
   const testEngine = async (id: string) => {
-    if (!invoke) return;
     try {
       setEngineTesting(id);
-      const res = await invoke('test_search_engine', { engine: id }) as { ok?: boolean; message?: string; response_time?: number } | null;
+      const res = await testSearchEngine(id);
       const ok = !!res?.ok;
       const msg = ok ? t('status.test_success', { ns: 'settings' }) : String(res?.message || '');
       setEngineResults(prev => ({ ...prev, [id]: { ok, msg, ms: res?.response_time } }));
@@ -167,10 +163,10 @@ export const EngineSettingsSection: React.FC<{
     };
 
   const handleSaveProviderStrategies = async () => {
-    if (!invoke || !providerStrategies) return;
+    if (!providerStrategies) return;
     try {
       setProviderSaving(true);
-      await invoke('save_provider_strategies_config', { strategies: providerStrategies });
+      await nativeInvoke('save_provider_strategies_config', { strategies: providerStrategies });
       showGlobalNotification('success', t('settings:advanced_search.messages.strategies_saved'));
     } catch (error: unknown) {
       showGlobalNotification('error', getErrorMessage(error));

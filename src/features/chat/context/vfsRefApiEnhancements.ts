@@ -10,7 +10,7 @@
  * - P2: 缓存键注入攻击防护（消毒输入、安全分隔符）
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import type { VfsResourceRef, ResolvedResource } from './vfsRefTypes';
 import { ok, err, toVfsError, type Result, VfsErrorCode, VfsError } from '@/shared/result';
 import { withTimeout } from '@/utils/concurrency';

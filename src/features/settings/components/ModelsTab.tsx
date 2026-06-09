@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { SettingSection } from './SettingsCommon';
 import { UnifiedModelSelector } from '@/components/shared/UnifiedModelSelector';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';

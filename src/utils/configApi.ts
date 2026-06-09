@@ -1,41 +1,11 @@
-import { invoke } from '@tauri-apps/api/core';
+import { getImageAsBase64 as getNativeImageAsBase64, invoke } from '@/runtime/native';
 import type { VendorConfig, ModelProfile, ApiConfig } from '../types';
 
 
 // 文件管理API
 export async function getImageAsBase64(relativePath: string): Promise<string> {
   try {
-    // 1) 优先尝试 camelCase 参数
-    try {
-      const response = await invoke<string>('get_image_as_base64', { relativePath });
-      return response;
-    } catch (e1) {
-      // 2) 回退 snake_case 参数
-      try {
-        const response = await invoke<string>('get_image_as_base64', { relative_path: relativePath });
-        return response;
-      } catch (e2) {
-        // 3) 最后兜底：前端通过 convertFileSrc + fetch 读取文件
-        try {
-          const { convertFileSrc } = await import('@tauri-apps/api/core');
-          const assetUrl = convertFileSrc(relativePath);
-          const resp = await fetch(assetUrl);
-          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-          const blob = await resp.blob();
-          const arr = await blob.arrayBuffer();
-          const bytes = new Uint8Array(arr);
-          let binary = '';
-          const chunkSize = 8192;
-          for (let i = 0; i < bytes.length; i += chunkSize) {
-            binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-          }
-          const base64 = btoa(binary);
-          return base64;
-        } catch (e3) {
-          throw e2; // 抛出原始 Tauri 错误，方便定位命令问题
-        }
-      }
-    }
+    return await getNativeImageAsBase64(relativePath);
   } catch (error) {
     console.error('Failed to get image as base64:', error);
     throw new Error(`Failed to get image: ${error}`);

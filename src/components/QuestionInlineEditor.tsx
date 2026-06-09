@@ -26,7 +26,7 @@ import {
   Image,
   Image as ImageIcon,
 } from '@phosphor-icons/react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { showGlobalNotification } from '@/components/UnifiedNotification';
 import type { Question, QuestionType, Difficulty, QuestionImage } from '@/api/questionBankApi';
 

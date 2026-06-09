@@ -163,6 +163,7 @@ pub struct MemoryPromptContext {
     pub global_memory_path: String,
     pub global_profile: Option<String>,
     pub topic_profile: Option<String>,
+    pub is_general_session: bool,
 }
 
 impl MemoryPromptContext {
@@ -173,6 +174,7 @@ impl MemoryPromptContext {
             global_memory_path: "全局".to_string(),
             global_profile: Some(profile),
             topic_profile: None,
+            is_general_session: true,
         }
     }
 
@@ -200,26 +202,63 @@ impl MemoryPromptContext {
             global_memory_path,
             global_profile: Self::trimmed(global_profile),
             topic_profile: Self::trimmed(topic_profile),
+            is_general_session: false,
         }
+    }
+
+    pub fn with_general_session(mut self, is_general_session: bool) -> Self {
+        self.is_general_session = is_general_session;
+        self
     }
 
     pub fn to_prompt_blocks(self) -> Vec<String> {
         let mut blocks = Vec::new();
-        let has_topic = self.topic_memory_path.is_some();
-        let topic_name = self.topic_name.as_deref().unwrap_or("通用无课题会话");
-        let topic_path = self.topic_memory_path.as_deref().unwrap_or("无课题记忆区");
-        let visibility = if has_topic {
-            "当前会话绑定到一个明确课题。记忆读取范围是：全局记忆 + 当前课题记忆。\n不要主动搜索、枚举、读取或引用其它课题的记忆；除非用户明确要求跨课题整理，否则其它课题对本轮不可见。\n全局记忆只保存跨课题长期稳定的信息：用户身份背景、长期偏好、稳定交流习惯、长期目标。\n课题记忆保存当前课题内的信息：课程/项目/论文/实验/资料/bug/学习进度/课题内方法。\n写入时先判断生命周期：跨课题长期有效写 global；只服务当前课题写 topic；不确定时先询问或保持不写。"
-        } else {
-            "当前会话是通用无课题临时会话，不属于任何课题。记忆读取范围是：全局记忆。\n不要主动搜索、枚举、读取或引用任何课题记忆；除非用户明确要求跨课题回顾、整理或迁移，否则课题记忆对本轮不可见。\n不得伪造当前课题，不得把新记忆写入 topic。\n只有跨课题长期稳定的信息才写 global：用户身份背景、长期偏好、稳定交流习惯、长期目标。\n临时问题、某门课/某项目/某资料内的事实不要写入记忆；如果用户希望保存为课题记忆，应提示先进入或创建对应课题。"
-        };
+        if self.is_general_session || self.topic_memory_path.is_none() {
+            blocks.push(format!(
+                r#"<current_topic>
+<topic_name>通用课题</topic_name>
+<topic_memory_path>无绑定课题记忆区</topic_memory_path>
+<global_memory_path>{}</global_memory_path>
+<memory_visibility>
+当前是通用无课题临时会话。资源工具的根目录表示完整资源根目录，可按需要访问全部资源。
+记忆读取允许使用全局记忆和所有课题记忆；写入长期稳定偏好、身份背景、交流习惯和长期目标时使用 global 记忆。
+不要伪造当前课题或写入 topic 记忆；如果信息明显属于某个具体课题，先提示用户绑定/切换课题，或只在用户明确要求时写入 global 中的临时整理记录。
+</memory_visibility>
+<memory_scope_policy>
+根层级只有 global 与 topic。global 表示跨课题共享的长期用户记忆；topic 表示课题专属记忆。不要把资料内容、通用知识、题目答案或临时上下文当成用户记忆。
+</memory_scope_policy>
+</current_topic>"#,
+                escape_xml_content(&self.global_memory_path)
+            ));
+
+            if let Some(profile) = self.global_profile {
+                blocks.push(format!(
+                    "<global_memory_profile>\n以下是跨课题共享的长期用户记忆：\n{}\n</global_memory_profile>",
+                    escape_xml_content(&profile)
+                ));
+            }
+            if let Some(profile) = self.topic_profile {
+                blocks.push(format!(
+                    "<all_topic_memory_profile>\n以下是所有课题记忆摘要，仅用于理解上下文；不要直接改删课题记忆：\n{}\n</all_topic_memory_profile>",
+                    escape_xml_content(&profile)
+                ));
+            }
+            return blocks;
+        }
+
+        let topic_name = self.topic_name.as_deref().unwrap_or("未绑定课题");
+        let topic_path = self
+            .topic_memory_path
+            .as_deref()
+            .unwrap_or("无当前课题记忆区");
         blocks.push(format!(
             r#"<current_topic>
 <topic_name>{}</topic_name>
 <topic_memory_path>{}</topic_memory_path>
 <global_memory_path>{}</global_memory_path>
 <memory_visibility>
-{}
+你当前只能使用当前课题记忆和全局记忆。不得主动搜索、枚举、读取或引用其它课题的记忆。
+全局记忆用于用户长期偏好、身份背景、稳定交流习惯和长期目标；当前课题记忆用于课程、项目、论文、实验、资料、bug、学习进度和课题内方法。
 </memory_visibility>
 <memory_scope_policy>
 根层级只有 global 与 topic。global 表示跨课题共享的长期用户记忆；topic 表示当前课题专属记忆。不要把资料内容、通用知识、题目答案或临时上下文当成用户记忆。
@@ -227,8 +266,7 @@ impl MemoryPromptContext {
 </current_topic>"#,
             escape_xml_content(topic_name),
             escape_xml_content(topic_path),
-            escape_xml_content(&self.global_memory_path),
-            escape_xml_content(visibility)
+            escape_xml_content(&self.global_memory_path)
         ));
 
         if let Some(profile) = self.global_profile {

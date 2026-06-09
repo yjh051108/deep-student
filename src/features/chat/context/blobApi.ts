@@ -7,7 +7,7 @@
  * @see 25-题目集识别VFS存储与多模态上下文注入改造.md
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { getErrorMessage } from '@/utils/errorUtils';
 import { debugLog } from '@/debug-panel/debugMasterSwitch';
 

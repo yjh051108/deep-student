@@ -15,8 +15,28 @@ describe('InputBar media routing contract', () => {
     resolve(process.cwd(), 'src/features/chat/components/input-bar/injectModeUtils.ts'),
     'utf-8'
   );
+  const injectModeSelectorSource = readFileSync(
+    resolve(process.cwd(), 'src/features/chat/components/input-bar/AttachmentInjectModeSelector.tsx'),
+    'utf-8'
+  );
   const zhLocaleSource = readFileSync(
     resolve(process.cwd(), 'src/locales/zh-CN/chatV2.json'),
+    'utf-8'
+  );
+  const mediaProgressHookSource = readFileSync(
+    resolve(process.cwd(), 'src/hooks/usePdfProcessingProgress.ts'),
+    'utf-8'
+  );
+  const indexStatusViewSource = readFileSync(
+    resolve(process.cwd(), 'src/features/learning-hub/views/IndexStatusView.tsx'),
+    'utf-8'
+  );
+  const mediaDebugPluginSource = readFileSync(
+    resolve(process.cwd(), 'src/debug-panel/plugins/MediaProcessingDebugPlugin.tsx'),
+    'utf-8'
+  );
+  const attachmentPipelinePluginSource = readFileSync(
+    resolve(process.cwd(), 'src/features/chat/debug/attachmentPipelineTestPlugin.ts'),
     'utf-8'
   );
 
@@ -47,11 +67,26 @@ describe('InputBar media routing contract', () => {
     expect(injectModeSource).toContain('直接使用后端报告的 readyModes');
     expect(injectModeSource).not.toContain("effectiveStatus?.stage === 'completed' || effectiveStatus?.stage === 'completed_with_issues'");
     expect(injectModeSource).toContain("if (attachment.status === 'ready' && !effectiveStatus)");
+    expect(injectModeSelectorSource).not.toContain("if (mode === 'image') return true;");
+    expect(injectModeSelectorSource).not.toContain("readyModes: isImage ? ['image'] : []");
+    expect(injectModeSelectorSource).toContain('readyModes: []');
   });
 
   it('labels pending media as parsing instead of not-ready', () => {
     expect(zhLocaleSource).toContain('"attachmentNotReady": "附件解析中：{{name}}（{{modes}}）"');
     expect(zhLocaleSource).toContain('"processingIndicatorPartial": "附件解析中..."');
     expect(zhLocaleSource).toContain('"modesNotReady": "解析中：{{modes}}"');
+  });
+
+  it('listens for VFS media/index progress through the native event facade', () => {
+    for (const source of [
+      mediaProgressHookSource,
+      indexStatusViewSource,
+      mediaDebugPluginSource,
+      attachmentPipelinePluginSource,
+    ]) {
+      expect(source).toContain("@/runtime/nativeEvents");
+      expect(source).not.toContain("@tauri-apps/api/event");
+    }
   });
 });

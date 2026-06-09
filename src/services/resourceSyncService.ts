@@ -1,12 +1,12 @@
 /**
  * 资源同步服务
  *
- * 封装后端同步 API，将原模块数据（笔记、题目集、教材页面）同步到 resources.db。
+ * 封装后端同步 API，将原模块数据（笔记、题目集、教材页面）同步到混合 VFS。
  *
  * 核心原则：
  * - 懒同步：引用到对话时才触发同步
  * - 基于 hash 去重：相同内容不重复创建资源
- * - 回写原表：同步后回写 resource_id + content_hash 到原表
+ * - sourceId 稳定：同步后可通过原记录 ID 找回 VFS 资源
  *
  * 后端命令（由 Prompt 3 实现）：
  * - resource_sync_note - 笔记同步
@@ -18,8 +18,8 @@
  * @see 文档 20-统一资源库与访达层改造任务分配.md - Prompt 8
  */
 
-import { invoke } from '@tauri-apps/api/core';
 import i18next from 'i18next';
+import { invoke } from '@/runtime/native';
 import { getErrorMessage } from '../utils/errorUtils';
 import { debugLog } from '../debug-panel/debugMasterSwitch';
 
@@ -82,9 +82,9 @@ export type SourceType = 'note' | 'exam' | 'textbook';
  */
 export interface ResourceSyncService {
   /**
-   * 同步笔记到 resources.db
+   * 同步笔记到混合 VFS
    *
-   * 从 notes.db 读取笔记内容，创建资源并回写 resource_id。
+   * Go shell 通过 sourceId 创建或更新可见资源文件与资源索引。
    *
    * @param noteId 笔记 ID
    * @returns 同步结果
@@ -92,7 +92,7 @@ export interface ResourceSyncService {
   syncNote(noteId: string): Promise<SyncResult>;
 
   /**
-   * 同步题目集识别结果到 resources.db
+   * 同步题目集识别结果到混合 VFS
    *
    * 从 exam_sheet_sessions.preview_json 读取内容，创建资源并回写。
    *
@@ -102,7 +102,7 @@ export interface ResourceSyncService {
   syncExam(sessionId: string): Promise<SyncResult>;
 
   /**
-   * 同步教材页面到 resources.db
+   * 同步教材页面到混合 VFS
    *
    * 将教材渲染后的页面内容创建为资源。
    *
@@ -290,11 +290,11 @@ interface BackendSyncResult {
 }
 
 /**
- * 真实的 Tauri 资源同步服务实现
+ * 真实的 native 资源同步服务实现
  *
- * 调用后端 Prompt 3 实现的命令。
+ * 在 Tauri 中走 Tauri invoke，在 Wails/Go 中走 Wails bridge。
  */
-class TauriResourceSyncService implements ResourceSyncService {
+class NativeResourceSyncService implements ResourceSyncService {
   async syncNote(noteId: string): Promise<SyncResult> {
     try {
       console.log(LOG_PREFIX, 'syncNote:', noteId);
@@ -401,9 +401,9 @@ function isTauriEnvironment(): boolean {
 }
 
 /**
- * 真实 Tauri 资源同步服务单例
+ * 真实 native 资源同步服务单例
  */
-export const tauriResourceSyncService: ResourceSyncService = new TauriResourceSyncService();
+export const tauriResourceSyncService: ResourceSyncService = new NativeResourceSyncService();
 
 /**
  * 资源同步服务单例
@@ -415,7 +415,7 @@ export const resourceSyncService: ResourceSyncService = tauriResourceSyncService
 // ── 便捷方法 ──
 
 /**
- * 同步笔记到 resources.db（便捷方法）
+ * 同步笔记到混合 VFS（便捷方法）
  *
  * @param noteId 笔记 ID
  * @returns 同步结果
@@ -425,7 +425,7 @@ export async function syncNote(noteId: string): Promise<SyncResult> {
 }
 
 /**
- * 同步题目集到 resources.db（便捷方法）
+ * 同步题目集到混合 VFS（便捷方法）
  *
  * @param sessionId 题目集识别会话 ID
  * @returns 同步结果
@@ -464,7 +464,7 @@ export async function checkSyncNeeded(
   return resourceSyncService.checkSyncNeeded(sourceType, sourceId, currentHash);
 }
 
-// ── 资源创建（统一写入 VFS，不再写入 resources.db） ──
+// ── 资源创建（统一写入 VFS） ──
 
 /**
  * 创建资源参数

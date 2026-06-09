@@ -14,8 +14,8 @@
  * - 前端只做数据搬运和状态管理
  */
 
-import { invoke } from '@tauri-apps/api/core';
-import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { emit, listen, type NativeUnlistenFn as UnlistenFn } from '@/runtime/nativeEvents';
+import { invoke } from '@/runtime/native';
 import i18next from 'i18next';
 import { templateManager } from '@/data/ankiTemplates';
 import { ankiApiAdapter } from '@/services/ankiApiAdapter';
@@ -1328,7 +1328,14 @@ export class CardAgent {
     cancel: () => void;
     setDocumentId: (documentId: string) => void;
   } {
+    type PendingCollectorEvent =
+      | { type: 'card'; card: AnkiCardResult; documentId?: string }
+      | { type: 'errorCard'; card: AnkiCardResult; documentId?: string }
+      | { type: 'complete'; documentId?: string }
+      | { type: 'paused'; documentId?: string };
+
     const cards: AnkiCardResult[] = [];
+    const pendingEvents: PendingCollectorEvent[] = [];
     let completed = false;
     let paused = false;
     let expectedDocumentId: string | null = null;
@@ -1340,66 +1347,105 @@ export class CardAgent {
         clearTimeout(timeoutId);
         timeoutId = null;
       }
+      pendingEvents.length = 0;
       unsubscribeCard();
       unsubscribeErrorCard();
       unsubscribeComplete();
       unsubscribePaused(); // 🔧 三轮修复 #8: 清理暂停事件监听
     };
 
+    const isExpectedDocument = (documentId?: string): boolean => {
+      if (!expectedDocumentId) {
+        return false;
+      }
+      return !documentId || documentId === expectedDocumentId;
+    };
+
+    const finish = (nextPaused: boolean) => {
+      if (completed) {
+        return;
+      }
+      completed = true;
+      paused = nextPaused;
+      if (nextPaused) {
+        console.log(`[CardAgent] 文档处理已暂停，返回已收集的 ${cards.length} 张卡片`);
+      }
+      cleanup();
+      if (resolveWithState) {
+        resolveWithState({ cards, paused });
+      }
+    };
+
+    const applyCollectorEvent = (collectorEvent: PendingCollectorEvent) => {
+      if (!isExpectedDocument(collectorEvent.documentId)) {
+        return;
+      }
+
+      switch (collectorEvent.type) {
+        case 'card':
+        case 'errorCard':
+          if (!completed) {
+            cards.push(collectorEvent.card);
+          }
+          break;
+        case 'complete':
+          finish(false);
+          break;
+        case 'paused':
+          finish(true);
+          break;
+      }
+    };
+
+    const collectOrQueue = (collectorEvent: PendingCollectorEvent) => {
+      if (!expectedDocumentId) {
+        if (!collectorEvent.documentId) {
+          return;
+        }
+        pendingEvents.push(collectorEvent);
+        return;
+      }
+      applyCollectorEvent(collectorEvent);
+    };
+
+    const flushPendingEvents = () => {
+      if (!expectedDocumentId || pendingEvents.length === 0) {
+        return;
+      }
+      const events = pendingEvents.splice(0, pendingEvents.length);
+      events.forEach(applyCollectorEvent);
+    };
+
     // 立即开始监听事件（在调用后端之前）
     const unsubscribeCard = this.on<{ card: AnkiCardResult }>('card:generated', (event) => {
-      if (!expectedDocumentId) {
-        return;
-      }
-      if (event.documentId && event.documentId !== expectedDocumentId) {
-        return;
-      }
-      cards.push(event.payload.card);
+      collectOrQueue({
+        type: 'card',
+        card: event.payload.card,
+        documentId: event.documentId,
+      });
     });
 
     const unsubscribeErrorCard = this.on<{ card: AnkiCardResult }>('card:error', (event) => {
-      if (!expectedDocumentId) {
-        return;
-      }
-      if (event.documentId && event.documentId !== expectedDocumentId) {
-        return;
-      }
-      cards.push(event.payload.card);
+      collectOrQueue({
+        type: 'errorCard',
+        card: event.payload.card,
+        documentId: event.documentId,
+      });
     });
 
     const unsubscribeComplete = this.on('document:complete', (event) => {
-      if (!expectedDocumentId) {
-        return;
-      }
-      if (event.documentId && event.documentId !== expectedDocumentId) {
-        return;
-      }
-      if (!completed) {
-        completed = true;
-        cleanup();
-        if (resolveWithState) {
-          resolveWithState({ cards, paused: false });
-        }
-      }
+      collectOrQueue({
+        type: 'complete',
+        documentId: event.documentId,
+      });
     });
 
     // 🔧 三轮修复 #8: 监听暂停事件，用户暂停时立即返回已收集的卡片
     const unsubscribePaused = this.on('document:paused', (event) => {
-      if (!expectedDocumentId) {
-        return;
-      }
-      if (event.documentId && event.documentId !== expectedDocumentId) {
-        return;
-      }
-      if (!completed) {
-        completed = true;
-        paused = true;
-        console.log(`[CardAgent] 文档处理已暂停，返回已收集的 ${cards.length} 张卡片`);
-        cleanup();
-        if (resolveWithState) {
-          resolveWithState({ cards, paused });
-        }
-      }
+      collectOrQueue({
+        type: 'paused',
+        documentId: event.documentId,
+      });
     });
 
     return {
@@ -1432,6 +1478,7 @@ export class CardAgent {
       },
       setDocumentId: (documentId: string) => {
         expectedDocumentId = documentId;
+        flushPendingEvents();
       },
       cancel: () => {
         if (!completed) {

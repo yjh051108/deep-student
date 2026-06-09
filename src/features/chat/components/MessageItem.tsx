@@ -51,6 +51,7 @@ import { useTextSelection } from '../hooks/useTextSelection';
 import { SelectionToolbar } from './SelectionToolbar';
 import { TranslationPopover } from './TranslationPopover';
 import { ExplainPopover } from './ExplainPopover';
+import { invoke } from '@/runtime/native';
 
 // ============================================================================
 // 辅助函数
@@ -1071,7 +1072,6 @@ const MessageItemInner: React.FC<MessageItemProps> = ({
     if (isBranchingRef.current || isLocked || !message) return;
     isBranchingRef.current = true;
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
       const sessionId = store.getState().sessionId;
       if (!sessionId) throw new Error('No active session');
       const newSession = await invoke('chat_v2_branch_session', {

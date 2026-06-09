@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { type Question, type QuestionBankStats, type SubmitResult, type PracticeMode } from '@/api/questionBankApi';
 import { debugLog } from '@/debug-panel/debugMasterSwitch';
 import { emitExamSheetDebug } from '@/debug-panel/plugins/ExamSheetProcessingDebugPlugin';

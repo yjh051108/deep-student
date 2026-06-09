@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getErrorMessage } from './errorUtils';
 import { t } from './i18n';
 import { isTauriRuntime, invokeWithDebug, withGraphId } from './shared';
+import { getAppDataDir as nativeGetAppDataDir, invoke as nativeInvoke } from '@/runtime/native';
 import type { Tag } from './shared';
 import { debugLog } from '../debug-panel/debugMasterSwitch';
 import type {
@@ -90,8 +91,8 @@ export async function generateMissingTagVectors(graphId: string = 'default'): Pr
  * 保存 WebView localStorage 数据到后端文件系统
  * 在备份导出前调用，确保 UI 偏好设置被包含在备份中
  */
-export async function saveWebviewSettings(settings: Record<string, string>): Promise<{ success: boolean; path?: string; size?: number }> {
-  return invoke<{ success: boolean; path?: string; size?: number }>('save_webview_settings', { settings });
+export async function saveWebviewSettings(settings: Record<string, unknown>): Promise<{ success: boolean; path?: string; size?: number }> {
+  return nativeInvoke<{ success: boolean; path?: string; size?: number }>('save_webview_settings', { settings });
 }
 
 export function collectLocalStorageForBackup(): Record<string, string> {
@@ -293,7 +294,7 @@ let appDataDir: string | null = null;
 export async function getAppDataDir(): Promise<string> {
   if (!appDataDir) {
     try {
-      appDataDir = await invoke<string>('get_app_data_dir');
+      appDataDir = await nativeGetAppDataDir();
     } catch (e) {
       // 后端未提供时使用空字符串占位
       appDataDir = '';

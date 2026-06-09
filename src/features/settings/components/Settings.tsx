@@ -84,6 +84,7 @@ import { useSettingsZoomFont } from './useSettingsZoomFont';
 import { useMcpEditorSection } from './McpEditorSection';
 import { useSettingsConfig } from './useSettingsConfig';
 import { resolveVoiceInputModelAssignment } from '@/voice-input/modelSelection';
+import { getSetting, getSettings, saveSetting, saveSettings, invoke as nativeInvoke } from '@/runtime/native';
 
 const console = debugLog as Pick<typeof debugLog, 'log' | 'warn' | 'error' | 'info' | 'debug'>;
 
@@ -348,8 +349,7 @@ export const Settings: React.FC<SettingsProps> = ({ onBack, mobilePresentation =
   // 当供应商/模型配置变更时，从后端刷新 ApiConfig 列表（作为“单一事实来源”）
   const refreshApiConfigsFromBackend = useCallback(async () => {
     try {
-      if (!invoke) return;
-      const apiConfigs = (await invoke('get_api_configurations').catch(() => [])) as ApiConfig[];
+      const apiConfigs = (await nativeInvoke('get_api_configurations').catch(() => [])) as ApiConfig[];
       const mappedApiConfigs = (apiConfigs || []).map((c: ApiConfig) => ({
         ...c,
         maxOutputTokens: c.maxOutputTokens,
@@ -365,7 +365,7 @@ export const Settings: React.FC<SettingsProps> = ({ onBack, mobilePresentation =
     } catch (e) {
       // 静默失败：不阻塞设置页、避免控制台警告噪音
     }
-  }, [invoke, setConfig]);
+  }, [setConfig]);
 
   useEffect(() => {
     const onChanged = () => {
@@ -437,10 +437,9 @@ export const Settings: React.FC<SettingsProps> = ({ onBack, mobilePresentation =
   const [topbarTopMargin, setTopbarTopMargin] = useState<string>('');
   const [topbarTopMarginLoaded, setTopbarTopMarginLoaded] = useState(false);
   useEffect(() => {
-    if (!invoke) return;
     (async () => {
       try {
-        const v = await (invoke as typeof tauriInvoke)('get_setting', { key: 'topbar.top_margin' });
+        const v = await getSetting('topbar.top_margin');
         const value = String(v ?? '').trim();
         if (value) {
           setTopbarTopMargin(value);
@@ -462,10 +461,9 @@ export const Settings: React.FC<SettingsProps> = ({ onBack, mobilePresentation =
   // 开发者选项：显示消息请求体
   const [showRawRequest, setShowRawRequest] = useState<boolean | null>(null);
   useEffect(() => {
-    if (!invoke) return;
     (async () => {
       try {
-        const v = await (invoke as typeof tauriInvoke)('get_setting', { key: 'dev.show_raw_request' });
+        const v = await getSetting('dev.show_raw_request');
         const value = String(v ?? '').trim().toLowerCase();
         setShowRawRequest(value === 'true' || value === '1');
       } catch {
@@ -512,10 +510,6 @@ export const Settings: React.FC<SettingsProps> = ({ onBack, mobilePresentation =
 
   const handleSaveChatStreamTimeout = useCallback(async () => {
     const raw = String(extra?.chatStreamTimeoutSeconds ?? '').trim();
-    if (!invoke) {
-      showGlobalNotification('error', t('common:settings.chat_stream.save_error_timeout', { error: 'invoke unavailable' }));
-      return;
-    }
     let payloadValue = '';
     let timeoutMs: number | null = null;
     if (raw) {
@@ -529,7 +523,7 @@ export const Settings: React.FC<SettingsProps> = ({ onBack, mobilePresentation =
       payloadValue = String(timeoutMs);
     }
     try {
-      await invoke('save_setting', { key: 'chat.stream.timeout_ms', value: payloadValue });
+      await saveSetting('chat.stream.timeout_ms', payloadValue);
       showGlobalNotification('success', t('common:settings.chat_stream.save_success_timeout'));
       const savedValue = raw ? String(Math.round(Number(raw))) : '';
       setExtra(prev => ({
@@ -547,16 +541,12 @@ export const Settings: React.FC<SettingsProps> = ({ onBack, mobilePresentation =
         chatStreamTimeoutSeconds: prev._lastSavedTimeoutSeconds ?? '',
       }));
     }
-  }, [emitChatStreamSettingsUpdate, extra, invoke, showGlobalNotification, t]);
+  }, [emitChatStreamSettingsUpdate, extra, showGlobalNotification, t]);
 
   const handleToggleChatStreamAutoCancel = useCallback(async (checked: boolean) => {
     setExtra(prev => ({ ...prev, chatStreamAutoCancel: checked }));
-    if (!invoke) {
-      showGlobalNotification('error', t('common:settings.chat_stream.save_error_auto_cancel', { error: 'invoke unavailable' }));
-      return;
-    }
     try {
-      await invoke('save_setting', { key: 'chat.stream.auto_cancel_on_timeout', value: checked ? '1' : '0' });
+      await saveSetting('chat.stream.auto_cancel_on_timeout', checked ? '1' : '0');
       showGlobalNotification('success', t('common:settings.chat_stream.save_success_auto_cancel'));
       emitChatStreamSettingsUpdate({ autoCancel: checked });
     } catch (error) {
@@ -565,22 +555,27 @@ export const Settings: React.FC<SettingsProps> = ({ onBack, mobilePresentation =
       showGlobalNotification('error', t('common:settings.chat_stream.save_error_auto_cancel', { error: errorMessage }));
       setExtra(prev => ({ ...prev, chatStreamAutoCancel: !checked }));
     }
-  }, [emitChatStreamSettingsUpdate, invoke, showGlobalNotification, t]);
+  }, [emitChatStreamSettingsUpdate, showGlobalNotification, t]);
 
   // 🔧 R2-9: 合并为单一 useEffect，避免竞态写入
   useEffect(() => {
-    if (!invoke) return;
     (async () => {
       try {
         // 并行加载所有参数调整相关设置
-        const [ftsVal, rrfk, wfts, wvec, rawTimeout, rawAutoCancel] = await Promise.all([
-          invoke<string | null>('get_setting', { key: 'search.chat.semantic.fts_prefilter.enabled' }).catch(() => null),
-          invoke<string | null>('get_setting', { key: 'search.chat.rrf.k' }).catch(() => null),
-          invoke<string | null>('get_setting', { key: 'search.chat.rrf.w_fts' }).catch(() => null),
-          invoke<string | null>('get_setting', { key: 'search.chat.rrf.w_vec' }).catch(() => null),
-          invoke<string | null>('get_setting', { key: 'chat.stream.timeout_ms' }).catch(() => null),
-          invoke<string | null>('get_setting', { key: 'chat.stream.auto_cancel_on_timeout' }).catch(() => null),
-        ]);
+        const values = await getSettings([
+          'search.chat.semantic.fts_prefilter.enabled',
+          'search.chat.rrf.k',
+          'search.chat.rrf.w_fts',
+          'search.chat.rrf.w_vec',
+          'chat.stream.timeout_ms',
+          'chat.stream.auto_cancel_on_timeout',
+        ]).catch(() => ({}));
+        const ftsVal = values['search.chat.semantic.fts_prefilter.enabled'] ?? null;
+        const rrfk = values['search.chat.rrf.k'] ?? null;
+        const wfts = values['search.chat.rrf.w_fts'] ?? null;
+        const wvec = values['search.chat.rrf.w_vec'] ?? null;
+        const rawTimeout = values['chat.stream.timeout_ms'] ?? null;
+        const rawAutoCancel = values['chat.stream.auto_cancel_on_timeout'] ?? null;
 
         const ftsEnabled = ftsVal ? (ftsVal === '1' || ftsVal.toLowerCase() === 'true') : true;
 
@@ -617,7 +612,7 @@ export const Settings: React.FC<SettingsProps> = ({ onBack, mobilePresentation =
         setExtra(prev => ({ ...prev, paramsLoaded: true }));
       }
     })();
-  }, [invoke]);
+  }, []);
 
   // 处理返回按钮，确保在返回前保存配置
   // 🔧 修复：仅在 config 成功加载后才保存，防止 loadConfig 失败时覆写后端真实配置
@@ -792,7 +787,7 @@ export const Settings: React.FC<SettingsProps> = ({ onBack, mobilePresentation =
   useEffect(() => {
     const reloadAssignments = async () => {
       try {
-        const modelAssignments = await invoke<{
+        const modelAssignments = await nativeInvoke<{
           model2_config_id: string | null;
           anki_card_model_config_id: string | null;
           qbank_ai_grading_model_config_id: string | null;
@@ -1383,17 +1378,15 @@ export const Settings: React.FC<SettingsProps> = ({ onBack, mobilePresentation =
                     };
 
                     try {
-                      if (invoke) {
-                        await Promise.all([
-                          invoke('save_setting', { key: 'mcp.tools.advertise_all_tools', value: mcpPolicyModal.advertiseAll.toString() }),
-                          invoke('save_setting', { key: 'mcp.tools.whitelist', value: mcpPolicyModal.whitelist }),
-                          invoke('save_setting', { key: 'mcp.tools.blacklist', value: mcpPolicyModal.blacklist }),
-                          invoke('save_setting', { key: 'mcp.performance.timeout_ms', value: String(mcpPolicyModal.timeoutMs) }),
-                          invoke('save_setting', { key: 'mcp.performance.rate_limit_per_second', value: String(mcpPolicyModal.rateLimit) }),
-                          invoke('save_setting', { key: 'mcp.performance.cache_max_size', value: String(mcpPolicyModal.cacheMax) }),
-                          invoke('save_setting', { key: 'mcp.performance.cache_ttl_ms', value: String(mcpPolicyModal.cacheTtlMs) }),
-                        ]);
-                      }
+                      await saveSettings({
+                        'mcp.tools.advertise_all_tools': mcpPolicyModal.advertiseAll.toString(),
+                        'mcp.tools.whitelist': mcpPolicyModal.whitelist,
+                        'mcp.tools.blacklist': mcpPolicyModal.blacklist,
+                        'mcp.performance.timeout_ms': String(mcpPolicyModal.timeoutMs),
+                        'mcp.performance.rate_limit_per_second': String(mcpPolicyModal.rateLimit),
+                        'mcp.performance.cache_max_size': String(mcpPolicyModal.cacheMax),
+                        'mcp.performance.cache_ttl_ms': String(mcpPolicyModal.cacheTtlMs),
+                      });
                     } catch (err) {
                       const errorMessage = getErrorMessage(err);
                       console.error('保存MCP安全策略失败:', err);

@@ -7,7 +7,7 @@
  * - 重试处理
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 
 // ========== 类型定义 ==========
 
@@ -82,6 +82,8 @@ type BackendStatusShape = {
   progress?: BackendProgressShape;
 };
 
+type BackendBatchStatusShape = Record<string, BackendStatusShape> | { statuses?: Record<string, BackendStatusShape> };
+
 const FALLBACK_STATUS: PdfProcessingStatusResponse = {
   stage: 'pending',
   percent: 0,
@@ -155,7 +157,7 @@ export async function getPdfProcessingStatus(fileId: string): Promise<PdfProcess
  * ```
  */
 export async function getBatchPdfProcessingStatus(fileIds: string[]): Promise<BatchPdfProcessingStatusResponse> {
-  const raw = await invoke<Record<string, BackendStatusShape> | { statuses?: Record<string, BackendStatusShape> }>(
+  const raw = await invoke<BackendBatchStatusShape>(
     'vfs_get_batch_pdf_processing_status',
     { fileIds }
   );

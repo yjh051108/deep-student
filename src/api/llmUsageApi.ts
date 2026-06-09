@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 
 export interface UsageTrendPoint {
   timeLabel: string;

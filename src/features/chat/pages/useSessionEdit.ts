@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { getErrorMessage } from '@/utils/errorUtils';
 import { sessionManager } from '../core/session/sessionManager';
 import { groupCache } from '../core/store/groupCache';

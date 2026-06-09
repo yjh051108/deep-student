@@ -25,7 +25,8 @@ import i18next from 'i18next';
 import { reportError } from '@/shared/result';
 import { getErrorMessage } from '@/utils/errorUtils';
 import type { DstuNode, DstuNodeType } from '@/dstu/types';
-import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { LARGE_FILE_THRESHOLD } from '@/utils/base64FileUtils';
 
 // 预览子组件

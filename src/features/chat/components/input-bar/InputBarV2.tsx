@@ -10,7 +10,7 @@
 import React, { memo, useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke as nativeInvoke } from '@/runtime/native';
 import { InputBarUI } from './InputBarUI';
 import { useInputBarV2 } from './useInputBarV2';
 import { useQueueSettings } from '../../queue/useQueueSettings';
@@ -551,7 +551,7 @@ export const InputBarV2: React.FC<InputBarV2Props> = memo(
 
     useEffect(() => {
       let active = true;
-      void invoke<ModelProfileDisplayRecord[]>('get_model_profiles')
+      void nativeInvoke<ModelProfileDisplayRecord[]>('get_model_profiles')
         .then((profiles) => {
           if (!active) return;
           const displayMap = new Map<string, string>();

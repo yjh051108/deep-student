@@ -8,12 +8,13 @@ import { SealCheck, WarningCircle, ArrowClockwise, Plus, FloppyDisk as SaveIcon,
 import { TauriAPI } from '@/utils/tauriApi';
 import { showGlobalNotification } from '@/components/UnifiedNotification';
 import { getErrorMessage } from '@/utils/errorUtils';
+import { isInjectedNativeRuntime, isTauriRuntime, isWailsRuntime } from '@/runtime/native';
 
 type StaticTool = { id: string; name: string; description?: string };
 
 export const McpToolsManager: React.FC = () => {
   const { t } = useTranslation(['common']);
-  const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__;
+  const isNativeRuntime = isTauriRuntime() || isWailsRuntime() || isInjectedNativeRuntime();
   const [status, setStatus] = useState<any>(null);
   const [onlineTools, setOnlineTools] = useState<Array<{ name: string; description?: string }>>([]);
   const [staticTools, setStaticTools] = useState<StaticTool[]>([]);
@@ -22,7 +23,7 @@ export const McpToolsManager: React.FC = () => {
   const [testing, setTesting] = useState(false);
 
   const loadAll = async () => {
-    if (!isTauri) return;
+    if (!isNativeRuntime) return;
     setBusy(true);
     try {
       const [mcpStatus, toolsOnline, rawStatic] = await Promise.all([
@@ -46,7 +47,7 @@ export const McpToolsManager: React.FC = () => {
   useEffect(() => { loadAll(); }, []);
 
   const saveStaticTools = async () => {
-    if (!isTauri) return;
+    if (!isNativeRuntime) return;
     setSaving(true);
     try {
       const cleaned = staticTools
@@ -61,7 +62,7 @@ export const McpToolsManager: React.FC = () => {
   };
 
   const reloadClient = async () => {
-    if (!isTauri) return;
+    if (!isNativeRuntime) return;
     setBusy(true);
     try {
       const res = await TauriAPI.reloadMcpClient();
@@ -75,7 +76,7 @@ export const McpToolsManager: React.FC = () => {
   };
 
   const refreshTools = async () => {
-    if (!isTauri) return;
+    if (!isNativeRuntime) return;
     setBusy(true);
     try {
       const toolsOnline = await TauriAPI.getMcpTools();
@@ -87,7 +88,7 @@ export const McpToolsManager: React.FC = () => {
   };
 
   const testAllEngines = async () => {
-    if (!isTauri) return;
+    if (!isNativeRuntime) return;
     setTesting(true);
     try {
       const res = await TauriAPI.testAllSearchEngines();

@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { getErrorMessage } from '@/utils/errorUtils';
 import type { CreateGroupRequest, SessionGroup, UpdateGroupRequest } from '../types/group';
 import { setGroupsCache } from '../core/store/groupCache';

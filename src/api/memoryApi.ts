@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { invoke as nativeInvoke } from '@/runtime/native';
 
 export type AutoExtractFrequency = 'off' | 'balanced' | 'aggressive';
 
@@ -118,7 +119,7 @@ export interface FolderTreeNode {
 }
 
 export async function getMemoryConfig(): Promise<MemoryConfig> {
-  return invoke<MemoryConfig>('memory_get_config');
+  return nativeInvoke<MemoryConfig>('memory_get_config');
 }
 
 export async function setMemoryRootFolder(folderId: string): Promise<void> {

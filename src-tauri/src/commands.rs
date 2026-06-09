@@ -5,21 +5,18 @@ use log::{debug, error, info, warn};
 use crate::database::{Database, DatabaseManager};
 use crate::database_optimizations::DatabaseOptimizationExt;
 use crate::exam_sheet_service::ExamSheetService;
-use crate::llm_manager::{
-    should_use_openai_responses_for_config, ApiConfig, ModelProfile, VendorConfig,
-};
 #[cfg(feature = "mcp")]
 use crate::mcp::McpConfig;
 use crate::models::{
     AnkiDocumentGenerationRequest, AnkiDocumentGenerationResponse, AnkiGenerationOptions, AppError,
     CreateTemplateRequest, CustomAnkiTemplate, ExamSheetSessionDetail,
     ExamSheetSessionDetailRequest, ExamSheetSessionDetailResponse, ExamSheetSessionListRequest,
-    ExamSheetSessionListResponse, ModelAssignments, PdfOcrRequest, PdfOcrResult,
-    RenameExamSheetSessionRequest, RenameExamSheetSessionResponse, StreamContext,
-    TemplateBulkImportRequest, TemplateExportResponse, TemplateImportRequest,
-    UpdateExamSheetCardsRequest, UpdateExamSheetCardsResponse, UpdateTemplateRequest,
+    ExamSheetSessionListResponse, PdfOcrRequest, PdfOcrResult, RenameExamSheetSessionRequest,
+    RenameExamSheetSessionResponse, StreamContext, TemplateBulkImportRequest,
+    TemplateExportResponse, TemplateImportRequest, UpdateExamSheetCardsRequest,
+    UpdateExamSheetCardsResponse, UpdateTemplateRequest,
 };
-use crate::question_bank_service::{BatchResult, QuestionBankService, SubmitAnswerResult};
+use crate::question_bank_service::{BatchResult, QuestionBankService};
 use crate::vfs::repos::AnswerSubmission;
 use base64::Engine;
 use rusqlite::params;
@@ -28,7 +25,6 @@ use crate::file_manager::FileManager;
 use crate::pdf_ocr_service::PdfOcrService;
 use crate::unified_file_manager;
 use serde::{Deserialize, Serialize};
-use sha2::Digest;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -479,16 +475,6 @@ pub async fn get_app_version() -> String {
     )
 }
 
-/// 获取应用数据目录的绝对路径
-#[tauri::command]
-pub async fn get_app_data_dir(state: State<'_, AppState>) -> Result<String> {
-    Ok(state
-        .file_manager
-        .get_app_data_dir()
-        .to_string_lossy()
-        .to_string())
-}
-
 // ============================================================================
 // 调试日志管理命令
 // ============================================================================
@@ -518,14 +504,6 @@ pub async fn cleanup_old_debug_logs(
     let data_dir = state.file_manager.get_app_data_dir();
     crate::debug_log_service::cleanup_old_debug_logs(data_dir, max_age_days)
         .map_err(|e| AppError::unknown(e))
-}
-
-/// 确保 debug-logs 目录存在并返回绝对路径
-#[tauri::command]
-pub async fn ensure_debug_log_dir(state: State<'_, AppState>) -> Result<String> {
-    let data_dir = state.file_manager.get_app_data_dir();
-    let dir = crate::debug_log_service::ensure_debug_log_dir(data_dir);
-    Ok(dir.to_string_lossy().to_string())
 }
 
 /// 读取指定调试日志文件的完整内容（用于"完整"过滤级别的复制）
@@ -1101,283 +1079,6 @@ pub async fn list_importing_sessions(
         .map_err(|e| AppError::database(format!("查询中断会话失败: {}", e)).into())
 }
 
-// ============================================================================
-// CSV 导入导出命令
-// ============================================================================
-
-/// CSV 导入请求参数
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CsvImportCommandRequest {
-    /// 文件路径
-    pub file_path: String,
-    /// 目标题目集 ID
-    pub exam_id: String,
-    /// 字段映射：CSV 列名 -> 题目字段名
-    pub field_mapping: std::collections::HashMap<String, String>,
-    /// 去重策略: skip / overwrite / merge
-    #[serde(default)]
-    pub duplicate_strategy: Option<String>,
-    /// 文件夹 ID（创建新题目集时使用）
-    pub folder_id: Option<String>,
-    /// 题目集名称（创建新题目集时使用）
-    pub exam_name: Option<String>,
-}
-
-/// CSV 导出请求参数
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CsvExportCommandRequest {
-    /// 题目集 ID
-    pub exam_id: String,
-    /// 导出文件路径
-    pub file_path: String,
-    /// 要导出的字段列表（为空则导出所有）
-    #[serde(default)]
-    pub fields: Vec<String>,
-    /// 筛选条件
-    #[serde(default)]
-    pub filters: Option<crate::vfs::repos::QuestionFilters>,
-    /// 是否包含答题记录
-    #[serde(default)]
-    pub include_answers: bool,
-    /// 输出编码: utf8 / gbk / utf8_bom
-    #[serde(default)]
-    pub encoding: Option<String>,
-}
-
-/// 导入 CSV 文件到题目集
-///
-/// 支持字段映射、去重策略（skip/overwrite/merge）
-/// 支持 UTF-8 和 GBK 编码自动检测
-#[tauri::command]
-pub async fn import_questions_csv(
-    request: CsvImportCommandRequest,
-    state: State<'_, AppState>,
-    app_handle: AppHandle,
-    window: Window,
-) -> Result<crate::question_import_service::CsvImportResult> {
-    use crate::question_import_service::{
-        CsvDuplicateStrategy, CsvImportProgress, CsvImportRequest, CsvImportService,
-    };
-
-    let vfs_db = state
-        .vfs_db
-        .as_ref()
-        .ok_or_else(|| AppError::validation("VFS 数据库未初始化"))?;
-
-    let (csv_file_path, cleanup_path) = if unified_file_manager::is_virtual_uri(&request.file_path)
-    {
-        let temp_dir = state
-            .file_manager
-            .get_writable_app_data_dir()
-            .join("temp_csv_import");
-        let materialized =
-            unified_file_manager::ensure_local_path(&window, &request.file_path, &temp_dir)?;
-        let (path, cleanup) = materialized.into_owned();
-        (path.to_string_lossy().to_string(), cleanup.or(Some(path)))
-    } else {
-        (request.file_path.clone(), None)
-    };
-
-    // 解析去重策略
-    let duplicate_strategy = match request.duplicate_strategy.as_deref() {
-        Some("overwrite") => CsvDuplicateStrategy::Overwrite,
-        Some("merge") => CsvDuplicateStrategy::Merge,
-        _ => CsvDuplicateStrategy::Skip,
-    };
-
-    // 创建进度通道
-    let (progress_tx, mut progress_rx) =
-        tokio::sync::mpsc::unbounded_channel::<CsvImportProgress>();
-    let progress_tx_error = progress_tx.clone();
-
-    // 事件转发任务
-    let event_forwarder = {
-        let app_handle = app_handle.clone();
-        tokio::spawn(async move {
-            while let Some(payload) = progress_rx.recv().await {
-                if let Err(err) = app_handle.emit("csv_import_progress", payload) {
-                    log::warn!("[csv_import_progress] emit failed: {}", err);
-                }
-            }
-        })
-    };
-
-    let csv_request = CsvImportRequest {
-        file_path: csv_file_path,
-        exam_id: request.exam_id,
-        field_mapping: request.field_mapping,
-        duplicate_strategy,
-        folder_id: request.folder_id,
-        exam_name: request.exam_name,
-    };
-
-    let result = CsvImportService::import_csv(vfs_db, &csv_request, Some(progress_tx));
-    if let Err(err) = &result {
-        let _ = progress_tx_error.send(CsvImportProgress::Failed {
-            error: err.to_string(),
-            exam_id: csv_request.exam_id.clone(),
-        });
-    }
-    drop(progress_tx_error);
-
-    // 等待事件转发完成
-    if let Err(err) = event_forwarder.await {
-        log::warn!("[csv_import_progress] forwarder join failed: {:?}", err);
-    }
-
-    if let Some(cleanup) = cleanup_path {
-        if let Err(err) = std::fs::remove_file(&cleanup) {
-            warn!(
-                "[csv_import] 清理临时 CSV 文件失败 ({}): {}",
-                cleanup.display(),
-                err
-            );
-        }
-    }
-
-    result.map_err(|e| e.into())
-}
-
-/// 导出题目集为 CSV 文件
-///
-/// 支持选择导出字段、筛选条件、编码格式
-#[tauri::command]
-pub async fn export_questions_csv(
-    request: CsvExportCommandRequest,
-    state: State<'_, AppState>,
-    window: Window,
-) -> Result<crate::question_export_service::CsvExportResult> {
-    use crate::question_export_service::{CsvExportRequest, CsvExportService, ExportEncoding};
-
-    let vfs_db = state
-        .vfs_db
-        .as_ref()
-        .ok_or_else(|| AppError::validation("VFS 数据库未初始化"))?;
-
-    let target_path = request.file_path.clone();
-    let (export_file_path, staged_file_path) = if unified_file_manager::is_virtual_uri(&target_path)
-    {
-        let temp_dir = state
-            .file_manager
-            .get_writable_app_data_dir()
-            .join("temp_csv_export");
-        std::fs::create_dir_all(&temp_dir)
-            .map_err(|e| AppError::file_system(format!("创建 CSV 临时导出目录失败: {}", e)))?;
-        let staged = temp_dir.join(format!("questions_export_{}.csv", Uuid::new_v4()));
-        (
-            staged.to_string_lossy().to_string(),
-            Some(staged.to_string_lossy().to_string()),
-        )
-    } else {
-        (target_path.clone(), None)
-    };
-
-    // 解析编码
-    let encoding = match request.encoding.as_deref() {
-        Some("gbk") => ExportEncoding::Gbk,
-        Some("utf8_bom") => ExportEncoding::Utf8Bom,
-        _ => ExportEncoding::Utf8,
-    };
-
-    let export_request = CsvExportRequest {
-        exam_id: request.exam_id,
-        file_path: export_file_path.clone(),
-        fields: request.fields,
-        filters: request.filters.unwrap_or_default(),
-        include_answers: request.include_answers,
-        encoding,
-    };
-
-    let mut result = match CsvExportService::export_csv(vfs_db, &export_request) {
-        Ok(res) => res,
-        Err(err) => {
-            if let Some(staged) = &staged_file_path {
-                if let Err(cleanup_err) = std::fs::remove_file(staged) {
-                    warn!(
-                        "[csv_export] 导出失败后清理临时文件失败 ({}): {}",
-                        staged, cleanup_err
-                    );
-                }
-            }
-            return Err(err.into());
-        }
-    };
-
-    if staged_file_path.is_some() {
-        if let Err(err) = unified_file_manager::copy_file(&window, &export_file_path, &target_path)
-        {
-            if let Some(staged) = &staged_file_path {
-                if let Err(cleanup_err) = std::fs::remove_file(staged) {
-                    warn!(
-                        "[csv_export] 导出失败后清理临时文件失败 ({}): {}",
-                        staged, cleanup_err
-                    );
-                }
-            }
-            return Err(AppError::file_system(format!("写入目标 URI 失败: {}", err)));
-        }
-        if let Some(staged) = &staged_file_path {
-            if let Err(cleanup_err) = std::fs::remove_file(staged) {
-                warn!(
-                    "[csv_export] 清理临时导出文件失败 ({}): {}",
-                    staged, cleanup_err
-                );
-            }
-        }
-        result.file_path = target_path;
-    }
-
-    Ok(result)
-}
-
-/// 预览 CSV 文件前 N 行（用于字段映射）
-///
-/// 返回表头和预览数据，支持自动编码检测
-#[tauri::command]
-pub async fn get_csv_preview(
-    file_path: String,
-    rows: Option<usize>,
-    window: Window,
-) -> Result<crate::question_import_service::CsvPreviewResult> {
-    use crate::question_import_service::CsvImportService;
-
-    let (preview_file_path, cleanup_path) = if unified_file_manager::is_virtual_uri(&file_path) {
-        let temp_dir = window
-            .path()
-            .app_data_dir()
-            .unwrap_or_else(|_| std::env::temp_dir())
-            .join("temp_csv_preview");
-        let materialized = unified_file_manager::ensure_local_path(&window, &file_path, &temp_dir)?;
-        let (path, cleanup) = materialized.into_owned();
-        (path.to_string_lossy().to_string(), cleanup.or(Some(path)))
-    } else {
-        (file_path, None)
-    };
-
-    let preview_rows = rows.unwrap_or(5);
-    let result =
-        CsvImportService::preview_csv(&preview_file_path, preview_rows).map_err(|e| e.into());
-
-    if let Some(cleanup) = cleanup_path {
-        if let Err(err) = std::fs::remove_file(&cleanup) {
-            warn!(
-                "[csv_preview] 清理临时 CSV 文件失败 ({}): {}",
-                cleanup.display(),
-                err
-            );
-        }
-    }
-
-    result
-}
-
-/// 获取可导出的字段列表
-#[tauri::command]
-pub fn get_csv_exportable_fields() -> Vec<(String, String)> {
-    use crate::question_export_service::CsvExportService;
-    CsvExportService::get_exportable_fields()
-}
-
 /// 清空指定消息的向量（用于编辑重发场景）
 #[tauri::command]
 pub async fn clear_message_embeddings(
@@ -1475,297 +1176,6 @@ pub async fn optimize_chat_embeddings_table(
         debug!("[Lance优化] 聊天向量表在节流窗口内，未执行优化。");
     }
     Ok(())
-}
-
-/// 获取增强统计信息（包含所有模块）
-#[tauri::command]
-pub async fn get_enhanced_statistics(state: State<'_, AppState>) -> Result<serde_json::Value> {
-    let image_stats = state
-        .file_manager
-        .get_image_statistics()
-        .await
-        .map_err(|e| AppError::database(format!("获取图片统计失败: {}", e)))?;
-
-    let enhanced_stats = serde_json::json!({
-        "image_stats": image_stats,
-        "timestamp": chrono::Utc::now().to_rfc3339()
-    });
-
-    Ok(enhanced_stats)
-}
-
-// 专用配置管理命令
-
-#[tauri::command]
-pub async fn get_api_configurations(state: State<'_, AppState>) -> Result<Vec<ApiConfig>> {
-    // 移除高频日志，避免控制台噪音
-
-    let mut configs = state.llm_manager.get_api_configs().await?;
-
-    for cfg in &mut configs {
-        if cfg.is_builtin {
-            cfg.api_key = "***".to_string();
-        }
-    }
-
-    Ok(configs)
-}
-
-#[tauri::command]
-pub async fn save_api_configurations(
-    configs: Vec<ApiConfig>,
-    state: State<'_, AppState>,
-) -> Result<()> {
-    info!("[后端] 接收到保存API配置请求");
-    debug!("  - 配置数量: {}", configs.len());
-    debug!(
-        "  - 配置ID列表: {:?}",
-        configs.iter().map(|c| &c.id).collect::<Vec<_>>()
-    );
-    debug!(
-        "  - 配置名称列表: {:?}",
-        configs.iter().map(|c| &c.name).collect::<Vec<_>>()
-    );
-
-    let result = state.llm_manager.save_api_configurations(&configs).await;
-
-    match &result {
-        Ok(_) => info!("[后端] API配置保存成功"),
-        Err(e) => error!("[后端] API配置保存失败: {:?}", e),
-    }
-
-    result
-}
-
-#[tauri::command]
-pub async fn get_model_assignments(state: State<'_, AppState>) -> Result<ModelAssignments> {
-    debug!("获取模型分配配置");
-
-    state.llm_manager.get_model_assignments().await
-}
-
-#[tauri::command]
-pub async fn save_model_assignments(
-    assignments: ModelAssignments,
-    state: State<'_, AppState>,
-) -> Result<()> {
-    debug!("保存模型分配配置");
-
-    state.llm_manager.save_model_assignments(&assignments).await
-}
-
-/// 供应商配置管理
-#[tauri::command]
-pub async fn get_vendor_configs(state: State<'_, AppState>) -> Result<Vec<VendorConfig>> {
-    state.llm_manager.get_vendor_configs().await
-}
-
-#[tauri::command]
-pub async fn save_vendor_configs(
-    configs: Vec<VendorConfig>,
-    state: State<'_, AppState>,
-) -> Result<()> {
-    state.llm_manager.save_vendor_configs(&configs).await
-}
-
-#[tauri::command]
-pub async fn get_model_profiles(state: State<'_, AppState>) -> Result<Vec<ModelProfile>> {
-    state.llm_manager.get_model_profiles().await
-}
-
-#[tauri::command]
-pub async fn save_model_profiles(
-    profiles: Vec<ModelProfile>,
-    state: State<'_, AppState>,
-) -> Result<()> {
-    state.llm_manager.save_model_profiles(&profiles).await
-}
-
-/// 测试 API 连接
-///
-/// 参数说明：
-/// - api_key: API 密钥（可以是 "***" 占位符）
-/// - api_base: API 基础 URL
-/// - model: 模型名称（可选）
-/// - vendor_id: 供应商 ID（可选，用于从安全存储获取真实密钥）
-fn resolve_test_api_protocol(
-    api_base: &str,
-    explicit_protocol: Option<&str>,
-    model: Option<&str>,
-    supports_openai_responses: Option<bool>,
-) -> &'static str {
-    let mut inferred_config = ApiConfig {
-        base_url: api_base.to_string(),
-        model: model.unwrap_or_default().to_string(),
-        model_adapter: "general".to_string(),
-        api_protocol: explicit_protocol.map(|protocol| protocol.to_string()),
-        ..Default::default()
-    };
-    inferred_config.supports_openai_responses = supports_openai_responses;
-    if api_base.to_lowercase().contains("api.openai.com") {
-        inferred_config.provider_type = Some("openai".to_string());
-    }
-
-    if should_use_openai_responses_for_config(&inferred_config) {
-        "openai_responses"
-    } else {
-        "openai_chat_completions"
-    }
-}
-
-#[tauri::command]
-pub async fn test_api_connection(
-    api_key: String,
-    api_base: String,
-    api_protocol: Option<String>,
-    supports_openai_responses: Option<bool>,
-    model: Option<String>,
-    vendor_id: Option<String>,
-    state: State<'_, AppState>,
-) -> Result<bool> {
-    use reqwest::Client;
-    use std::time::Duration;
-
-    info!(
-        "[API测试] 开始测试连接: base={}, model={:?}, vendor_id={:?}",
-        api_base, model, vendor_id
-    );
-
-    // 解析真实的 API 密钥
-    // 如果 api_key 是占位符（*** 或空），尝试从安全存储获取真实密钥
-    let effective_api_key = {
-        let trimmed = api_key.trim();
-        let is_placeholder =
-            trimmed.is_empty() || trimmed == "***" || trimmed.chars().all(|c| c == '*');
-
-        if is_placeholder {
-            // 尝试从安全存储获取真实密钥
-            if let Some(vid) = &vendor_id {
-                // 尝试标准格式：{vendor_id}.api_key
-                let secret_key = format!("{}.api_key", vid);
-                if let Ok(Some(key)) = state.database.get_secret(&secret_key) {
-                    if !key.is_empty() {
-                        debug!("[API测试] 从安全存储获取密钥: {}", secret_key);
-                        key
-                    } else {
-                        // 如果是 SiliconFlow，尝试旧格式
-                        if vid.contains("siliconflow") {
-                            if let Ok(Some(key)) = state.database.get_secret("siliconflow.api_key")
-                            {
-                                if !key.is_empty() {
-                                    debug!("[API测试] 从安全存储获取密钥（旧格式）: siliconflow.api_key");
-                                    key
-                                } else {
-                                    return Err(AppError::validation(
-                                        "API 密钥未配置，请先配置 API 密钥",
-                                    ));
-                                }
-                            } else {
-                                return Err(AppError::validation(
-                                    "API 密钥未配置，请先配置 API 密钥",
-                                ));
-                            }
-                        } else {
-                            return Err(AppError::validation("API 密钥未配置，请先配置 API 密钥"));
-                        }
-                    }
-                } else {
-                    // 如果是 SiliconFlow，尝试旧格式
-                    if vid.contains("siliconflow") {
-                        if let Ok(Some(key)) = state.database.get_secret("siliconflow.api_key") {
-                            if !key.is_empty() {
-                                debug!(
-                                    "[API测试] 从安全存储获取密钥（旧格式）: siliconflow.api_key"
-                                );
-                                key
-                            } else {
-                                return Err(AppError::validation(
-                                    "API 密钥未配置，请先配置 API 密钥",
-                                ));
-                            }
-                        } else {
-                            return Err(AppError::validation("API 密钥未配置，请先配置 API 密钥"));
-                        }
-                    } else {
-                        return Err(AppError::validation("API 密钥未配置，请先配置 API 密钥"));
-                    }
-                }
-            } else {
-                return Err(AppError::validation("请先输入 API 密钥"));
-            }
-        } else {
-            trimmed.to_string()
-        }
-    };
-
-    let protocol = resolve_test_api_protocol(
-        &api_base,
-        api_protocol.as_deref(),
-        model.as_deref(),
-        supports_openai_responses,
-    );
-
-    // 构建请求 URL
-    let url = match protocol {
-        "openai_responses" => format!("{}/responses", api_base.trim_end_matches('/')),
-        _ => format!("{}/chat/completions", api_base.trim_end_matches('/')),
-    };
-
-    // 构建最小化请求体
-    let model_id = model.unwrap_or_else(|| {
-        if protocol == "openai_responses" {
-            "gpt-4o-mini".to_string()
-        } else {
-            "gpt-4o-mini".to_string()
-        }
-    });
-    let request_body = if protocol == "openai_responses" {
-        serde_json::json!({
-            "model": model_id,
-            "input": "Hi",
-            "max_output_tokens": 1,
-            "stream": false
-        })
-    } else {
-        serde_json::json!({
-            "model": model_id,
-            "messages": [{"role": "user", "content": "Hi"}],
-            "max_tokens": 1,
-            "stream": false
-        })
-    };
-
-    // 创建 HTTP 客户端（10 秒超时）
-    let client = Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|e| AppError::network(format!("创建HTTP客户端失败: {}", e)))?;
-
-    // 发送请求
-    let response = client
-        .post(&url)
-        .header(
-            "Authorization",
-            format!("Bearer {}", effective_api_key.trim()),
-        )
-        .header("Content-Type", "application/json")
-        .json(&request_body)
-        .send()
-        .await
-        .map_err(|e| AppError::network(format!("API连接测试失败: {}", e)))?;
-
-    let status = response.status();
-    if status.is_success() {
-        info!("[API测试] 连接成功");
-        Ok(true)
-    } else {
-        let error_text = response.text().await.unwrap_or_default();
-        error!("[API测试] 连接失败: {} - {}", status, error_text);
-        Err(AppError::network(format!(
-            "API连接测试失败: {} - {}",
-            status, error_text
-        )))
-    }
 }
 
 // ============================================================================
@@ -2123,7 +1533,11 @@ pub async fn call_llm_for_boundary(
     // 调用 call_model2_raw_prompt 进行简单的 LLM 调用
     match state
         .llm_manager
-        .call_model2_raw_prompt(&prompt, None, crate::llm_usage::CallerType::Other("boundary_detection".to_string()))
+        .call_model2_raw_prompt(
+            &prompt,
+            None,
+            crate::llm_usage::CallerType::Other("boundary_detection".to_string()),
+        )
         .await
     {
         Ok(output) => {
@@ -2189,39 +1603,10 @@ pub async fn parse_document_from_base64(
     }
 }
 
-/// 读取文件文本内容
-#[tauri::command]
-pub async fn read_file_text(window: Window, path: String) -> Result<String> {
-    unified_file_manager::read_to_string(&window, &path)
-}
-
-/// 读取文件二进制内容（支持 content://、ph:// 等移动端安全URI）
-#[tauri::command]
-pub async fn read_file_bytes(window: Window, path: String) -> Result<Vec<u8>> {
-    unified_file_manager::read_all_bytes(&window, &path)
-}
-
-/// 获取文件大小（字节）
-#[tauri::command]
-pub async fn get_file_size(window: Window, path: String) -> Result<u64> {
-    unified_file_manager::get_file_size(&window, &path)
-}
 /// 计算文件 SHA-256（十六进制）
 #[tauri::command]
 pub async fn hash_file(window: Window, path: String) -> Result<String> {
     unified_file_manager::hash_file_sha256(&window, &path)
-}
-/// 复制文件到指定位置
-#[tauri::command]
-pub async fn copy_file(window: Window, source_path: String, dest_path: String) -> Result<()> {
-    unified_file_manager::copy_file(&window, &source_path, &dest_path)?;
-    Ok(())
-}
-
-/// 将文本内容保存到指定文件
-#[tauri::command]
-pub async fn save_text_to_file(window: Window, path: String, content: String) -> Result<()> {
-    unified_file_manager::write_text_file(&window, &path, &content)
 }
 
 // 自定义模板管理命令
@@ -3081,9 +2466,7 @@ fn parse_version_parts(version: &str) -> Option<Vec<u64>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        compare_template_version, resolve_test_api_protocol, should_update_builtin_template,
-    };
+    use super::{compare_template_version, should_update_builtin_template};
     use std::cmp::Ordering;
 
     #[test]
@@ -3101,93 +2484,6 @@ mod tests {
     fn compare_template_version_tolerates_non_standard_versions() {
         assert!(should_update_builtin_template("legacy", "2.0.0"));
         assert!(!should_update_builtin_template("2.1.0", "beta"));
-    }
-
-    #[test]
-    fn resolve_test_api_protocol_prefers_explicit_protocol() {
-        assert_eq!(
-            resolve_test_api_protocol(
-                "https://proxy.example.com/v1",
-                Some("openai_responses"),
-                Some("gpt-4o-mini"),
-                None
-            ),
-            "openai_chat_completions"
-        );
-        assert_eq!(
-            resolve_test_api_protocol(
-                "https://api.openai.com/v1",
-                Some("openai_chat_completions"),
-                Some("gpt-5"),
-                None
-            ),
-            "openai_chat_completions"
-        );
-    }
-
-    #[test]
-    fn resolve_test_api_protocol_defaults_official_openai_to_responses() {
-        assert_eq!(
-            resolve_test_api_protocol("https://api.openai.com/v1", None, Some("gpt-4o-mini"), None),
-            "openai_responses"
-        );
-    }
-
-    #[test]
-    fn resolve_test_api_protocol_defaults_third_party_gpt5_to_responses() {
-        assert_eq!(
-            resolve_test_api_protocol(
-                "https://proxy.example.com/v1",
-                None,
-                Some("gpt-4o-mini"),
-                Some(true)
-            ),
-            "openai_responses"
-        );
-        assert_eq!(
-            resolve_test_api_protocol(
-                "https://proxy.example.com/v1",
-                None,
-                Some("o4-mini"),
-                Some(true)
-            ),
-            "openai_responses"
-        );
-    }
-
-    #[test]
-    fn resolve_test_api_protocol_only_honors_explicit_responses_for_supported_endpoints() {
-        assert_eq!(
-            resolve_test_api_protocol(
-                "https://api.openai.com/v1",
-                Some("openai_responses"),
-                Some("gpt-5"),
-                None
-            ),
-            "openai_responses"
-        );
-        assert_eq!(
-            resolve_test_api_protocol(
-                "https://api.qsl.fan/v1",
-                Some("openai_responses"),
-                Some("deepseek-v4-pro"),
-                None
-            ),
-            "openai_chat_completions"
-        );
-    }
-
-    #[test]
-    fn resolve_test_api_protocol_keeps_generic_third_party_models_on_chat_completions() {
-        assert_eq!(
-            resolve_test_api_protocol(
-                "https://proxy.example.com/v1",
-                None,
-                Some("gpt-4o-mini"),
-                None
-            ),
-            "openai_chat_completions"
-        );
     }
 }
 
@@ -3467,133 +2763,6 @@ pub async fn open_log_file(log_path: String, state: tauri::State<'_, AppState>) 
     }
 
     Ok(())
-}
-/// 打开日志文件夹
-#[tauri::command]
-pub async fn open_logs_folder(log_type: String, state: tauri::State<'_, AppState>) -> Result<()> {
-    use std::process::Command;
-
-    // 防止路径遍历
-    if log_type.contains("..") || log_type.starts_with("/") || log_type.starts_with("\\") {
-        return Err(AppError::validation("非法的文件路径"));
-    }
-
-    let mut log_dir = state.file_manager.get_app_data_dir().to_path_buf();
-    log_dir.push("logs");
-    log_dir.push(&log_type);
-
-    // 规范化路径并检查前缀
-    let canonical_path = if log_dir.exists() {
-        log_dir
-            .canonicalize()
-            .map_err(|_| AppError::not_found("日志目录路径无效"))?
-    } else {
-        // 如果目录不存在，我们先不canonicalize，而是检查其逻辑路径
-        // 但为了安全，我们最好先创建它，然后再 canonicalize
-        std::fs::create_dir_all(&log_dir)
-            .map_err(|_| AppError::file_system("创建日志目录失败".to_string()))?;
-        log_dir
-            .canonicalize()
-            .map_err(|_| AppError::not_found("日志目录路径无效"))?
-    };
-
-    let app_data_dir = state
-        .file_manager
-        .get_app_data_dir()
-        .canonicalize()
-        .unwrap_or_else(|_| state.file_manager.get_app_data_dir().to_path_buf());
-
-    if !canonical_path.starts_with(&app_data_dir) {
-        return Err(AppError::validation("非法的文件路径访问"));
-    }
-
-    // 使用规范化后的路径
-    let target_dir = canonical_path;
-
-    // 根据操作系统选择合适的命令打开文件夹
-    #[cfg(target_os = "windows")]
-    {
-        if let Err(e) = Command::new("explorer").arg(&target_dir).spawn() {
-            return Err(AppError::file_system(format!("打开日志文件夹失败: {}", e)));
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        if let Err(e) = Command::new("open").arg(&target_dir).spawn() {
-            return Err(AppError::file_system(format!("打开日志文件夹失败: {}", e)));
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        if let Err(e) = Command::new("xdg-open").arg(&target_dir).spawn() {
-            return Err(AppError::file_system(format!("打开日志文件夹失败: {}", e)));
-        }
-    }
-
-    Ok(())
-}
-
-#[derive(Debug, Deserialize)]
-pub struct FrontendLogPayload {
-    pub level: Option<String>,
-    pub message: String,
-    pub stack: Option<String>,
-    pub component: Option<String>,
-    pub route: Option<String>,
-    pub url: Option<String>,
-    pub line: Option<u32>,
-    pub column: Option<u32>,
-    pub user_agent: Option<String>,
-    pub extra: Option<serde_json::Value>,
-    pub kind: Option<String>,
-}
-
-impl FrontendLogPayload {
-    fn to_level(&self) -> crate::debug_logger::LogLevel {
-        match self
-            .level
-            .as_deref()
-            .map(|v| v.to_ascii_uppercase())
-            .as_deref()
-        {
-            Some("DEBUG") => crate::debug_logger::LogLevel::DEBUG,
-            Some("INFO") => crate::debug_logger::LogLevel::INFO,
-            Some("WARN") | Some("WARNING") => crate::debug_logger::LogLevel::WARN,
-            Some("TRACE") => crate::debug_logger::LogLevel::TRACE,
-            _ => crate::debug_logger::LogLevel::ERROR,
-        }
-    }
-}
-
-/// 记录前端错误日志
-#[tauri::command]
-pub async fn report_frontend_log(payload: FrontendLogPayload) -> Result<()> {
-    let level = payload.to_level();
-    let kind = payload
-        .kind
-        .clone()
-        .unwrap_or_else(|| "CLIENT_ERROR".to_string());
-
-    let data = serde_json::json!({
-        "message": payload.message,
-        "stack": payload.stack,
-        "component": payload.component,
-        "route": payload.route,
-        "url": payload.url,
-        "line": payload.line,
-        "column": payload.column,
-        "user_agent": payload.user_agent,
-        "extra": payload.extra,
-    });
-
-    if let Some(logger) = crate::debug_logger::get_global_logger() {
-        logger.log(level, "FRONTEND", &kind, data, None).await;
-        Ok(())
-    } else {
-        Err(AppError::internal("前端日志记录器未初始化"))
-    }
 }
 // set_current_subject 已删除 - 使用 SubjectRouter 代替
 
@@ -4647,39 +3816,6 @@ pub async fn write_test_report(
 /// WebView 设置存储的文件名
 const WEBVIEW_SETTINGS_FILE: &str = "webview_settings.json";
 
-/// 保存 WebView localStorage 数据到文件系统
-/// 在备份导出前调用此命令，确保 UI 偏好设置被包含在备份中
-#[tauri::command]
-pub async fn save_webview_settings(
-    settings: serde_json::Value,
-    state: State<'_, AppState>,
-) -> Result<serde_json::Value> {
-    use std::fs;
-
-    let file_manager = &state.file_manager;
-    let app_data_dir = file_manager.get_writable_app_data_dir();
-    let settings_path = app_data_dir.join(WEBVIEW_SETTINGS_FILE);
-
-    // 序列化并写入
-    let content = serde_json::to_string_pretty(&settings)
-        .map_err(|e| AppError::validation(format!("序列化 WebView 设置失败: {}", e)))?;
-
-    fs::write(&settings_path, &content)
-        .map_err(|e| AppError::file_system(format!("写入 WebView 设置文件失败: {}", e)))?;
-
-    debug!(
-        "[P0-27] WebView 设置已保存到: {:?} ({} bytes)",
-        settings_path,
-        content.len()
-    );
-
-    Ok(serde_json::json!({
-        "success": true,
-        "path": settings_path.to_string_lossy(),
-        "size": content.len(),
-    }))
-}
-
 /// 加载 WebView localStorage 数据从文件系统
 /// 在备份恢复后调用此命令，将 UI 偏好设置恢复到前端
 #[tauri::command]
@@ -4722,121 +3858,7 @@ pub async fn load_webview_settings(state: State<'_, AppState>) -> Result<serde_j
 // 智能题目集命令（Question Bank V2）
 // ============================================================================
 
-use crate::vfs::repos::{
-    CreateQuestionParams, Question, QuestionBankStats, QuestionFilters, QuestionHistory,
-    QuestionListResult, QuestionSearchFilters, QuestionSearchListResult, UpdateQuestionParams,
-};
-
-/// 列出题目（分页+筛选）
-#[derive(Debug, Clone, Deserialize)]
-pub struct ListQuestionsRequest {
-    pub exam_id: String,
-    #[serde(default)]
-    pub filters: Option<QuestionFilters>,
-    #[serde(default = "default_page")]
-    pub page: u32,
-    #[serde(default = "default_page_size")]
-    pub page_size: u32,
-}
-
-fn default_page() -> u32 {
-    1
-}
-fn default_page_size() -> u32 {
-    50
-}
-
-#[tauri::command]
-pub async fn qbank_list_questions(
-    request: ListQuestionsRequest,
-    state: State<'_, AppState>,
-) -> Result<QuestionListResult> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    let filters = request.filters.unwrap_or_default();
-    let page = request.page.max(1);
-    let page_size = request.page_size.clamp(1, 100);
-    service.list_questions(&request.exam_id, &filters, page, page_size)
-}
-
-// ============================================================================
-// FTS5 全文搜索命令
-// ============================================================================
-
-/// 全文搜索题目请求
-#[derive(Debug, Clone, Deserialize)]
-pub struct SearchQuestionsRequest {
-    /// 搜索关键词
-    pub keyword: String,
-    /// 可选，限定题目集 ID
-    pub exam_id: Option<String>,
-    /// 搜索筛选条件
-    #[serde(default)]
-    pub filters: Option<QuestionSearchFilters>,
-    /// 页码（从 1 开始）
-    #[serde(default = "default_page")]
-    pub page: u32,
-    /// 每页大小（默认 50，最大 100）
-    #[serde(default = "default_page_size")]
-    pub page_size: u32,
-}
-
-/// 全文搜索题目
-///
-/// 使用 FTS5 全文检索，支持：
-/// - 中英文混合搜索
-/// - 搜索高亮（返回匹配片段）
-/// - 相关性排序（BM25 算法）
-/// - 多字段搜索（content, answer, explanation, tags）
-#[tauri::command]
-pub async fn qbank_search_questions(
-    request: SearchQuestionsRequest,
-    state: State<'_, AppState>,
-) -> Result<QuestionSearchListResult> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    let filters = request.filters.unwrap_or_default();
-    service.search_questions(
-        &request.keyword,
-        request.exam_id.as_deref(),
-        &filters,
-        request.page,
-        request.page_size,
-    )
-}
-
-/// 重建 FTS5 索引
-///
-/// 用于数据修复，重建全文搜索索引
-#[tauri::command]
-pub async fn qbank_rebuild_fts_index(state: State<'_, AppState>) -> Result<u64> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    service.rebuild_fts_index()
-}
-
-/// 获取单题详情
-#[tauri::command]
-pub async fn qbank_get_question(
-    question_id: String,
-    state: State<'_, AppState>,
-) -> Result<Option<Question>> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    service.get_question(&question_id)
-}
+use crate::vfs::repos::{CreateQuestionParams, Question, UpdateQuestionParams};
 
 /// 根据 card_id 获取题目（兼容旧数据）
 #[tauri::command]
@@ -4881,32 +3903,6 @@ pub async fn qbank_batch_create_questions(
     service.batch_create_questions(&params_list)
 }
 
-/// 更新题目
-#[derive(Debug, Clone, Deserialize)]
-pub struct UpdateQuestionRequest {
-    pub question_id: String,
-    pub params: UpdateQuestionParams,
-    #[serde(default)]
-    pub record_history: bool,
-}
-
-#[tauri::command]
-pub async fn qbank_update_question(
-    request: UpdateQuestionRequest,
-    state: State<'_, AppState>,
-) -> Result<Question> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    service.update_question(
-        &request.question_id,
-        &request.params,
-        request.record_history,
-    )
-}
-
 /// 批量更新题目
 #[derive(Debug, Clone, Deserialize)]
 pub struct BatchUpdateQuestionsRequest {
@@ -4927,124 +3923,6 @@ pub async fn qbank_batch_update_questions(
     service.batch_update_questions(&request.question_ids, &request.params)
 }
 
-/// 删除题目
-#[tauri::command]
-pub async fn qbank_delete_question(question_id: String, state: State<'_, AppState>) -> Result<()> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    service.delete_question(&question_id)
-}
-
-/// 批量删除题目
-#[tauri::command]
-pub async fn qbank_batch_delete_questions(
-    question_ids: Vec<String>,
-    state: State<'_, AppState>,
-) -> Result<BatchResult> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    service.batch_delete_questions(&question_ids)
-}
-
-/// 提交答案
-#[derive(Debug, Clone, Deserialize)]
-pub struct SubmitAnswerRequest {
-    pub question_id: String,
-    pub user_answer: String,
-    #[serde(default)]
-    pub is_correct_override: Option<bool>,
-    #[serde(default)]
-    pub client_request_id: Option<String>,
-}
-
-#[tauri::command]
-pub async fn qbank_submit_answer(
-    request: SubmitAnswerRequest,
-    state: State<'_, AppState>,
-) -> Result<SubmitAnswerResult> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    if request.is_correct_override.is_some() {
-        log::warn!(
-            "[qbank_submit_answer] Received is_correct_override for question_id={}",
-            request.question_id
-        );
-    }
-
-    service.submit_answer(
-        &request.question_id,
-        &request.user_answer,
-        request.is_correct_override,
-        request.client_request_id.as_deref(),
-    )
-}
-
-/// 切换收藏状态
-#[tauri::command]
-pub async fn qbank_toggle_favorite(
-    question_id: String,
-    state: State<'_, AppState>,
-) -> Result<Question> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    service.toggle_favorite(&question_id)
-}
-
-/// 获取统计
-#[tauri::command]
-pub async fn qbank_get_stats(
-    exam_id: String,
-    state: State<'_, AppState>,
-) -> Result<Option<QuestionBankStats>> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    service.get_stats(&exam_id)
-}
-
-/// 刷新统计
-#[tauri::command]
-pub async fn qbank_refresh_stats(
-    exam_id: String,
-    state: State<'_, AppState>,
-) -> Result<QuestionBankStats> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    service.refresh_stats(&exam_id)
-}
-
-/// 获取历史记录
-#[tauri::command]
-pub async fn qbank_get_history(
-    question_id: String,
-    limit: Option<u32>,
-    state: State<'_, AppState>,
-) -> Result<Vec<QuestionHistory>> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    service.get_history(&question_id, limit)
-}
-
 /// 获取作答历史
 #[tauri::command]
 pub async fn qbank_get_submissions(
@@ -5060,97 +3938,11 @@ pub async fn qbank_get_submissions(
     service.get_submissions(&question_id, limit.unwrap_or(20))
 }
 
-/// 重置学习进度
-#[tauri::command]
-pub async fn qbank_reset_progress(
-    exam_id: String,
-    state: State<'_, AppState>,
-) -> Result<QuestionBankStats> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    service.reset_progress(&exam_id)
-}
-
-/// 按题目 ID 批量重置学习进度
-#[tauri::command]
-pub async fn qbank_reset_questions_progress(
-    question_ids: Vec<String>,
-    state: State<'_, AppState>,
-) -> Result<BatchResult> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    service.reset_questions_progress(&question_ids)
-}
-
 // ============================================================================
 // 时间维度统计命令（2026-01 新增）
 // ============================================================================
 
-use crate::question_bank_service::{
-    ActivityHeatmapPoint, KnowledgePoint, KnowledgeStatsComparison, LearningTrendPoint,
-};
-
-/// 获取学习趋势数据请求
-#[derive(Debug, Clone, Deserialize)]
-pub struct GetLearningTrendRequest {
-    /// 可选的题目集 ID
-    pub exam_id: Option<String>,
-    /// 开始日期（YYYY-MM-DD）
-    pub start_date: String,
-    /// 结束日期（YYYY-MM-DD）
-    pub end_date: String,
-}
-
-/// 获取学习趋势数据
-///
-/// 返回指定日期范围内的每日做题数和正确率
-#[tauri::command]
-pub async fn qbank_get_learning_trend(
-    request: GetLearningTrendRequest,
-    state: State<'_, AppState>,
-) -> Result<Vec<LearningTrendPoint>> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    service.get_learning_trend(
-        request.exam_id.as_deref(),
-        &request.start_date,
-        &request.end_date,
-    )
-}
-
-/// 获取活跃度热力图数据请求
-#[derive(Debug, Clone, Deserialize)]
-pub struct GetActivityHeatmapRequest {
-    /// 可选的题目集 ID
-    pub exam_id: Option<String>,
-    /// 年份
-    pub year: i32,
-}
-
-/// 获取活跃度热力图数据
-///
-/// 返回指定年份的每日学习活跃度数据
-#[tauri::command]
-pub async fn qbank_get_activity_heatmap(
-    request: GetActivityHeatmapRequest,
-    state: State<'_, AppState>,
-) -> Result<Vec<ActivityHeatmapPoint>> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    service.get_activity_heatmap(request.exam_id.as_deref(), request.year)
-}
+use crate::question_bank_service::KnowledgePoint;
 
 /// 获取知识点统计请求
 #[derive(Debug, Clone, Deserialize)]
@@ -5173,155 +3965,6 @@ pub async fn qbank_get_knowledge_stats(
         .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
 
     service.get_knowledge_stats(request.exam_id.as_deref())
-}
-
-/// 获取知识点统计（带历史对比）
-#[tauri::command]
-pub async fn qbank_get_knowledge_stats_with_comparison(
-    request: GetKnowledgeStatsRequest,
-    state: State<'_, AppState>,
-) -> Result<KnowledgeStatsComparison> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    service.get_knowledge_stats_with_comparison(request.exam_id.as_deref())
-}
-
-// ============================================================================
-// 练习模式扩展命令（2026-01 新增）
-// ============================================================================
-
-/// 开始限时练习请求
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StartTimedPracticeRequest {
-    pub exam_id: String,
-    pub duration_minutes: u32,
-    pub question_count: u32,
-}
-
-/// 开始限时练习
-#[tauri::command]
-pub async fn qbank_start_timed_practice(
-    request: StartTimedPracticeRequest,
-    state: State<'_, AppState>,
-) -> Result<crate::question_bank_service::TimedPracticeSession> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    service.start_timed_practice(
-        &request.exam_id,
-        request.duration_minutes,
-        request.question_count,
-    )
-}
-
-/// 生成模拟考试请求
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GenerateMockExamRequest {
-    pub exam_id: String,
-    pub config: crate::question_bank_service::MockExamConfig,
-}
-
-/// 生成模拟考试
-#[tauri::command]
-pub async fn qbank_generate_mock_exam(
-    request: GenerateMockExamRequest,
-    state: State<'_, AppState>,
-) -> Result<crate::question_bank_service::MockExamSession> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    service.generate_mock_exam(&request.exam_id, request.config)
-}
-
-/// 提交模拟考试请求
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SubmitMockExamRequest {
-    pub session: crate::question_bank_service::MockExamSession,
-}
-
-/// 提交模拟考试
-#[tauri::command]
-pub async fn qbank_submit_mock_exam(
-    request: SubmitMockExamRequest,
-    state: State<'_, AppState>,
-) -> Result<crate::question_bank_service::MockExamScoreCard> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    service.submit_mock_exam(&request.session)
-}
-
-/// 获取每日一练请求
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetDailyPracticeRequest {
-    pub exam_id: String,
-    pub count: u32,
-}
-
-/// 获取每日一练
-#[tauri::command]
-pub async fn qbank_get_daily_practice(
-    request: GetDailyPracticeRequest,
-    state: State<'_, AppState>,
-) -> Result<crate::question_bank_service::DailyPracticeResult> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    service.get_daily_practice(&request.exam_id, request.count)
-}
-
-/// 生成试卷请求
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GeneratePaperRequest {
-    pub exam_id: String,
-    pub config: crate::question_bank_service::PaperConfig,
-}
-
-/// 生成试卷
-#[tauri::command]
-pub async fn qbank_generate_paper(
-    request: GeneratePaperRequest,
-    state: State<'_, AppState>,
-) -> Result<crate::question_bank_service::GeneratedPaper> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    service.generate_paper(&request.exam_id, request.config)
-}
-
-/// 获取打卡日历请求
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetCheckInCalendarRequest {
-    pub exam_id: Option<String>,
-    pub year: i32,
-    pub month: u32,
-}
-
-/// 获取打卡日历
-#[tauri::command]
-pub async fn qbank_get_check_in_calendar(
-    request: GetCheckInCalendarRequest,
-    state: State<'_, AppState>,
-) -> Result<crate::question_bank_service::CheckInCalendar> {
-    let service = state
-        .question_bank_service
-        .as_ref()
-        .ok_or_else(|| AppError::internal("QuestionBankService not initialized"))?;
-
-    service.get_check_in_calendar(request.exam_id.as_deref(), request.year, request.month)
 }
 
 // ============================================================================
@@ -5586,15 +4229,6 @@ pub async fn get_learning_heatmap(
     result.sort_by(|a, b| a.date.cmp(&b.date));
 
     Ok(result)
-}
-
-/// M-013: 读取图片为 base64 data URL（供前端 proxyDomURL 使用）
-#[tauri::command]
-pub async fn get_image_as_base64(
-    relative_path: String,
-    state: State<'_, AppState>,
-) -> Result<String> {
-    state.file_manager.get_image_as_base64(&relative_path).await
 }
 
 // ============================================================================

@@ -43,12 +43,7 @@ import {
   getAllowedApiProtocolsForModelAdapter,
   normalizeApiProtocolForModelAdapter,
 } from './modelConverters';
-
-// Tauri 2.x API导入（可选）
-import { invoke as tauriInvoke } from '@tauri-apps/api/core';
-
-const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__;
-const invoke = isTauri ? tauriInvoke : null;
+import { invoke } from '@/runtime/native';
 
 // 子适配器列表（与后端 ADAPTER_REGISTRY 保持一致）
 const SUPPORTED_MODEL_ADAPTERS = [
@@ -496,12 +491,19 @@ export const ShadApiEditModal: React.FC<ApiEditModalProps> = ({
   useEffect(() => {
     (async () => {
       try {
-        if (!invoke) return;
         const result: any = await invoke('get_model_adapter_options');
         if (Array.isArray(result)) {
           const allowed = new Set(SUPPORTED_MODEL_ADAPTERS);
+          const fallbackByValue = new Map(fallbackAdapterOptions.map(option => [option.value, option]));
           const mapped = result
-            .map((item: any) => ({ value: item?.value, label: item?.label, description: item?.description }))
+            .map((item: any) => {
+              const fallback = typeof item?.value === 'string' ? fallbackByValue.get(item.value) : undefined;
+              return {
+                value: item?.value,
+                label: fallback?.label ?? item?.label,
+                description: fallback?.description ?? item?.description,
+              };
+            })
             .filter((x: any) => x && x.value && x.label)
             .filter((x: any) => allowed.has(x.value));
           if (mapped.length > 0) setModelAdapterOptions(mapped);
@@ -511,7 +513,7 @@ export const ShadApiEditModal: React.FC<ApiEditModalProps> = ({
         console.warn('加载模型适配器选项失败，使用回退列表:', e);
       }
     })();
-  }, [t]);
+  }, [fallbackAdapterOptions]);
 
   useEffect(() => {
     const recommended: Record<string, { temperature: number; maxOutputTokens: number }> = {

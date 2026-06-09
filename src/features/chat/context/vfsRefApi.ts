@@ -7,7 +7,7 @@
  * @see 24-LRFS统一入口模型与访达式资源管理器.md - Prompt 2/3
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import i18n from 'i18next';
 import type { VfsContextRefData, VfsResourceRef, ResolvedResource, VfsResourceType } from './vfsRefTypes';
 import { VFS_MAX_INJECTION_ITEMS } from './vfsRefTypes';

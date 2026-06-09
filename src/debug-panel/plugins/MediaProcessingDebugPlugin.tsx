@@ -29,7 +29,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Badge } from '../../components/ui/shad/Badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/shad/Card';
 import { ScrollArea } from '../../components/ui/shad/ScrollArea';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { listen, type NativeUnlistenFn as UnlistenFn } from '@/runtime/nativeEvents';
 import {
   FileImage,
   FileText,

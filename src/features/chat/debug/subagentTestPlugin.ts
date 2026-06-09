@@ -14,7 +14,7 @@
  * - 控制台：window.__subagentTest.exportReport() 导出测试报告
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useWorkspaceStore } from '../workspace/workspaceStore';
 import { WORKSPACE_EVENTS } from '../workspace/events';

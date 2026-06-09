@@ -115,7 +115,7 @@ fn register_ask_callback(tool_call_id: &str, sender: AskUserSender) {
     callbacks.insert(tool_call_id.to_string(), sender);
 }
 
-/// 处理用户回答（由 Tauri command `chat_v2_ask_user_respond` 调用）
+/// 处理用户回答（由 native chat runtime 调用）
 ///
 /// 从全局 map 中取出对应的 Sender，将用户回答发送给等待的 executor。
 pub fn handle_ask_user_response(response: AskUserResponse) {

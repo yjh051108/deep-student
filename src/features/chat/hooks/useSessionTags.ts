@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 
 interface TagInfo {
   tag: string;

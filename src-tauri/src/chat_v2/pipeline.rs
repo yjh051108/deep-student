@@ -21,10 +21,10 @@ pub(crate) use std::collections::{HashMap, HashSet};
 pub(crate) use std::sync::Arc;
 pub(crate) use std::time::Instant;
 
-pub(crate) use serde_json::{Value, json};
+pub(crate) use serde_json::{json, Value};
 pub(crate) use sha2::{Digest, Sha256};
 pub(crate) use tauri::Window;
-pub(crate) use tokio::time::{Duration, timeout};
+pub(crate) use tokio::time::{timeout, Duration};
 pub(crate) use tokio_util::sync::CancellationToken;
 pub(crate) use uuid::Uuid;
 
@@ -44,11 +44,11 @@ pub(crate) use crate::database::Database as MainDatabase;
 pub(crate) use crate::models::{
     ChatMessage as LegacyChatMessage, MultimodalContentPart, RagSourceInfo,
 };
+pub(crate) use crate::tools::web_search::{do_search, SearchInput, ToolConfig as WebSearchConfig};
 pub(crate) use crate::tools::ToolRegistry;
-pub(crate) use crate::tools::web_search::{SearchInput, ToolConfig as WebSearchConfig, do_search};
 
 pub(crate) use super::error::{ChatV2Error, ChatV2Result};
-pub(crate) use super::events::{ChatV2EventEmitter, event_types};
+pub(crate) use super::events::{event_types, ChatV2EventEmitter};
 pub(crate) use super::prompt_builder;
 pub(crate) use super::repo::ChatV2Repo;
 // 🆕 VFS 统一存储（2025-12-07）：使用 vfs.db 的 VfsResourceRepo
@@ -64,11 +64,11 @@ pub(crate) use crate::vfs::repos::MODALITY_TEXT;
 pub(crate) use super::context::PipelineContext;
 pub(crate) use super::resource_types::{ContentBlock, ContextRef, ContextSnapshot, SendContextRef};
 pub(crate) use super::types::{
-    AttachmentInput, ChatMessage, MessageBlock, MessageMeta, MessageRole, MessageSources,
-    SendMessageRequest, SendOptions, SharedContext, SourceInfo, TokenUsage, ToolCall,
-    ToolResultInfo, Variant, block_status, block_types, feature_flags, variant_status,
+    block_status, block_types, feature_flags, variant_status, AttachmentInput, ChatMessage,
+    MessageBlock, MessageMeta, MessageRole, MessageSources, SendMessageRequest, SendOptions,
+    SharedContext, SourceInfo, TokenUsage, ToolCall, ToolResultInfo, Variant,
 };
-pub(crate) use super::user_message_builder::{UserMessageParams, build_user_message};
+pub(crate) use super::user_message_builder::{build_user_message, UserMessageParams};
 pub(crate) use super::workspace::WorkspaceCoordinator;
 pub(crate) use std::sync::Mutex;
 

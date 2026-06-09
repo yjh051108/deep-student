@@ -12,7 +12,7 @@
  * 3. 直接使用真实后端 API
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import {
   ok,

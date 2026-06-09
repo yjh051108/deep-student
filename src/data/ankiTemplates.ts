@@ -7,6 +7,7 @@ import {
 } from '../types';
 import { sanitizeCSS, sanitizeHTML } from '../utils/templateValidation';
 import i18n from '@/i18n';
+import { invoke as nativeInvoke } from '@/runtime/native';
 
 // 模板数据已迁移到数据库，不再使用硬编码
 // ⚠️ 已彻底移除旧的 _DEPRECATED_TEMPLATE_STRUCTURE 以避免误导和臃肿
@@ -29,26 +30,24 @@ export class TemplateManager {
   // 从数据库加载所有模板
   async loadTemplates(): Promise<void> {
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-
       // 启动时按版本号同步内置模板：缺失则补齐，版本落后则覆盖更新
       try {
-        await invoke('import_builtin_templates');
+        await nativeInvoke('import_builtin_templates');
       } catch (syncErr) {
         console.warn('Failed to sync builtin templates by version:', syncErr);
       }
 
       // 并行加载所有模板和默认模板设置
       let [allTemplates, defaultTemplateId] = await Promise.all([
-        invoke<CustomAnkiTemplate[]>('get_all_custom_templates'),
-        invoke<string | null>('get_default_template_id').catch(() => null)
+        nativeInvoke<CustomAnkiTemplate[]>('get_all_custom_templates'),
+        nativeInvoke<string | null>('get_default_template_id').catch(() => null)
       ]);
 
       if (allTemplates.length === 0) {
         try {
-          await invoke('import_builtin_templates');
-          allTemplates = await invoke<CustomAnkiTemplate[]>('get_all_custom_templates');
-          defaultTemplateId = await invoke<string | null>('get_default_template_id').catch(() => null);
+          await nativeInvoke('import_builtin_templates');
+          allTemplates = await nativeInvoke<CustomAnkiTemplate[]>('get_all_custom_templates');
+          defaultTemplateId = await nativeInvoke<string | null>('get_default_template_id').catch(() => null);
         } catch (importErr) {
           console.warn('Failed to auto-import builtin templates:', importErr);
         }
@@ -66,7 +65,7 @@ export class TemplateManager {
             expected_version: t.version
           };
           // 直接调用后端更新，避免递归触发 loadTemplates
-          return invoke('update_custom_template', { templateId: t.id, request: patched }).catch(err => {
+          return nativeInvoke('update_custom_template', { templateId: t.id, request: patched }).catch(err => {
             console.error(`Failed to patch template CSS for ${t.name} (${t.id}):`, err);
           });
         });
@@ -273,9 +272,8 @@ export class TemplateManager {
 
   // 创建新模板
   async createTemplate(templateData: any): Promise<string> {
-    const { invoke } = await import('@tauri-apps/api/core');
     const normalizedTemplate = this.normalizeTemplatePayload(templateData);
-    const templateId = await invoke<string>('create_custom_template', { request: normalizedTemplate });
+    const templateId = await nativeInvoke<string>('create_custom_template', { request: normalizedTemplate });
     // 重新加载模板
     await this.loadTemplates();
     return templateId;
@@ -283,15 +281,13 @@ export class TemplateManager {
 
   // 删除模板
   async deleteTemplate(templateId: string): Promise<void> {
-    const { invoke } = await import('@tauri-apps/api/core');
-    await invoke('delete_custom_template', { templateId });
+    await nativeInvoke('delete_custom_template', { templateId });
     // 重新加载模板
     await this.loadTemplates();
   }
 
   // 更新模板
   async updateTemplate(templateId: string, templateData: any): Promise<void> {
-    const { invoke } = await import('@tauri-apps/api/core');
     const normalizedTemplate = this.normalizeTemplatePayload(templateData);
     let expectedVersion = normalizedTemplate?.version ?? this.getTemplateById(templateId)?.version;
     if (!expectedVersion) {
@@ -303,7 +299,7 @@ export class TemplateManager {
       ...(rest || {}),
       expected_version: expectedVersion
     };
-    await invoke('update_custom_template', { templateId, request });
+    await nativeInvoke('update_custom_template', { templateId, request });
     // 重新加载模板
     await this.loadTemplates();
   }
@@ -311,8 +307,7 @@ export class TemplateManager {
   // 加载用户默认模板设置
   async loadUserDefaultTemplate(): Promise<void> {
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      this.userDefaultTemplateId = await invoke<string | null>('get_default_template_id');
+      this.userDefaultTemplateId = await nativeInvoke<string | null>('get_default_template_id');
     } catch (error) {
       console.warn('Failed to load user default template:', error);
       this.userDefaultTemplateId = null;
@@ -322,8 +317,7 @@ export class TemplateManager {
   // 设置默认模板
   async setDefaultTemplate(templateId: string): Promise<void> {
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('set_default_template', { templateId });
+      await nativeInvoke('set_default_template', { templateId });
       this.userDefaultTemplateId = templateId;
       this.notifyListeners(); // 通知UI更新
     } catch (error) {

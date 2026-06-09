@@ -1,5 +1,5 @@
 import React, { useMemo, useCallback, useEffect, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { useTranslation } from 'react-i18next';
 import {
   Atom,

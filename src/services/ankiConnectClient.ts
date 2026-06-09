@@ -1,6 +1,7 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import i18next from 'i18next';
 import type { AnkiCard } from '../types';
+import { getSettings as nativeGetSettings, invoke as nativeInvoke, saveSettings as nativeSaveSettings } from '@/runtime/native';
 
 export type MediaMode = 'skip' | 'inline_base64' | 'upload_media';
 
@@ -30,19 +31,19 @@ const getStr = (v: unknown, def: string) => typeof v === 'string' && v.trim() ? 
 
 export const ankiConnectClient = {
   async check(): Promise<boolean> {
-    return await invoke<boolean>('check_anki_connect_status');
+    return await nativeInvoke<boolean>('check_anki_connect_status');
   },
   async listDecks(): Promise<string[]> {
-    return await invoke<string[]>('get_anki_deck_names');
+    return await nativeInvoke<string[]>('get_anki_deck_names');
   },
   async listModels(): Promise<string[]> {
-    return await invoke<string[]>('get_anki_model_names');
+    return await nativeInvoke<string[]>('get_anki_model_names');
   },
   async createDeck(name: string): Promise<void> {
-    await invoke('create_anki_deck', { deckName: name });
+    await tauriInvoke('create_anki_deck', { deckName: name });
   },
   async importPackage(apkgPath: string): Promise<boolean> {
-    return await invoke<boolean>('import_anki_package', { path: apkgPath });
+    return await tauriInvoke<boolean>('import_anki_package', { path: apkgPath });
   },
   async addCards(params: { cards: AnkiCard[]; deckName: string; noteType: string }): Promise<(number | null)[]> {
     const { cards, deckName, noteType } = params;
@@ -56,27 +57,39 @@ export const ankiConnectClient = {
       throw new Error(i18next.t('anki:connect.note_type_required'));
     }
     // Tauri v2 默认期望 camelCase JS 参数，自动映射到 snake_case Rust 参数
-    return await invoke<(number | null)[]>('add_cards_to_anki_connect', {
+    return await tauriInvoke<(number | null)[]>('add_cards_to_anki_connect', {
       selectedCards: cards,
       deckName,
       noteType,
     });
   },
   async loadSettings(): Promise<AnkiConnectSettings> {
-    const [enabled, autoImport, defDeck, defModel, delAfter, openOnFail, exportDeck, autoCreate, batchSize, retryTimes, tagPrefix, mediaMode] = await Promise.all([
-      invoke('get_setting', { key: 'anki_connect_enabled' }).catch(() => 'false') as Promise<string>,
-      invoke('get_setting', { key: 'anki_connect_auto_import_enabled' }).catch(() => 'true') as Promise<string>,
-      invoke('get_setting', { key: 'anki_connect_default_deck' }).catch(() => 'Default') as Promise<string>,
-      invoke('get_setting', { key: 'anki_connect_default_model' }).catch(() => 'Basic') as Promise<string>,
-      invoke('get_setting', { key: 'anki_connect_delete_apkg_after_import' }).catch(() => 'true') as Promise<string>,
-      invoke('get_setting', { key: 'anki_connect_open_folder_on_failure' }).catch(() => 'true') as Promise<string>,
-      invoke('get_setting', { key: 'anki_connect_export_deck' }).catch(() => '') as Promise<string>,
-      invoke('get_setting', { key: 'anki_connect_auto_create_deck' }).catch(() => 'true') as Promise<string>,
-      invoke('get_setting', { key: 'anki_connect_batch_size' }).catch(() => '50') as Promise<string>,
-      invoke('get_setting', { key: 'anki_connect_retry_times' }).catch(() => '1') as Promise<string>,
-      invoke('get_setting', { key: 'anki_connect_tag_prefix' }).catch(() => '') as Promise<string>,
-      invoke('get_setting', { key: 'anki_connect_media_mode' }).catch(() => 'upload_media') as Promise<string>,
+    const values: Record<string, string> = await nativeGetSettings([
+      'anki_connect_enabled',
+      'anki_connect_auto_import_enabled',
+      'anki_connect_default_deck',
+      'anki_connect_default_model',
+      'anki_connect_delete_apkg_after_import',
+      'anki_connect_open_folder_on_failure',
+      'anki_connect_export_deck',
+      'anki_connect_auto_create_deck',
+      'anki_connect_batch_size',
+      'anki_connect_retry_times',
+      'anki_connect_tag_prefix',
+      'anki_connect_media_mode',
     ]);
+    const enabled = values.anki_connect_enabled ?? 'false';
+    const autoImport = values.anki_connect_auto_import_enabled ?? 'true';
+    const defDeck = values.anki_connect_default_deck ?? 'Default';
+    const defModel = values.anki_connect_default_model ?? 'Basic';
+    const delAfter = values.anki_connect_delete_apkg_after_import ?? 'true';
+    const openOnFail = values.anki_connect_open_folder_on_failure ?? 'true';
+    const exportDeck = values.anki_connect_export_deck ?? '';
+    const autoCreate = values.anki_connect_auto_create_deck ?? 'true';
+    const batchSize = values.anki_connect_batch_size ?? '50';
+    const retryTimes = values.anki_connect_retry_times ?? '1';
+    const tagPrefix = values.anki_connect_tag_prefix ?? '';
+    const mediaMode = values.anki_connect_media_mode ?? 'upload_media';
     return {
       anki_connect_enabled: strToBool(enabled, false),
       anki_connect_auto_import_enabled: strToBool(autoImport, true),
@@ -107,6 +120,6 @@ export const ankiConnectClient = {
     if (s.anki_connect_retry_times != null) push('anki_connect_retry_times', s.anki_connect_retry_times);
     if (s.anki_connect_tag_prefix != null) push('anki_connect_tag_prefix', s.anki_connect_tag_prefix);
     if (s.anki_connect_media_mode != null) push('anki_connect_media_mode', s.anki_connect_media_mode);
-    await Promise.all(pairs.map(([key, value]) => invoke('save_setting', { key, value })));
+    await nativeSaveSettings(Object.fromEntries(pairs));
   }
 };

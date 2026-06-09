@@ -352,7 +352,8 @@ impl VfsFileRepo {
 
                 let resource_deleted =
                     Self::resource_is_deleted_with_conn(conn, existing.resource_id.as_deref())?;
-                if existing.status != "active" || existing.deleted_at.is_some() || resource_deleted {
+                if existing.status != "active" || existing.deleted_at.is_some() || resource_deleted
+                {
                     info!(
                         "[VFS::FileRepo] Restoring soft-deleted file: {} from status {:?} to active",
                         existing.id, existing.status

@@ -27,7 +27,6 @@ pub mod prompt_builder;
 pub mod repo;
 pub mod resource_repo; // ⚠️ DEPRECATED: 资源存储已迁移到 VFS (vfs.db)，由 vfs/repos/resource_repo.rs 替代。参见 P1-#9。
 pub mod resource_types; // 统一上下文注入系统 - 资源类型定义（类型仍被 pipeline/context 使用，暂不废弃）
-pub mod skills; // 🆕 Skills 文件系统处理器
 pub mod state;
 pub mod tools;
 pub mod types;
@@ -132,41 +131,23 @@ pub use user_message_builder::{
     UserMessageParams, UserMessageResult,
 };
 
-// 重导出 Skills 命令
-pub use skills::{skill_list_directories, skill_read_file};
-
 // 重导出 Tauri 命令
 pub use handlers::{
-    chat_v2_archive_session,
-    chat_v2_cancel_stream,
     chat_v2_cancel_variant,
     // 数据迁移命令
     chat_v2_check_migration_status,
     chat_v2_copy_block_content,
-    chat_v2_count_sessions,
-    chat_v2_create_session,
-    chat_v2_delete_message,
-    chat_v2_delete_session,
     chat_v2_delete_variant,
-    chat_v2_edit_and_resend,
     chat_v2_empty_deleted_sessions,
-    chat_v2_list_sessions,
-    chat_v2_load_session,
     chat_v2_migrate_legacy_chat,
     chat_v2_perform_ocr,
-    chat_v2_retry_message,
     chat_v2_retry_variant,
     chat_v2_retry_variants,
     chat_v2_rollback_migration,
     // 资源库命令已迁移至 VFS 模块（vfs_* 命令）
-    chat_v2_save_session,
-    chat_v2_send_message,
     chat_v2_session_message_count,
     // 变体管理命令
     chat_v2_switch_variant,
-    chat_v2_update_block_content,
-    chat_v2_update_session_settings,
-    chat_v2_upsert_streaming_block,
 };
 
 // ============================================================================

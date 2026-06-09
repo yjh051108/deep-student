@@ -12,7 +12,7 @@
  * 3. 直接使用真实后端 API
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke as nativeInvoke } from '@/runtime/native';
 import i18next from 'i18next';
 import { ok, err, toVfsError, type Result } from '@/shared/result';
 import type {
@@ -73,7 +73,7 @@ export async function createFolder(
   color?: string
 ): Promise<Result<VfsFolder>> {
   try {
-    const result = await invoke<VfsFolder>('dstu_folder_create', {
+    const result = await nativeInvoke<VfsFolder>('dstu_folder_create', {
       title,
       parentId: parentId ?? null,
       icon: icon ?? null,
@@ -94,7 +94,7 @@ export async function createFolder(
  */
 export async function getFolder(folderId: string): Promise<Result<VfsFolder>> {
   try {
-    const result = await invoke<VfsFolder | null>('dstu_folder_get', {
+    const result = await nativeInvoke<VfsFolder | null>('dstu_folder_get', {
       folderId,
     });
     if (result === null) {
@@ -113,7 +113,7 @@ export async function getFolder(folderId: string): Promise<Result<VfsFolder>> {
  */
 export async function renameFolder(folderId: string, title: string): Promise<Result<void>> {
   try {
-    await invoke<void>('dstu_folder_rename', {
+    await nativeInvoke<void>('dstu_folder_rename', {
       folderId,
       title,
     });
@@ -132,7 +132,7 @@ export async function renameFolder(folderId: string, title: string): Promise<Res
  */
 export async function deleteFolder(folderId: string): Promise<Result<void>> {
   try {
-    await invoke<void>('dstu_folder_delete', {
+    await nativeInvoke<void>('dstu_folder_delete', {
       folderId,
     });
     // [CACHE-005] 添加缓存失效
@@ -158,7 +158,7 @@ export interface MoveFolderOptions {
  */
 export async function moveFolder(folderId: string, newParentId?: string, options?: MoveFolderOptions): Promise<Result<void>> {
   try {
-    await invoke<void>('dstu_folder_move', {
+    await nativeInvoke<void>('dstu_folder_move', {
       folderId,
       newParentId: newParentId ?? null,
     });
@@ -189,7 +189,7 @@ export async function moveFolder(folderId: string, newParentId?: string, options
  */
 export async function setFolderExpanded(folderId: string, isExpanded: boolean): Promise<Result<void>> {
   try {
-    await invoke<void>('dstu_folder_set_expanded', {
+    await nativeInvoke<void>('dstu_folder_set_expanded', {
       folderId,
       isExpanded,
     });
@@ -214,7 +214,7 @@ export async function addItem(
   itemId: string
 ): Promise<Result<VfsFolderItem>> {
   try {
-    const result = await invoke<VfsFolderItem>('dstu_folder_add_item', {
+    const result = await nativeInvoke<VfsFolderItem>('dstu_folder_add_item', {
       folderId,
       itemType,
       itemId,
@@ -234,7 +234,7 @@ export async function addItem(
  */
 export async function removeItem(itemType: FolderItemType, itemId: string): Promise<Result<void>> {
   try {
-    await invoke<void>('dstu_folder_remove_item', {
+    await nativeInvoke<void>('dstu_folder_remove_item', {
       itemType,
       itemId,
     });
@@ -266,7 +266,7 @@ export async function moveItem(
   options?: MoveItemOptions
 ): Promise<Result<void>> {
   try {
-    await invoke<void>('dstu_folder_move_item', {
+    await nativeInvoke<void>('dstu_folder_move_item', {
       itemType,
       itemId,
       newFolderId: newFolderId ?? null,
@@ -302,7 +302,7 @@ export async function moveItem(
  */
 export async function listFolders(): Promise<Result<VfsFolder[]>> {
   try {
-    const result = await invoke<VfsFolder[]>('dstu_folder_list', {});
+    const result = await nativeInvoke<VfsFolder[]>('dstu_folder_list', {});
     return ok(result);
   } catch (error: unknown) {
     const vfsError = toVfsError(error, i18next.t('dstu:api.folder.listFailed'));
@@ -316,7 +316,7 @@ export async function listFolders(): Promise<Result<VfsFolder[]>> {
  */
 export async function getFolderTree(): Promise<Result<FolderTreeNode[]>> {
   try {
-    const result = await invoke<FolderTreeNode[]>('dstu_folder_get_tree', {});
+    const result = await nativeInvoke<FolderTreeNode[]>('dstu_folder_get_tree', {});
     return ok(result);
   } catch (error: unknown) {
     const vfsError = toVfsError(error, i18next.t('dstu:api.folder.getTreeFailed'));
@@ -330,7 +330,7 @@ export async function getFolderTree(): Promise<Result<FolderTreeNode[]>> {
  */
 export async function getFolderItems(folderId?: string): Promise<Result<VfsFolderItem[]>> {
   try {
-    const result = await invoke<VfsFolderItem[]>('dstu_folder_get_items', {
+    const result = await nativeInvoke<VfsFolderItem[]>('dstu_folder_get_items', {
       folderId: folderId ?? null,
     });
     return ok(result);
@@ -354,7 +354,7 @@ export async function getFolderAllResources(
   includeContent: boolean
 ): Promise<Result<FolderResourcesResult>> {
   try {
-    const result = await invoke<FolderResourcesResult>('dstu_folder_get_all_resources', {
+    const result = await nativeInvoke<FolderResourcesResult>('dstu_folder_get_all_resources', {
       folderId,
       includeSubfolders,
       includeContent,
@@ -376,7 +376,7 @@ export async function getFolderAllResources(
  */
 export async function reorderFolders(folderIds: string[]): Promise<Result<void>> {
   try {
-    await invoke<void>('dstu_folder_reorder', {
+    await nativeInvoke<void>('dstu_folder_reorder', {
       folderIds,
     });
     return ok(undefined);
@@ -409,7 +409,7 @@ export interface BreadcrumbItem {
  */
 export async function getBreadcrumbs(folderId: string): Promise<Result<BreadcrumbItem[]>> {
   try {
-    const result = await invoke<BreadcrumbItem[]>('dstu_folder_get_breadcrumbs', {
+    const result = await nativeInvoke<BreadcrumbItem[]>('dstu_folder_get_breadcrumbs', {
       folderId,
     });
     return ok(result);
@@ -425,7 +425,7 @@ export async function getBreadcrumbs(folderId: string): Promise<Result<Breadcrum
  */
 export async function reorderItems(folderId: string | null, itemIds: string[]): Promise<Result<void>> {
   try {
-    await invoke<void>('dstu_folder_reorder_items', {
+    await nativeInvoke<void>('dstu_folder_reorder_items', {
       folderId,
       itemIds,
     });

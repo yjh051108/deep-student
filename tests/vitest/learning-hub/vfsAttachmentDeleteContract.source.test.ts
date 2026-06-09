@@ -27,6 +27,10 @@ describe('VFS attachment delete contract', () => {
     resolve(process.cwd(), 'src-tauri/src/vfs/ref_handlers.rs'),
     'utf-8'
   );
+  const goVfsServiceSource = readFileSync(
+    resolve(process.cwd(), 'desktop-go/internal/vfs/service.go'),
+    'utf-8'
+  );
 
   it('routes attachment soft delete through the unified file repository', () => {
     const handlerBody = handlerSource.slice(
@@ -51,19 +55,18 @@ describe('VFS attachment delete contract', () => {
     expect(handlerBody).not.toContain('attachment_id.starts_with("att_")');
   });
 
-  it('emits DSTU delete events from native file delete commands', () => {
-    const fileDeleteBody = handlerSource.slice(
-      handlerSource.indexOf('pub async fn vfs_delete_file'),
-      handlerSource.indexOf('#[derive(Debug, Clone, Serialize)]', handlerSource.indexOf('pub async fn vfs_delete_file'))
+  it('keeps Go file delete as a soft delete over hybrid VFS metadata', () => {
+    const fileDeleteBody = goVfsServiceSource.slice(
+      goVfsServiceSource.indexOf('func (s *Service) DeleteFile('),
+      goVfsServiceSource.indexOf('func (s *Service) GetFileContent', goVfsServiceSource.indexOf('func (s *Service) DeleteFile('))
     );
 
-    expect(handlerSource).toContain('fn file_delete_watch_targets(');
-    expect(handlerSource).toContain('SELECT f.file_name, f.resource_id, r.source_id');
-    expect(handlerSource).toContain('SELECT item_type, item_id, folder_id');
-    expect(handlerSource).toContain('VfsFolderRepo::build_folder_path_with_conn(&conn, id)');
-    expect(fileDeleteBody).toContain('file_delete_watch_targets(&vfs_db, &file_id)');
-    expect(fileDeleteBody).toContain('emit_watch_event(');
-    expect(fileDeleteBody).toContain('DstuWatchEvent::deleted(event_path).with_resource(id, item_type)');
+    expect(fileDeleteBody).toContain('findFileLikeResourceIndexByAnyIDLocked(fileID)');
+    expect(fileDeleteBody).toContain('"status":    "deleted"');
+    expect(fileDeleteBody).toContain('"deletedAt": formatMillis(now)');
+    expect(fileDeleteBody).toContain('return s.flushLocked()');
+    expect(goVfsServiceSource).toContain('if !ok || resourceIsDeleted(resource)');
+    expect(goVfsServiceSource).toContain('return AttachmentContentResult{Found: false}, nil');
   });
 
   it('handles legacy file-backed folder item types when deleting or restoring files', () => {
@@ -104,11 +107,26 @@ describe('VFS attachment delete contract', () => {
   });
 
   it('keeps deleted attachments out of public metadata and content reads', () => {
+    const getAttachmentBody = goVfsServiceSource.slice(
+      goVfsServiceSource.indexOf('func (s *Service) GetAttachment(attachmentID string)'),
+      goVfsServiceSource.indexOf('func (s *Service) GetAttachmentContent(attachmentID string)')
+    );
+    const getAttachmentContentBody = goVfsServiceSource.slice(
+      goVfsServiceSource.indexOf('func (s *Service) GetAttachmentContent(attachmentID string)'),
+      goVfsServiceSource.indexOf('func (s *Service) UploadFile(', goVfsServiceSource.indexOf('func (s *Service) GetAttachmentContent(attachmentID string)'))
+    );
+
     expect(attachmentRepoSource).toContain('pub fn get_active_by_id(');
     expect(attachmentRepoSource).toContain('pub fn get_active_by_id_with_conn(');
     expect(attachmentRepoSource).toContain("WHERE id = ?1 AND status = 'active' AND deleted_at IS NULL");
     expect(attachmentRepoSource).toContain('Self::get_active_by_id_with_conn(conn, id)?');
-    expect(handlerSource).toContain('VfsAttachmentRepo::get_active_by_id(&vfs_db, &attachment_id)');
+    expect(getAttachmentBody).toContain('hasAttachmentLikeAliasLocked(attachmentID)');
+    expect(getAttachmentBody).toContain('findFileLikeResourceByAnyIDLocked(attachmentID)');
+    expect(getAttachmentBody).toContain('if !ok || resourceIsDeleted(resource)');
+    expect(getAttachmentContentBody).toContain('hasAttachmentLikeAliasLocked(attachmentID)');
+    expect(getAttachmentContentBody).toContain('findFileLikeResourceByAnyIDLocked(attachmentID)');
+    expect(getAttachmentContentBody).toContain('if !ok || resourceIsDeleted(resource)');
+    expect(getAttachmentContentBody).toContain('return AttachmentContentResult{Found: false}, nil');
   });
 
   it('keeps deleted files out of public metadata and content reads', () => {
@@ -124,8 +142,10 @@ describe('VFS attachment delete contract', () => {
     expect(fileContentBody).not.toContain('Self::get_file_with_conn(conn, file_id)?');
     expect(fileRepoSource).toContain("WHERE status = 'deleted' OR deleted_at IS NOT NULL");
     expect(fileRepoSource).toContain("SELECT id FROM files WHERE status = 'deleted' OR deleted_at IS NOT NULL");
-    expect(handlerSource).toContain('VfsFileRepo::get_active_file(&vfs_db, &file_id)');
-    expect(handlerSource).toMatch(/VfsFileRepo::get_active_file_with_conn\(\s*&conn,\s*&file_id\s*\)/);
+    expect(goVfsServiceSource).toContain('func (s *Service) GetFile(fileID string)');
+    expect(goVfsServiceSource).toContain('func (s *Service) GetFileContent(fileID string)');
+    expect(goVfsServiceSource).toContain('if !ok || resourceIsDeleted(resource)');
+    expect(goVfsServiceSource).toContain('return AttachmentContentResult{Found: false}, nil');
   });
 
   it('keeps deleted files out of pending processing and DSTU content reads', () => {
@@ -141,9 +161,13 @@ describe('VFS attachment delete contract', () => {
       contentHelpersSource.indexOf('pub fn get_content_by_type_paged'),
       contentHelpersSource.indexOf('pub fn update_content_by_type')
     );
-    const ocrInfoBody = handlerSource.slice(
-      handlerSource.indexOf('pub async fn vfs_get_resource_ocr_info'),
-      handlerSource.indexOf('// ============================================================================', handlerSource.indexOf('pub async fn vfs_get_resource_ocr_info'))
+    const goOcrInfoBody = goVfsServiceSource.slice(
+      goVfsServiceSource.indexOf('func (s *Service) GetResourceOcrInfo(resourceID string)'),
+      goVfsServiceSource.indexOf('func (s *Service) ClearResourceOcr(resourceID string)')
+    );
+    const goClearOcrBody = goVfsServiceSource.slice(
+      goVfsServiceSource.indexOf('func (s *Service) ClearResourceOcr(resourceID string)'),
+      goVfsServiceSource.indexOf('func (s *Service) RagSearch(input VfsRagSearchInput)')
     );
 
     expect(pendingPdfBody).toContain("AND status = 'active'");
@@ -152,33 +176,37 @@ describe('VFS attachment delete contract', () => {
     expect(resolveBody).not.toContain('unwrap_or_else(|| id.to_string())');
     expect(pagedBody).toContain("status = 'active' AND deleted_at IS NULL");
     expect(pagedBody).not.toContain('unwrap_or_else(|| id.to_string())');
-    expect(ocrInfoBody).toContain('WHERE id = ?1 AND deleted_at IS NULL');
-    expect(ocrInfoBody).toContain("status = 'active' AND deleted_at IS NULL");
+    expect(handlerSource).not.toContain('pub async fn vfs_get_resource_ocr_info');
+    expect(handlerSource).not.toContain('pub async fn vfs_clear_resource_ocr');
+    expect(goOcrInfoBody).toContain('if !ok || resourceIsDeleted(resource)');
+    expect(goOcrInfoBody).toContain('ActiveSource: "none"');
+    expect(goClearOcrBody).toContain('if !ok || resourceIsDeleted(s.state.Resources[index])');
   });
 
   it('keeps deleted files out of PDF preview image reads', () => {
-    const pdfPageImageBody = handlerSource.slice(
-      handlerSource.indexOf('pub async fn vfs_get_pdf_page_image'),
-      handlerSource.indexOf('// ============================================================================', handlerSource.indexOf('pub async fn vfs_get_pdf_page_image') + 1)
+    const goPdfPageImageBody = goVfsServiceSource.slice(
+      goVfsServiceSource.indexOf('func (s *Service) GetPdfPageImage(resourceID string, pageIndex int)'),
+      goVfsServiceSource.indexOf('func (s *Service) GetBlobBase64(blobHash string)')
     );
 
-    expect(pdfPageImageBody).toContain('SELECT EXISTS(SELECT 1 FROM resources WHERE id = ?1 AND deleted_at IS NULL)');
-    expect(pdfPageImageBody).toContain("SELECT preview_json FROM files WHERE resource_id = ?1 AND status = 'active' AND deleted_at IS NULL");
+    expect(handlerSource).not.toContain('pub async fn vfs_get_pdf_page_image');
+    expect(goPdfPageImageBody).toContain('if !ok || resourceIsDeleted(resource)');
+    expect(goPdfPageImageBody).toContain('resource has no PDF page preview data');
   });
 
   it('keeps deleted files out of reference-resolution content reads', () => {
+    const imageOcrBody = refHandlersSource.slice(
+      refHandlersSource.indexOf('pub fn get_image_ocr_text_with_conn'),
+      refHandlersSource.indexOf('pub fn get_extracted_text_with_conn')
+    );
     const existsBody = refHandlersSource.slice(
-      refHandlersSource.indexOf('// 查询资源是否存在'),
-      refHandlersSource.indexOf('// 获取资源路径（通过 folder_items 表查找）')
+      refHandlersSource.indexOf('pub fn get_extracted_text_with_conn'),
+      refHandlersSource.indexOf('fn get_source_id_type')
     );
-    const attachmentTypeBody = refHandlersSource.slice(
-      refHandlersSource.indexOf('fn get_attachment_type_with_conn'),
-      refHandlersSource.indexOf('fn get_exam_multimodal_blocks_with_conn')
-    );
-    expect(existsBody).toContain("SELECT 1 FROM files WHERE id = ?1 AND status = 'active' AND deleted_at IS NULL");
-    expect(attachmentTypeBody).toContain("SELECT type FROM files WHERE id = ?1 AND status = 'active' AND deleted_at IS NULL");
-    expect(refHandlersSource).toContain("fn get_file_multimodal_blocks_with_conn");
-    expect(refHandlersSource).toContain("WHERE (id = ?1 OR resource_id = ?1)\n          AND status = 'active' AND deleted_at IS NULL");
-    expect(refHandlersSource).toContain("WHERE (a.id = ?1 OR a.resource_id = ?1)\n          AND a.status = 'active' AND a.deleted_at IS NULL AND r.deleted_at IS NULL");
+    expect(imageOcrBody).toContain("WHERE (a.id = ?1 OR a.resource_id = ?1)");
+    expect(imageOcrBody).toContain("AND a.status = 'active' AND a.deleted_at IS NULL");
+    expect(imageOcrBody).toContain("AND a.status = 'active' AND a.deleted_at IS NULL AND r.deleted_at IS NULL");
+    expect(existsBody).toContain("WHERE (id = ?1 OR resource_id = ?1)");
+    expect(existsBody).toContain("AND status = 'active' AND deleted_at IS NULL");
   });
 });

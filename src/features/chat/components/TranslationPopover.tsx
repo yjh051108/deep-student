@@ -27,6 +27,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Copy, Check, ChatDots, X, ArrowsClockwise, ArrowRight } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
+import { invoke as nativeInvoke } from '@/runtime/native';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { nanoid } from 'nanoid';
 import { cn } from '@/utils/cn';
@@ -148,8 +149,8 @@ async function loadTranslationSettings(): Promise<ResolvedTranslationSettings> {
   };
   try {
     const [assignments, apis] = await Promise.all([
-      invoke<ModelAssignments | null>('get_model_assignments').catch(() => null),
-      invoke<ApiConfig[]>('get_api_configurations').catch(() => [] as ApiConfig[]),
+      nativeInvoke<ModelAssignments | null>('get_model_assignments').catch(() => null),
+      nativeInvoke<ApiConfig[]>('get_api_configurations').catch(() => [] as ApiConfig[]),
     ]);
 
     const mode: TranslationDisplayMode =

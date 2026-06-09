@@ -500,27 +500,34 @@ export function createMessageActions(
               // 需要创建空消息以便后续的块事件能够关联到它
               const currentChatParams = getState().chatParams;
               // 🔧 三轮修复：_meta.modelId 优先使用 modelDisplayName
-              const newAssistantMessage = {
-                id: newMessageId,
-                role: 'assistant' as const,
-                blockIds: [] as string[],
-                timestamp: Date.now(),
-                _meta: {
-                  modelId: currentChatParams.modelDisplayName || currentChatParams.modelId,
-                  modelDisplayName: currentChatParams.modelDisplayName,
-                  chatParams: { ...currentChatParams },
-                },
-              };
+              set((s) => {
+                const existingMessage = s.messageMap.get(newMessageId);
+                const newAssistantMessage = {
+                  ...(existingMessage ?? {}),
+                  id: newMessageId,
+                  role: 'assistant' as const,
+                  blockIds: existingMessage?.blockIds ?? ([] as string[]),
+                  timestamp: existingMessage?.timestamp ?? Date.now(),
+                  _meta: {
+                    modelId: currentChatParams.modelDisplayName || currentChatParams.modelId,
+                    modelDisplayName: currentChatParams.modelDisplayName,
+                    chatParams: { ...currentChatParams },
+                    ...(existingMessage?._meta ?? {}),
+                  },
+                };
+
+                return {
+                  messageMap: new Map(s.messageMap).set(newMessageId, newAssistantMessage),
+                  messageOrder: s.messageOrder.includes(newMessageId)
+                    ? s.messageOrder
+                    : [...s.messageOrder, newMessageId],
+                  currentStreamingMessageId: s.sessionStatus === 'streaming'
+                    ? newMessageId
+                    : s.currentStreamingMessageId,
+                };
+              });
               
-              set((s) => ({
-                messageMap: new Map(s.messageMap).set(newMessageId, newAssistantMessage),
-                messageOrder: s.messageOrder.includes(newMessageId) 
-                  ? s.messageOrder 
-                  : [...s.messageOrder, newMessageId],
-                currentStreamingMessageId: newMessageId,
-              }));
-              
-              console.log('[ChatStore] editAndResend: Created assistant message:', newMessageId);
+              console.log('[ChatStore] editAndResend: Created/merged assistant message:', newMessageId);
             }
             
             // 🆕 P1-2 修复：清空 pendingContextRefs（已使用）

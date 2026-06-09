@@ -21,7 +21,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import '../../styles/mindmap.css';
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { cn } from '@/lib/utils';
 import { NotionButton } from '@/components/ui/NotionButton';
 import { CircleNotch, WarningCircle, ArrowsOut, MagnifyingGlassPlus, MagnifyingGlassMinus, Crosshair, GitFork } from '@phosphor-icons/react';

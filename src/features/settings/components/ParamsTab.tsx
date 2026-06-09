@@ -9,6 +9,7 @@ import { showGlobalNotification } from '@/components/UnifiedNotification';
 import { getErrorMessage } from '@/utils/errorUtils';
 import { DEFAULT_CHAT_STREAM_TIMEOUT_SECONDS } from './constants';
 import type { SettingsExtra } from './hookDepsTypes';
+import { saveSetting } from '@/runtime/native';
 
 const GroupTitle = ({ title }: { title: string }) => (
   <div className="px-1 mb-3 mt-0">
@@ -91,14 +92,14 @@ export const ParamsTab: React.FC<ParamsTabProps> = ({
   const handleFtsToggle = useCallback(async (v: boolean) => {
     setExtra((prev: any) => ({ ...prev, chatSemanticFtsPrefilter: v }));
     try {
-      await invoke?.('save_setting', { key: 'search.chat.semantic.fts_prefilter.enabled', value: v ? '1' : '0' });
+      await saveSetting('search.chat.semantic.fts_prefilter.enabled', v ? '1' : '0');
       showGlobalNotification('success', t('settings:notifications.semantic_fts_save_success'));
     } catch (error: unknown) {
       showGlobalNotification('error', t('settings:notifications.semantic_fts_save_error', { error: getErrorMessage(error) }));
       // 保存失败时回滚
       setExtra((prev: any) => ({ ...prev, chatSemanticFtsPrefilter: !v }));
     }
-  }, [invoke, setExtra, t]);
+  }, [setExtra, t]);
 
   return (
     <div className="space-y-1 pb-10 text-left animate-in fade-in duration-500">

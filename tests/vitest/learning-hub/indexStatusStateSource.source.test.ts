@@ -11,6 +11,14 @@ describe('Index status state source contract', () => {
     resolve(process.cwd(), 'src-tauri/src/vfs/handlers.rs'),
     'utf-8'
   );
+  const goVfsServiceSource = readFileSync(
+    resolve(process.cwd(), 'desktop-go/internal/vfs/service.go'),
+    'utf-8'
+  );
+  const wailsBridgeSource = readFileSync(
+    resolve(process.cwd(), 'src/runtime/wailsBridge.ts'),
+    'utf-8'
+  );
   const ragExtensionSource = readFileSync(
     resolve(process.cwd(), 'src-tauri/src/llm_manager/rag_extension.rs'),
     'utf-8'
@@ -23,6 +31,11 @@ describe('Index status state source contract', () => {
     resolve(process.cwd(), 'src-tauri/src/vfs/multimodal_service.rs'),
     'utf-8'
   );
+
+  it('uses the native runtime facade for direct command invocations', () => {
+    expect(viewSource).toContain("import { invoke } from '@/runtime/native';");
+    expect(viewSource).not.toMatch(/import\s*\{[^}]*\binvoke\b[^}]*\}\s*from '@tauri-apps\/api\/core'/);
+  });
 
   it('uses backend multimodal capability instead of duplicating model matching in the UI', () => {
     expect(viewSource).toContain("invoke<MultimodalIndexCapability>('vfs_get_multimodal_index_capability')");
@@ -62,7 +75,9 @@ describe('Index status state source contract', () => {
     expect(viewSource).toContain('displayState: normalizeIndexState(resource.displayIndexState)');
     expect(viewSource).toContain('const groupedDisplayRows = useMemo(() =>');
     expect(viewSource).toContain('displayIndexStats');
-    expect(viewSource).toContain('indexed: summary?.displayIndexedCount ?? 0');
+    expect(viewSource).toContain('const normalizedCounts = useMemo(');
+    expect(viewSource).toContain('normalizeIndexSummaryCounts(summary)');
+    expect(viewSource).toContain('indexed: normalizedCounts?.display.indexed ?? 0');
     expect(viewSource).toContain('const displayedRows = selectedState ===');
     expect(viewSource).not.toContain("stateFilter: selectedState === 'all' ? undefined : selectedState");
   });
@@ -114,10 +129,14 @@ describe('Index status state source contract', () => {
   });
 
   it('filters deleted source rows before index status list and summary counts are built', () => {
-    expect(handlerSource).toContain("WHERE resource_id IS NOT NULL AND status = 'active' AND deleted_at IS NULL");
-    expect(handlerSource).toContain("LEFT JOIN files fs ON fs.id = r.source_id AND fs.status = 'active' AND fs.deleted_at IS NULL");
-    expect(handlerSource).toContain("LEFT JOIN files fs_mm ON fs_mm.id = r.source_id AND fs_mm.status = 'active' AND fs_mm.deleted_at IS NULL");
-    expect(handlerSource).toContain('EXISTS (SELECT 1 FROM notes WHERE resource_id = r.id AND deleted_at IS NULL)');
+    expect(goVfsServiceSource).toContain('func (s *Service) UnifiedIndexStatus() (IndexStatusSummary, error)');
+    expect(goVfsServiceSource).toContain('func (s *Service) GetResourceUnits(resourceID string) ([]UnitIndexStatus, error)');
+    expect(goVfsServiceSource).toContain('func (s *Service) GetAllIndexStatus(input GetIndexStatusInput) (ResourceIndexStatusSummary, error)');
+    expect(goVfsServiceSource).toContain('if resourceIsDeleted(resource) {');
+    expect(goVfsServiceSource).toContain('if !ok || resourceIsDeleted(resource) {');
+    expect(goVfsServiceSource).toContain('func resourceIsDeleted(resource Resource) bool');
+    expect(goVfsServiceSource).toContain('status == "deleted" || status == "trash"');
+    expect(goVfsServiceSource).toContain('metadataString(resource.Metadata, "deletedAt", "") != ""');
   });
 
   it('uses the same active source-row universe for one-click pending queue counts', () => {
@@ -131,29 +150,21 @@ describe('Index status state source contract', () => {
   });
 
   it('computes display state and display counts in the backend contract', () => {
-    expect(handlerSource).toContain('pub display_index_state: String');
-    expect(handlerSource).toContain('pub text_index_retryable: bool');
-    expect(handlerSource).toContain('pub text_queue_count: i32');
-    expect(handlerSource).toContain('pub text_total_resources: i32');
-    expect(handlerSource).toContain('pub text_indexed_count: i32');
-    expect(handlerSource).toContain('pub display_total_resources: i32');
-    expect(handlerSource).toContain('fn display_index_state_sql(');
-    expect(handlerSource).toContain('fn effective_mm_index_state_sql(');
-    expect(handlerSource).toContain('include_image_index: Option<bool>');
-    expect(handlerSource).toContain('{display_state} as display_index_state');
-    expect(handlerSource).toContain('list_conditions.push(format!("({}) = ?", list_display_state_sql));');
-    expect(handlerSource).toContain("COALESCE(SUM(CASE WHEN {display_state} = 'indexed' THEN 1 ELSE 0 END), 0) as display_indexed");
-    expect(handlerSource).toContain('as text_queue_count');
-    expect(handlerSource).toContain("COALESCE(SUM(CASE WHEN r.type != 'image' THEN 1 ELSE 0 END), 0) as text_total");
-    expect(handlerSource).toContain("COALESCE(SUM(CASE WHEN r.type != 'image'");
-    expect(handlerSource).toContain('as text_index_retryable');
-    expect(handlerSource).toContain('let list_business_mm_state_sql =');
-    expect(handlerSource).toContain('let stats_business_mm_state_sql =');
-    expect(handlerSource).toContain('effective_mm_index_state_sql(list_business_mm_state_sql)');
-    expect(handlerSource).toContain('effective_mm_index_state_sql(stats_business_mm_state_sql)');
-    expect(handlerSource).toContain('AND u.mm_required = 1');
-    expect(handlerSource).toContain("AND u.mm_state = 'pending'");
-    expect(handlerSource).not.toContain("({business_mm_state}) = 'disabled'");
+    expect(goVfsServiceSource).toContain('type ResourceIndexStatus struct');
+    expect(goVfsServiceSource).toMatch(/DisplayIndexState\s+string\s+`json:"displayIndexState"`/);
+    expect(goVfsServiceSource).toMatch(/TextIndexRetryable\s+bool\s+`json:"textIndexRetryable"`/);
+    expect(goVfsServiceSource).toContain('TextQueueCount        int                   `json:"textQueueCount"`');
+    expect(goVfsServiceSource).toContain('TextTotalResources    int                   `json:"textTotalResources"`');
+    expect(goVfsServiceSource).toContain('TextIndexedCount      int                   `json:"textIndexedCount"`');
+    expect(goVfsServiceSource).toContain('DisplayTotalResources int                   `json:"displayTotalResources"`');
+    expect(goVfsServiceSource).toContain('DisplayIndexedCount   int                   `json:"displayIndexedCount"`');
+    expect(goVfsServiceSource).toContain('func resourceToIndexStatus(resource Resource) ResourceIndexStatus');
+    expect(goVfsServiceSource).toContain('func accumulateResourceIndexSummary(summary *ResourceIndexStatusSummary, status ResourceIndexStatus)');
+    expect(goVfsServiceSource).toContain('addResourceDisplayStat(summary, status.DisplayIndexState)');
+    expect(goVfsServiceSource).toContain('addResourceTextStat(summary, status.TextIndexState)');
+    expect(goVfsServiceSource).toContain('addResourceMMStat(summary, status.MMIndexState)');
+    expect(goVfsServiceSource).toContain('summary.TextQueueCount++');
+    expect(goVfsServiceSource).toContain('func addResourceDisplayStat(summary *ResourceIndexStatusSummary, state string)');
   });
 
   it('keeps multimodal business state and unit state in sync at the backend writer', () => {
@@ -167,24 +178,39 @@ describe('Index status state source contract', () => {
     expect(multimodalServiceSource).toContain('WHERE resource_id = ?4 AND mm_required = 1');
   });
 
-  it('reconciles text indexing only from text units and text segments', () => {
-    const start = handlerSource.indexOf('fn reconcile_completed_text_indexing_resources');
-    const end = handlerSource.indexOf('/// 批量索引待处理资源', start);
-    expect(start).toBeGreaterThanOrEqual(0);
-    expect(end).toBeGreaterThan(start);
-    const reconcileSource = handlerSource.slice(start, end);
-
-    expect(reconcileSource).toContain('JOIN vfs_index_units su ON su.id = s.unit_id');
-    expect(reconcileSource).toContain('AND su.text_required = 1');
-    expect(reconcileSource).toContain("AND s.modality = 'text'");
-    expect(reconcileSource).toContain("AND u.text_state IN ('pending', 'indexing', 'failed')");
+  it('routes legacy index-status commands through Wails instead of old Rust handlers', () => {
+    for (const command of [
+      'vfs_get_all_index_status',
+      'vfs_reindex_resource',
+      'vfs_batch_index_pending',
+    ]) {
+      expect(handlerSource).not.toContain(`pub async fn ${command}`);
+      expect(handlerSource).not.toContain(`crate::vfs::handlers::${command}`);
+    }
+    expect(wailsBridgeSource).toContain("if (command === 'vfs_get_all_index_status')");
+    expect(wailsBridgeSource).toContain('return await VfsService.GetAllIndexStatus({');
+    expect(wailsBridgeSource).toContain("if (command === 'vfs_reindex_resource')");
+    expect(wailsBridgeSource).toContain('return await VfsService.ReindexResource(resourceId) as T;');
+    expect(wailsBridgeSource).toContain("command === 'vfs_unified_batch_index' || command === 'vfs_batch_index_pending'");
+    expect(wailsBridgeSource).toContain('return await VfsService.BatchIndexPending(batchSize) as T;');
+    expect(goVfsServiceSource).toContain('func (s *Service) ReindexResource(resourceID string) (int, error)');
+    expect(goVfsServiceSource).toContain('func (s *Service) BatchIndexPending(batchSize int) (BatchIndexResult, error)');
   });
 
-  it('does not silently skip index status rows when list parsing fails', () => {
-    expect(handlerSource).toContain('fn read_optional_millis(');
-    expect(handlerSource).toContain('fn read_optional_i32(');
-    expect(handlerSource).toContain('return Err(format!');
-    expect(handlerSource).toContain('Index status row {} parse error: {}');
-    expect(handlerSource).not.toContain('rows had parse errors');
+  it('keeps old Rust PDF/index processing controls retired while Wails routes the legacy names', () => {
+    for (const command of [
+      'vfs_cancel_pdf_processing',
+      'vfs_retry_pdf_processing',
+      'vfs_start_pdf_processing',
+    ]) {
+      expect(handlerSource).not.toContain(`pub async fn ${command}`);
+      expect(handlerSource).not.toContain(`crate::vfs::handlers::${command}`);
+    }
+    expect(wailsBridgeSource).toContain("if (command === 'vfs_cancel_pdf_processing')");
+    expect(wailsBridgeSource).toContain('return await VfsService.CancelPdfProcessing(fileId) as T;');
+    expect(wailsBridgeSource).toContain("if (command === 'vfs_retry_pdf_processing')");
+    expect(wailsBridgeSource).toContain('return await VfsService.RetryPdfProcessing(fileId) as T;');
+    expect(wailsBridgeSource).toContain("if (command === 'vfs_start_pdf_processing')");
+    expect(wailsBridgeSource).toContain('return await VfsService.StartPdfProcessing(fileId, optionalStringArg(args, \'startFromStage\') ?? null) as T;');
   });
 });

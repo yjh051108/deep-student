@@ -3,8 +3,20 @@ import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { v4 as uuidv4 } from 'uuid';
+import { TauriStdioClientTransport, type StdioFraming } from './tauriStdioTransport';
 
 type FrontendTestResult = { success: boolean; tools_count?: number; tools?: Array<{ name: string; description?: string }>; error?: string; trace_id?: string };
+type McpTestStep = 'spawn_process' | 'connecting' | 'initializing' | 'listing_tools' | 'disconnecting' | 'done';
+type FrontendTestOptions = {
+  onProgress?: (step: McpTestStep) => void;
+};
+type StdioTestInput = {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+  cwd?: string;
+  framing?: StdioFraming;
+};
 
 function isTauriEnv(): boolean {
   try {
@@ -103,16 +115,22 @@ function mapUrlForTransport(raw: string, transport: 'sse' | 'streamable_http' | 
   }
 }
 
-async function runClient(transport: any): Promise<FrontendTestResult> {
+async function runClient(transport: any, options: FrontendTestOptions = {}): Promise<FrontendTestResult> {
   const client = new Client({ name: 'dstu-frontend-mcp-test', version: '1.0.0' });
   const trace_id = uuidv4();
   try {
+    options.onProgress?.('connecting');
+    options.onProgress?.('initializing');
     await client.connect(transport);
+    options.onProgress?.('listing_tools');
     const list = await client.listTools();
     const tools = (list.tools || []).map((t: any) => ({ name: t.name, description: t.description }));
+    options.onProgress?.('disconnecting');
     try { await client.close(); } catch { /* noop */ }
+    options.onProgress?.('done');
     return { success: true, tools_count: tools.length, tools, trace_id };
   } catch (e: any) {
+    options.onProgress?.('disconnecting');
     try { await client.close(); } catch { /* noop */ }
     return { success: false, error: e?.message || String(e), trace_id };
   }
@@ -150,4 +168,16 @@ export async function testMcpWebsocketFrontend(url: string, apiKey?: string, hea
   // Note: WebSocketClientTransport only accepts URL, headers not supported by SDK
   const transport = new WebSocketClientTransport(new URL(mapped));
   return await runClient(transport);
+}
+
+export async function testMcpStdioFrontend(config: StdioTestInput, options: FrontendTestOptions = {}): Promise<FrontendTestResult> {
+  options.onProgress?.('spawn_process');
+  const transport = new TauriStdioClientTransport({
+    command: config.command,
+    args: Array.isArray(config.args) ? config.args : [],
+    env: config.env || {},
+    cwd: config.cwd,
+    framing: config.framing ?? 'content_length',
+  });
+  return await runClient(transport, options);
 }

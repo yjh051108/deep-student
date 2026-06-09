@@ -10,7 +10,7 @@ describe('IndexStatusView visible row contract', () => {
 
   it('renders the selected state rows from the same display-state source as the badges', () => {
     expect(source).toContain('displayState: normalizeIndexState(resource.displayIndexState)');
-    expect(source).toContain('indexed: summary?.displayIndexedCount ?? 0');
+    expect(source).toContain('indexed: normalizedCounts?.display.indexed ?? 0');
     expect(source).toContain('const displayedRows = selectedState ===');
     expect(source).toContain('displayedRows.length === 0');
     expect(source).toContain('{displayedRows.map(renderResourceRow)}');

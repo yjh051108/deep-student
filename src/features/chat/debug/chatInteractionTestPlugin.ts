@@ -542,7 +542,7 @@ async function verifyPersistence(
   expectedLastAssistantModel?: string,
 ): Promise<PersistenceCheck> {
   try {
-    const { invoke } = await import('@tauri-apps/api/core');
+    const { invoke } = await import('@/runtime/native');
     // 等待后端保存完成
     await sleep(1000);
     const data = await invoke<{
@@ -1555,7 +1555,7 @@ export interface CleanupResult {
 export async function cleanupInteractionTestData(
   onProgress?: (msg: string) => void,
 ): Promise<CleanupResult> {
-  const { invoke } = await import('@tauri-apps/api/core');
+  const { invoke } = await import('@/runtime/native');
   const sm = await getSessionManager();
   const errors: string[] = [];
   let deletedSessions = 0;

@@ -8,7 +8,7 @@ const PROJECT_SKILLS_ROOT = path.join(PROJECT_ROOT, '.skills');
 
 const { invokeMock } = vi.hoisted(() => ({
   invokeMock: vi.fn(async (command: string, args: { path: string }) => {
-    if (command === 'skill_list_directories' && args.path === PROJECT_SKILLS_ROOT) {
+    if (command === 'skill_list_directories' && path.normalize(args.path) === PROJECT_SKILLS_ROOT) {
       return [
         {
           name: 'spss-paper-analysis',
@@ -32,7 +32,8 @@ const { invokeMock } = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({
+vi.mock('@/runtime/native', () => ({
+  getAppDataDir: vi.fn(async () => path.join(PROJECT_ROOT, '.app-data')),
   invoke: invokeMock,
 }));
 

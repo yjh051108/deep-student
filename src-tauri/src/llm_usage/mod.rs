@@ -4,7 +4,6 @@
 
 pub mod collector;
 pub mod database;
-pub mod handlers;
 pub mod repo;
 pub mod types;
 

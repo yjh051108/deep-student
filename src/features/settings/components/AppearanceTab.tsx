@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Monitor, Moon, Sun, CircleNotch } from '@phosphor-icons/react';
-import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+import { getSetting, saveSetting } from '@/runtime/native';
 
 import { NotionButton } from '@/components/ui/NotionButton';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
@@ -63,7 +63,7 @@ interface AppearanceTabProps {
   customColor: string;
   setCustomColor: (color: string) => void;
   isTauriEnvironment: boolean;
-  invoke: typeof tauriInvoke | null;
+  invoke: ((command: string, args?: Record<string, unknown>) => Promise<unknown>) | null;
 }
 
 export const AppearanceTab: React.FC<AppearanceTabProps> = ({
@@ -103,7 +103,7 @@ export const AppearanceTab: React.FC<AppearanceTabProps> = ({
     let cancelled = false;
     (async () => {
       try {
-        const val = await tauriInvoke<string | null>('get_setting', { key: SIDEBAR_TRANSLUCENT_KEY }).catch(() => null);
+        const val = await getSetting(SIDEBAR_TRANSLUCENT_KEY).catch(() => null);
         if (cancelled) return;
         const enabled = String(val ?? '').trim() === 'true';
         setSidebarTranslucent(enabled);
@@ -122,9 +122,7 @@ export const AppearanceTab: React.FC<AppearanceTabProps> = ({
     let cancelled = false;
     (async () => {
       try {
-        const raw = await tauriInvoke<string | null>('get_setting', {
-          key: POINTER_CURSOR_SETTING_KEY,
-        }).catch(() => null);
+        const raw = await getSetting(POINTER_CURSOR_SETTING_KEY).catch(() => null);
         if (cancelled) return;
         const enabled = String(raw ?? '').trim() !== 'false';
         setPointerCursorEnabled(enabled);
@@ -145,9 +143,7 @@ export const AppearanceTab: React.FC<AppearanceTabProps> = ({
     let cancelled = false;
     (async () => {
       try {
-        const raw = await tauriInvoke<string | null>('get_setting', {
-          key: THINKING_AUTO_COLLAPSE_KEY,
-        }).catch(() => null);
+        const raw = await getSetting(THINKING_AUTO_COLLAPSE_KEY).catch(() => null);
         if (cancelled) return;
         const enabled = String(raw ?? '').trim() !== 'false';
         setThinkingAutoCollapse(enabled);
@@ -180,9 +176,7 @@ export const AppearanceTab: React.FC<AppearanceTabProps> = ({
     let cancelled = false;
     (async () => {
       try {
-        const raw = await tauriInvoke<string | null>('get_setting', {
-          key: MACOS_NATIVE_FONT_SMOOTHING_SETTING_KEY,
-        }).catch(() => null);
+        const raw = await getSetting(MACOS_NATIVE_FONT_SMOOTHING_SETTING_KEY).catch(() => null);
         if (cancelled) return;
         setMacosNativeFontSmoothingEnabled(String(raw ?? '').trim() !== 'false');
       } catch {
@@ -231,28 +225,21 @@ export const AppearanceTab: React.FC<AppearanceTabProps> = ({
     const previousMode = themeMode;
     setThemeMode(nextMode);
 
-    if (!invoke) return;
-
     try {
-      await (invoke as typeof tauriInvoke)('save_setting', { key: 'theme', value: nextMode });
+      await saveSetting('theme', nextMode);
     } catch (error: unknown) {
       setThemeMode(previousMode);
       showGlobalNotification('error', getErrorMessage(error));
     }
-  }, [invoke, setThemeMode, themeMode]);
+  }, [setThemeMode, themeMode]);
 
   const handleMacosNativeFontSmoothingChange = React.useCallback(async (checked: boolean) => {
     if (macosNativeFontSmoothingEnabled === null) return;
     const previousValue = macosNativeFontSmoothingEnabled;
     setMacosNativeFontSmoothingEnabled(checked);
 
-    if (!invoke) return;
-
     try {
-      await (invoke as typeof tauriInvoke)('save_setting', {
-        key: MACOS_NATIVE_FONT_SMOOTHING_SETTING_KEY,
-        value: String(checked),
-      });
+      await saveSetting(MACOS_NATIVE_FONT_SMOOTHING_SETTING_KEY, String(checked));
 
       window.dispatchEvent(
         new CustomEvent('systemSettingsChanged', {
@@ -266,7 +253,7 @@ export const AppearanceTab: React.FC<AppearanceTabProps> = ({
       setMacosNativeFontSmoothingEnabled(previousValue);
       showGlobalNotification('error', getErrorMessage(error));
     }
-  }, [invoke, macosNativeFontSmoothingEnabled]);
+  }, [macosNativeFontSmoothingEnabled]);
 
   const handleSidebarTranslucentChange = React.useCallback(async (checked: boolean) => {
     if (sidebarTranslucent === null) return;
@@ -274,19 +261,14 @@ export const AppearanceTab: React.FC<AppearanceTabProps> = ({
     setSidebarTranslucent(checked);
     document.documentElement.setAttribute('data-sidebar-translucent', String(checked));
 
-    if (!invoke) return;
-
     try {
-      await (invoke as typeof tauriInvoke)('save_setting', {
-        key: SIDEBAR_TRANSLUCENT_KEY,
-        value: String(checked),
-      });
+      await saveSetting(SIDEBAR_TRANSLUCENT_KEY, String(checked));
     } catch (error: unknown) {
       setSidebarTranslucent(previousValue);
       document.documentElement.setAttribute('data-sidebar-translucent', String(previousValue));
       showGlobalNotification('error', getErrorMessage(error));
     }
-  }, [invoke, sidebarTranslucent]);
+  }, [sidebarTranslucent]);
 
   const handlePointerCursorChange = React.useCallback(async (checked: boolean) => {
     if (pointerCursorEnabled === null) return;
@@ -294,13 +276,8 @@ export const AppearanceTab: React.FC<AppearanceTabProps> = ({
     setPointerCursorEnabled(checked);
     document.documentElement.setAttribute('data-pointer-cursor', String(checked));
 
-    if (!invoke) return;
-
     try {
-      await (invoke as typeof tauriInvoke)('save_setting', {
-        key: POINTER_CURSOR_SETTING_KEY,
-        value: String(checked),
-      });
+      await saveSetting(POINTER_CURSOR_SETTING_KEY, String(checked));
 
       window.dispatchEvent(
         new CustomEvent('systemSettingsChanged', {
@@ -316,7 +293,7 @@ export const AppearanceTab: React.FC<AppearanceTabProps> = ({
       document.documentElement.setAttribute('data-pointer-cursor', String(previousValue));
       showGlobalNotification('error', getErrorMessage(error));
     }
-  }, [invoke, pointerCursorEnabled]);
+  }, [pointerCursorEnabled]);
 
   const handleThinkingAutoCollapseChange = React.useCallback(async (checked: boolean) => {
     if (thinkingAutoCollapse === null) return;
@@ -330,13 +307,8 @@ export const AppearanceTab: React.FC<AppearanceTabProps> = ({
       }),
     );
 
-    if (!invoke) return;
-
     try {
-      await (invoke as typeof tauriInvoke)('save_setting', {
-        key: THINKING_AUTO_COLLAPSE_KEY,
-        value: String(checked),
-      });
+      await saveSetting(THINKING_AUTO_COLLAPSE_KEY, String(checked));
     } catch (error: unknown) {
       setThinkingAutoCollapse(previousValue);
       document.documentElement.setAttribute('data-auto-collapse-thinking', String(previousValue));
@@ -347,7 +319,7 @@ export const AppearanceTab: React.FC<AppearanceTabProps> = ({
       );
       showGlobalNotification('error', getErrorMessage(error));
     }
-  }, [invoke, thinkingAutoCollapse]);
+  }, [thinkingAutoCollapse]);
 
   return (
     <div className="space-y-1 pb-10 text-left animate-in fade-in duration-500" data-tour-id="appearance-settings">

@@ -114,6 +114,11 @@ function shouldAutoCheck(): boolean {
   return elapsed >= days * 24 * 60 * 60 * 1000;
 }
 
+function isGoWailsSmokeMode(): boolean {
+  if (typeof window === 'undefined') return false;
+  return new URLSearchParams(window.location.search).get('go-wails-smoke') === 'true';
+}
+
 export function getUpdateChannel(): UpdateChannel {
   try {
     return localStorage.getItem(UPDATE_CHANNEL_KEY) === 'experimental' ? 'experimental' : 'stable';
@@ -558,6 +563,7 @@ export function useAppUpdater(): AppUpdaterController {
 
   // 启动后延迟静默检查（受频率设置控制）
   useEffect(() => {
+    if (isGoWailsSmokeMode()) return;
     if (!shouldAutoCheck()) return;
     const timer = setTimeout(async () => {
       // Fix: 仅在检查成功时记录时间，网络失败不应延后下次检查

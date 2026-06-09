@@ -17,6 +17,7 @@
  */
 
 import { eventRegistry, type EventHandler, type EventStartPayload } from '../../registry/eventRegistry';
+import { invoke } from '@/runtime/native';
 import type { ChatStore } from '../../core/types';
 // 🆕 工作区状态（用于自动设置 currentWorkspaceId）
 import { useWorkspaceStore } from '../../workspace/workspaceStore';
@@ -415,8 +416,6 @@ const toolCallEventHandler: EventHandler = {
           // 🔧 P35: 立即保存 workspace_status 块到后端数据库
           void (async () => {
             try {
-              const { invoke } = await import('@tauri-apps/api/core');
-              
               // 🆕 P37 调试：记录 upsert 调用
               if (logDebug) {
                 logDebug('block', 'UPSERT_WORKSPACE_STATUS_BLOCK', {
@@ -481,7 +480,6 @@ const toolCallEventHandler: EventHandler = {
               
               // 🔧 P35: 同步更新后端数据库
               try {
-                const { invoke } = await import('@tauri-apps/api/core');
                 await invoke('chat_v2_upsert_streaming_block', {
                   blockId: statusBlockId,
                   messageId,
@@ -637,7 +635,6 @@ const toolCallEventHandler: EventHandler = {
           // 持久化到数据库（同 workspace_status 模式）
           void (async () => {
             try {
-              const { invoke } = await import('@tauri-apps/api/core');
               await invoke('chat_v2_upsert_streaming_block', {
                 blockId: previewBlockId,
                 messageId,

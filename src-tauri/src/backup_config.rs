@@ -107,27 +107,6 @@ impl BackupConfig {
 use crate::commands::AppState;
 use tauri::State;
 
-/// 获取备份配置
-#[tauri::command]
-pub async fn get_backup_config(state: State<'_, AppState>) -> Result<BackupConfig> {
-    BackupConfig::load(&state.database)
-}
-
-/// 保存备份配置
-#[tauri::command]
-pub async fn set_backup_config(config: BackupConfig, state: State<'_, AppState>) -> Result<()> {
-    config.save(&state.database)?;
-    tracing::info!(
-        "[AutoBackup] 配置已更新: auto={}, interval={}h, max={:?}, slim={}, tiers={}",
-        config.auto_backup_enabled,
-        config.auto_backup_interval_hours,
-        config.max_backup_count,
-        config.slim_backup,
-        config.backup_tiers.as_ref().map_or(0, |tiers| tiers.len())
-    );
-    Ok(())
-}
-
 /// 选择备份目录
 #[tauri::command]
 pub async fn pick_backup_directory(

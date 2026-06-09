@@ -8,7 +8,7 @@
  */
 
 import { useEffect } from 'react';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { listen, type NativeUnlistenFn as UnlistenFn } from '@/runtime/nativeEvents';
 import { usePdfProcessingStore, type MediaType, type ProcessingStage } from '@/features/pdf/stores/pdfProcessingStore';
 import { invalidateResourceCache } from '@/features/chat/context/vfsRefApiEnhancements';
 import { debugLog } from '../debug-panel/debugMasterSwitch';

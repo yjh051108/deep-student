@@ -371,7 +371,7 @@ function sanitize(body: any): unknown {
 async function verifyPersistence(sessionId: string, expectedVariants: number): Promise<VerificationCheck[]> {
   const checks: VerificationCheck[] = [];
   try {
-    const { invoke } = await import('@tauri-apps/api/core');
+    const { invoke } = await import('@/runtime/native');
     await sleep(1000);
     const data = await invoke<{ messages?: Array<{ id: string; role: string; variants?: Array<{ id: string; modelId?: string; status?: string; blockIds?: string[] }>; activeVariantId?: string }> }>('chat_v2_load_session', { sessionId });
     const msgs = data?.messages || [];
@@ -394,7 +394,7 @@ async function verifyPersistence(sessionId: string, expectedVariants: number): P
 async function verifyMixedPersistence(sessionId: string, expectedVariantCounts: number[], log: LogFn): Promise<VerificationCheck[]> {
   const checks: VerificationCheck[] = [];
   try {
-    const { invoke } = await import('@tauri-apps/api/core');
+    const { invoke } = await import('@/runtime/native');
     await sleep(1000);
     type PersistMsg = { id: string; role: string; blockIds?: string[]; variants?: Array<{ id: string; modelId?: string; status?: string; blockIds?: string[] }>; activeVariantId?: string };
     const data = await invoke<{ messages?: PersistMsg[] }>('chat_v2_load_session', { sessionId });
@@ -912,7 +912,7 @@ async function stepSkeleton(config: MultiVariantTestConfig, onLog?: (e: LogEntry
     checks.push({ name: 'variant_start', passed: gotStart, detail: gotStart ? `${varCap!.events.length} events` : '❌ 15s无事件' });
 
     if (gotStart) {
-      const { invoke } = await import('@tauri-apps/api/core');
+      const { invoke } = await import('@/runtime/native');
       const data = await invoke<{ messages?: Array<{ id: string; role: string; variants?: Array<{ id: string; modelId?: string }> }> }>('chat_v2_load_session', { sessionId: sid });
       const ast = (data?.messages||[]).find(m => m.role==='assistant');
       checks.push({ name: '骨架存在', passed: !!ast, detail: ast ? `id=${ast.id}` : '❌' });
@@ -1215,7 +1215,7 @@ export async function cleanupMultiVariantTestData(
   const errors: string[] = [];
   let deleted = 0;
   try {
-    const { invoke } = await import('@tauri-apps/api/core');
+    const { invoke } = await import('@/runtime/native');
     for (const status of ['active', 'archived', 'deleted'] as const) {
       let offset = 0;
       const limit = 50;

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use super::executor::{ExecutionContext, ToolExecutor, ToolSensitivity};
@@ -93,15 +93,14 @@ impl MemoryToolExecutor {
     }
 
     pub(crate) fn visible_scope_roots_for_context(ctx: &ExecutionContext) -> Vec<String> {
-        let effective_scope = Self::effective_topic_scope(ctx);
-        crate::memory::visible_scope_roots(
-            effective_scope
-                .as_ref()
-                .map(|scope| scope.group_id.as_str()),
-            effective_scope
-                .as_ref()
-                .map(|scope| scope.group_name.as_str()),
-        )
+        if let Some(scope) = Self::effective_topic_scope(ctx) {
+            crate::memory::readable_scope_roots(
+                Some(scope.group_id.as_str()),
+                Some(scope.group_name.as_str()),
+            )
+        } else {
+            crate::memory::readable_scope_roots(None, None)
+        }
     }
 
     fn visible_scope_roots(ctx: &ExecutionContext) -> Vec<String> {
@@ -171,7 +170,32 @@ impl MemoryToolExecutor {
         }
     }
 
-    fn ensure_note_in_scope(
+    fn ensure_note_readable(
+        &self,
+        service: &MemoryService,
+        ctx: &ExecutionContext,
+        note_id: &str,
+    ) -> Result<(), String> {
+        let folder_path = service
+            .get_note_folder_path(note_id)
+            .map_err(|e| e.to_string())?;
+        let effective_scope = Self::effective_topic_scope(ctx);
+        if crate::memory::is_folder_path_readable(
+            &folder_path,
+            effective_scope
+                .as_ref()
+                .map(|scope| scope.group_id.as_str()),
+            effective_scope
+                .as_ref()
+                .map(|scope| scope.group_name.as_str()),
+        ) {
+            Ok(())
+        } else {
+            Err("记忆不属于当前课题，已阻止跨课题访问".to_string())
+        }
+    }
+
+    fn ensure_note_mutable(
         &self,
         service: &MemoryService,
         ctx: &ExecutionContext,
@@ -192,7 +216,10 @@ impl MemoryToolExecutor {
         ) {
             Ok(())
         } else {
-            Err("记忆不属于当前课题，已阻止跨课题访问".to_string())
+            Err(
+                "记忆不属于当前可写范围；通用课题会话只能修改全局记忆，不能直接改删课题记忆"
+                    .to_string(),
+            )
         }
     }
 
@@ -370,7 +397,7 @@ impl MemoryToolExecutor {
             .ok_or("Missing 'note_id' parameter")?;
 
         let note_id_owned = note_id.to_string();
-        self.ensure_note_in_scope(&service, ctx, &note_id_owned)?;
+        self.ensure_note_readable(&service, ctx, &note_id_owned)?;
 
         // 🆕 取消支持：使用 spawn_blocking + tokio::select! 监听取消信号
         let read_task = {
@@ -453,7 +480,7 @@ impl MemoryToolExecutor {
         let scoped_folder = Self::scoped_folder_path(ctx, scope, folder.as_deref());
 
         if let Some(ref note_id) = note_id {
-            self.ensure_note_in_scope(&service, ctx, note_id)?;
+            self.ensure_note_mutable(&service, ctx, note_id)?;
         }
 
         // ★ 修复不一致：工具路径也需要敏感信息过滤
@@ -717,7 +744,7 @@ impl MemoryToolExecutor {
             .and_then(|v| v.as_str())
             .ok_or("Missing 'note_id' parameter")?
             .to_string();
-        self.ensure_note_in_scope(&service, ctx, &note_id)?;
+        self.ensure_note_mutable(&service, ctx, &note_id)?;
         let maintenance_paths = service
             .get_note_folder_path(&note_id)
             .ok()
@@ -805,7 +832,7 @@ impl MemoryToolExecutor {
             .get("note_id")
             .and_then(|v| v.as_str())
             .ok_or("Missing 'note_id' parameter")?;
-        self.ensure_note_in_scope(&service, ctx, note_id)?;
+        self.ensure_note_mutable(&service, ctx, note_id)?;
         let maintenance_paths = service
             .get_note_folder_path(note_id)
             .ok()

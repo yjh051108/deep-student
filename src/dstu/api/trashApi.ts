@@ -5,7 +5,7 @@
  * 所有方法返回 Result<T, VfsError> 类型，提供类型安全的错误处理。
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import i18next from 'i18next';
 import { ok, err, toVfsError, type Result, type VfsError } from '@/shared/result';
 import type { DstuNode } from '../types';

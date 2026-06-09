@@ -7,7 +7,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next';
 import { Brain, Check, Clock, Cpu, DownloadSimple, FloppyDisk, GearSix, Image, Lightning, LinkSimple, Minus, Plus, Spinner, Stack, Trash, WarningCircle } from '@phosphor-icons/react';
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http'; // 使用Tauri v2 http插件
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { showGlobalNotification } from '@/components/UnifiedNotification';
 import { SiliconFlowLogo } from '@/components/ui/SiliconFlowLogo';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/shad/Card';

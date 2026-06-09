@@ -55,13 +55,11 @@ impl ChatV2Pipeline {
             options.group_id.as_deref(),
             options.group_name.as_deref(),
         );
-        let scope_paths = {
-            let mut paths = vec![crate::memory::GLOBAL_MEMORY_FOLDER.to_string()];
-            if let Some(path) = &topic_root {
-                paths.push(path.clone());
-            }
-            paths
-        };
+        let is_general_session = topic_root.is_none();
+        let scope_paths = crate::memory::readable_scope_roots(
+            options.group_id.as_deref(),
+            options.group_name.as_deref(),
+        );
 
         // 加载 scoped 分类摘要文件（Memory Category Layer）
         let cat_mgr = MemoryCategoryManager::new(vfs_db.clone(), self.llm_manager.clone());
@@ -85,8 +83,22 @@ impl ChatV2Pipeline {
                 crate::memory::GLOBAL_MEMORY_FOLDER,
             ) {
                 global_sections.push(section);
-            } else if let Some(topic_root) = &topic_root {
-                if crate::memory::is_folder_path_within_scope(&cat_name, topic_root) {
+            } else if is_general_session {
+                if crate::memory::is_folder_path_within_scope(
+                    &cat_name,
+                    crate::memory::TOPIC_MEMORY_PREFIX,
+                ) {
+                    topic_sections.push(section);
+                }
+            } else {
+                let topic_roots = crate::memory::topic_memory_roots(
+                    options.group_id.as_deref(),
+                    options.group_name.as_deref(),
+                );
+                if topic_roots
+                    .iter()
+                    .any(|root| crate::memory::is_folder_path_within_scope(&cat_name, root))
+                {
                     topic_sections.push(section);
                 }
             }
@@ -122,13 +134,16 @@ impl ChatV2Pipeline {
         let global_profile = join_limited(&global_sections, 1200);
         let topic_profile = join_limited(&topic_sections, 1600);
 
-        Some(prompt_builder::MemoryPromptContext::new(
-            options.group_name.clone().or(options.group_id.clone()),
-            topic_root,
-            crate::memory::GLOBAL_MEMORY_FOLDER.to_string(),
-            global_profile,
-            topic_profile,
-        ))
+        Some(
+            prompt_builder::MemoryPromptContext::new(
+                options.group_name.clone().or(options.group_id.clone()),
+                topic_root,
+                crate::memory::GLOBAL_MEMORY_FOLDER.to_string(),
+                global_profile,
+                topic_profile,
+            )
+            .with_general_session(is_general_session),
+        )
     }
 
     /// 构建 Canvas 笔记信息

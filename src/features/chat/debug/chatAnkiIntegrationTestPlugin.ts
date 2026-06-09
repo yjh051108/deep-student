@@ -27,8 +27,8 @@
  *   C⑦ AnkiConnect 状态：检查有无刷新机制
  */
 
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { invoke } from '@tauri-apps/api/core';
+import { listen, type NativeUnlistenFn as UnlistenFn } from '@/runtime/nativeEvents';
+import { invoke } from '@/runtime/native';
 import { createSessionWithDefaults } from '../core/session/createSessionWithDefaults';
 import type { StoreApi } from 'zustand';
 import type { ChatStore } from '../core/types';

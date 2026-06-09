@@ -2,12 +2,12 @@
 //!
 //! 嵌入/重排序模型配置、多模态RAG
 
-use crate::json_validator::{Stage as ValidateStage, validate};
+use crate::json_validator::{validate, Stage as ValidateStage};
 use crate::models::{AppError, ModelAssignments};
 use crate::providers::ProviderAdapter;
 use crate::utils::text::safe_truncate_chars;
 use log::{debug, error, info, warn};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use url::Url;
 
 use super::{ApiConfig, LLMManager, Result};

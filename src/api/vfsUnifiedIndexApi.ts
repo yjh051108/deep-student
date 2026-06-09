@@ -2,7 +2,7 @@
  * VFS 统一索引 API
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import type {
   IndexStatusSummary,
   UnitIndexStatus,

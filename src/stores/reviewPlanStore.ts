@@ -12,7 +12,7 @@
 
 import { create } from 'zustand';
 import { devtools, subscribeWithSelector } from 'zustand/middleware';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { debugLog } from '../debug-panel/debugMasterSwitch';
 import { showGlobalNotification } from '../components/UnifiedNotification';
 import i18n from '@/i18n';

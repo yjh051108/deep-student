@@ -83,13 +83,13 @@ import {
   type VfsSearchResult,
 } from '@/api/vfsRagApi';
 import multimodalRagService, { type SourceType as MMSourceType, MULTIMODAL_INDEX_ENABLED } from '@/services/multimodalRagService';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { listen, type NativeUnlistenFn as UnlistenFn } from '@/runtime/nativeEvents';
 import { showGlobalNotification } from '@/components/UnifiedNotification';
 import { Progress } from '@/components/ui/shad/Progress';
 import { debugLog } from '@/debug-panel/debugMasterSwitch';
 // ★ 2026-02 修复：统一使用共享类型定义，避免重复定义不一致风险
 import type { IndexState } from '@/types/vfs-unified-index';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 
 // ============================================================================
 // 类型和常量
@@ -177,6 +177,74 @@ const getCompleteIndexStatus = async (
   return {
     ...firstPage,
     resources,
+  };
+};
+
+interface IndexCountGroup {
+  total: number;
+  indexed: number;
+  pending: number;
+  indexing: number;
+  failed: number;
+  disabled: number;
+}
+
+interface DisplayIndexCountGroup extends IndexCountGroup {
+  stale: number;
+}
+
+interface NormalizedIndexSummaryCounts {
+  text: IndexCountGroup;
+  display: DisplayIndexCountGroup;
+  image: IndexCountGroup;
+  textQueueCount: number;
+}
+
+const toFiniteCount = (...values: unknown[]): number => {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return Math.max(0, value);
+    }
+    if (typeof value === 'string' && value.trim() !== '') {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return Math.max(0, parsed);
+      }
+    }
+  }
+  return 0;
+};
+
+const normalizeIndexSummaryCounts = (summary: IndexStatusSummary): NormalizedIndexSummaryCounts => {
+  const source = summary as IndexStatusSummary & Record<string, unknown>;
+
+  return {
+    text: {
+      total: toFiniteCount(source.textTotalResources, source.totalResources, source.displayTotalResources),
+      indexed: toFiniteCount(source.textIndexedCount, source.indexedCount, source.displayIndexedCount),
+      pending: toFiniteCount(source.textPendingCount, source.pendingCount, source.displayPendingCount),
+      indexing: toFiniteCount(source.textIndexingCount, source.indexingCount, source.displayIndexingCount),
+      failed: toFiniteCount(source.textFailedCount, source.failedCount, source.displayFailedCount),
+      disabled: toFiniteCount(source.textDisabledCount, source.disabledCount, source.displayDisabledCount),
+    },
+    display: {
+      total: toFiniteCount(source.displayTotalResources, source.totalResources, source.textTotalResources),
+      indexed: toFiniteCount(source.displayIndexedCount, source.indexedCount, source.textIndexedCount),
+      pending: toFiniteCount(source.displayPendingCount, source.pendingCount, source.textPendingCount),
+      indexing: toFiniteCount(source.displayIndexingCount, source.indexingCount, source.textIndexingCount),
+      failed: toFiniteCount(source.displayFailedCount, source.failedCount, source.textFailedCount),
+      disabled: toFiniteCount(source.displayDisabledCount, source.disabledCount, source.textDisabledCount),
+      stale: toFiniteCount(source.staleCount),
+    },
+    image: {
+      total: toFiniteCount(source.mmTotalResources),
+      indexed: toFiniteCount(source.mmIndexedCount),
+      pending: toFiniteCount(source.mmPendingCount),
+      indexing: toFiniteCount(source.mmIndexingCount),
+      failed: toFiniteCount(source.mmFailedCount),
+      disabled: toFiniteCount(source.mmDisabledCount),
+    },
+    textQueueCount: toFiniteCount(source.textQueueCount, source.textPendingCount, source.pendingCount),
   };
 };
 
@@ -640,6 +708,11 @@ export const IndexStatusView: React.FC = () => {
     setTextChunks([]);
   }, []);
 
+  const normalizedCounts = useMemo(
+    () => summary ? normalizeIndexSummaryCounts(summary) : null,
+    [summary]
+  );
+
   // ========== 一键索引（执行 OCR 文本索引，多模态索引仅在启用时执行）==========
   const handleUnifiedIndex = useCallback(async () => {
     if (!summary) return;
@@ -656,7 +729,7 @@ export const IndexStatusView: React.FC = () => {
       : [];
     const textWorkCount = isActionFiltered
       ? filteredTextResources.length
-      : summary.textQueueCount;
+      : normalizedCounts?.textQueueCount ?? 0;
     const mmResources = MULTIMODAL_INDEX_ENABLED
       ? summary.resources.filter((resource) => isPendingMultimodalResource(resource) && matchesSelectedState(resource))
       : [];
@@ -779,7 +852,7 @@ export const IndexStatusView: React.FC = () => {
         t(`indexStatus.progress.imageIndexCapability.${imageIndexCapability}`)
       );
     }
-  }, [summary, selectedType, selectedState, batchIndexing, mmIndexing, imageIndexCapability, loadData]);
+  }, [summary, normalizedCounts, selectedType, selectedState, batchIndexing, mmIndexing, imageIndexCapability, loadData]);
 
   // ========== 重置所有索引状态 ==========
   const [resetting, setResetting] = useState(false);
@@ -934,14 +1007,14 @@ export const IndexStatusView: React.FC = () => {
     ? resolvedDisplayRows
     : groupedDisplayRows[selectedState] ?? [];
   const displayIndexStats = useMemo(() => ({
-    total: summary?.displayTotalResources ?? 0,
-    indexed: summary?.displayIndexedCount ?? 0,
-    pending: summary?.displayPendingCount ?? 0,
-    indexing: summary?.displayIndexingCount ?? 0,
-    failed: summary?.displayFailedCount ?? 0,
-    disabled: summary?.displayDisabledCount ?? 0,
-    stale: summary?.staleCount ?? 0,
-  }), [summary]);
+    total: normalizedCounts?.display.total ?? 0,
+    indexed: normalizedCounts?.display.indexed ?? 0,
+    pending: normalizedCounts?.display.pending ?? 0,
+    indexing: normalizedCounts?.display.indexing ?? 0,
+    failed: normalizedCounts?.display.failed ?? 0,
+    disabled: normalizedCounts?.display.disabled ?? 0,
+    stale: normalizedCounts?.display.stale ?? 0,
+  }), [normalizedCounts]);
 
   // ========== 计算进度百分比 ==========
   const progressPercentage = useMemo(() => {
@@ -953,14 +1026,8 @@ export const IndexStatusView: React.FC = () => {
     if (!summary) return null;
     const imageIndexReady = imageIndexCapability === 'ready';
     const imageIndexMessage = t(`indexStatus.progress.imageIndexCapability.${imageIndexCapability}`);
-    const textProgress = {
-      indexed: summary.textIndexedCount,
-      total: summary.textTotalResources,
-    };
-    const imageProgress = {
-      indexed: summary.mmIndexedCount,
-      total: summary.mmTotalResources,
-    };
+    const textProgress = normalizedCounts?.text ?? { indexed: 0, total: 0 };
+    const imageProgress = normalizedCounts?.image ?? { indexed: 0, total: 0 };
     const renderCount = (indexed: number, total: number, label: string) => (
       <span
         aria-label={`${label} ${indexed}/${total}`}

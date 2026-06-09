@@ -1,8 +1,8 @@
 /**
- * 知识导图 Tauri API 封装
+ * 知识导图 native API 封装
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import type {
   VfsMindMap,
   CreateMindMapParams,

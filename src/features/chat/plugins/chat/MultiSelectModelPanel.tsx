@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { X, Check, ArrowCounterClockwise, MagnifyingGlass, Star, PushPin, CaretDown, CaretRight } from '@phosphor-icons/react';
 import { useMobileLayoutSafe } from '@/components/layout/MobileLayoutContext';
 import { cn } from '@/lib/utils';

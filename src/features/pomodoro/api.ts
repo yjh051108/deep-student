@@ -2,7 +2,7 @@
  * 番茄钟 Tauri API 层
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 
 // ============================================================================
 // Types

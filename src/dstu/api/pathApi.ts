@@ -9,7 +9,7 @@
  * 3. 调用后端 dstu_* 命令
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke as nativeInvoke } from '@/runtime/native';
 import { getErrorMessage } from '@/utils/errorUtils';
 import { invalidateResourceCache } from '@/features/chat/context/vfsRefApiEnhancements';
 import type {
@@ -40,7 +40,7 @@ const LOG_PREFIX = '[DSTU:PathAPI]';
  */
 async function parsePath(path: string): Promise<ParsedPath> {
   try {
-    const result = await invoke<ParsedPath>('dstu_parse_path', { path });
+    const result = await nativeInvoke<ParsedPath>('dstu_parse_path', { path });
     return result;
   } catch (error: unknown) {
     console.error(LOG_PREFIX, 'parsePath() failed:', getErrorMessage(error));
@@ -62,7 +62,7 @@ async function buildPath(
   resourceId: string
 ): Promise<string> {
   try {
-    const result = await invoke<string>('dstu_build_path', {
+    const result = await nativeInvoke<string>('dstu_build_path', {
       folderId,
       resourceId,
     });
@@ -87,7 +87,7 @@ async function getResourceLocation(
   resourceId: string
 ): Promise<ResourceLocation> {
   try {
-    const result = await invoke<ResourceLocation>('dstu_get_resource_location', {
+    const result = await nativeInvoke<ResourceLocation>('dstu_get_resource_location', {
       resourceId,
     });
     return result;
@@ -105,7 +105,7 @@ async function getResourceLocation(
  */
 async function getResourceByPath(path: string): Promise<DstuNode | null> {
   try {
-    const result = await invoke<DstuNode | null>('dstu_get_resource_by_path', {
+    const result = await nativeInvoke<DstuNode | null>('dstu_get_resource_by_path', {
       path,
     });
     return result;
@@ -138,7 +138,7 @@ async function moveToFolder(
   targetFolderId: string | null
 ): Promise<ResourceLocation> {
   try {
-    const result = await invoke<ResourceLocation>('dstu_move_to_folder', {
+    const result = await nativeInvoke<ResourceLocation>('dstu_move_to_folder', {
       resourceId,
       targetFolderId,
     });
@@ -168,7 +168,7 @@ async function moveToFolder(
  */
 async function batchMove(request: BatchMoveRequest): Promise<BatchMoveResult> {
   try {
-    const result = await invoke<BatchMoveResult>('dstu_batch_move', {
+    const result = await nativeInvoke<BatchMoveResult>('dstu_batch_move', {
       request,
     });
     // [CACHE-006] 批量缓存失效
@@ -206,7 +206,7 @@ async function batchMove(request: BatchMoveRequest): Promise<BatchMoveResult> {
  */
 async function refreshPathCache(resourceId?: string): Promise<number> {
   try {
-    const result = await invoke<number>('dstu_refresh_path_cache', {
+    const result = await nativeInvoke<number>('dstu_refresh_path_cache', {
       resourceId: resourceId || null,
     });
     return result;
@@ -226,7 +226,7 @@ async function refreshPathCache(resourceId?: string): Promise<number> {
  */
 async function getPathById(resourceId: string): Promise<string> {
   try {
-    const result = await invoke<string>('dstu_get_path_by_id', {
+    const result = await nativeInvoke<string>('dstu_get_path_by_id', {
       resourceId,
     });
     return result;

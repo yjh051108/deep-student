@@ -13,7 +13,6 @@
  * 3. 格式化失败时使用默认文本块
  */
 
-import { invoke } from '@tauri-apps/api/core';
 import i18n from 'i18next';
 import { getErrorMessage } from '@/utils/errorUtils';
 import { debugLog } from '@/debug-panel/debugMasterSwitch';

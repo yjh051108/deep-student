@@ -12,7 +12,7 @@
  * 支持一键复制全部日志用于 bug 报告。
  */
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { listen, type NativeUnlistenFn as UnlistenFn } from '@/runtime/nativeEvents';
 import { Copy, Trash, Download, CaretDown, CaretRight, MagnifyingGlass, X } from '@phosphor-icons/react';
 import type { DebugPanelPluginProps } from '../DebugPanelHost';
 import { copyTextToClipboard } from '@/utils/clipboardUtils';

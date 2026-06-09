@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import i18next from 'i18next';
 import { getErrorMessage } from '../utils/errorUtils';
 import { debugLog } from '../debug-panel/debugMasterSwitch';
+import { invoke as nativeInvoke } from '../runtime/native';
 const console = debugLog as Pick<typeof debugLog, 'log' | 'warn' | 'error' | 'info' | 'debug'>;
 
 type TransportType = 'sse' | 'websocket' | 'streamable-http' | 'streamable_http' | 'stdio';
@@ -1781,13 +1782,10 @@ function toServerConfigs(list: any[]): McpConfig['servers'] {
 async function loadServersFromSettings(): Promise<McpConfig['servers']> {
   let listStr: string | null = null;
 
-  if (isTauriEnvironment) {
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      listStr = await invoke<string | null>('get_setting', { key: 'mcp.tools.list' }).catch(() => null);
-    } catch (err: unknown) {
-      debugLog.warn('[MCP] Failed to load MCP servers via Tauri invoke:', err);
-    }
+  try {
+    listStr = await nativeInvoke<string | null>('get_setting', { key: 'mcp.tools.list' }).catch(() => null);
+  } catch (err: unknown) {
+    debugLog.warn('[MCP] Failed to load MCP servers via native invoke:', err);
   }
 
   if (!listStr && typeof window !== 'undefined') {
@@ -1806,23 +1804,20 @@ async function loadServersFromSettings(): Promise<McpConfig['servers']> {
 }
 
 async function loadCacheTtlFromSettings(): Promise<number | undefined> {
-  if (isTauriEnvironment) {
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      const [perfTtl, legacyTtl] = await Promise.all([
-        invoke<string | null>('get_setting', { key: 'mcp.performance.cache_ttl_ms' }).catch(() => null),
-        invoke<string | null>('get_setting', { key: 'mcp.tools.cache_ttl_ms' }).catch(() => null),
-      ]);
-      const candidates = [perfTtl, legacyTtl].filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
-      for (const raw of candidates) {
-        const parsed = parseInt(raw, 10);
-        if (Number.isFinite(parsed) && parsed >= 0) {
-          return parsed;
-        }
+  try {
+    const [perfTtl, legacyTtl] = await Promise.all([
+      nativeInvoke<string | null>('get_setting', { key: 'mcp.performance.cache_ttl_ms' }).catch(() => null),
+      nativeInvoke<string | null>('get_setting', { key: 'mcp.tools.cache_ttl_ms' }).catch(() => null),
+    ]);
+    const candidates = [perfTtl, legacyTtl].filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+    for (const raw of candidates) {
+      const parsed = parseInt(raw, 10);
+      if (Number.isFinite(parsed) && parsed >= 0) {
+        return parsed;
       }
-    } catch (err: unknown) {
-      debugLog.warn('[MCP] Failed to load MCP cache TTL via Tauri invoke:', err);
     }
+  } catch (err: unknown) {
+    debugLog.warn('[MCP] Failed to load MCP cache TTL via native invoke:', err);
   }
   try {
     const local = typeof window !== 'undefined' ? window.localStorage.getItem('mcp.performance.cache_ttl_ms') || window.localStorage.getItem('mcp.tools.cache_ttl_ms') : null;
@@ -1836,6 +1831,33 @@ async function loadCacheTtlFromSettings(): Promise<number | undefined> {
     console.warn('[MCP] Failed to read cache TTL from localStorage:', e);
   }
   return undefined;
+}
+
+async function preheatMcpTools(): Promise<number> {
+  let count = 0;
+  try {
+    const tools = await McpService.listTools();
+    count = tools.length;
+  } catch (err: unknown) {
+    debugLog.warn('[MCP] frontend MCP tool preheat failed:', err);
+  }
+
+  try {
+    const response = await nativeInvoke<{ ok?: boolean; count?: number }>('preheat_mcp_tools');
+    if (typeof response?.count === 'number' && Number.isFinite(response.count)) {
+      count = Math.max(count, response.count);
+    }
+  } catch (err: unknown) {
+    const msg = getErrorMessage(err).toLowerCase();
+    const notFound = msg.includes('command') && msg.includes('not found') && msg.includes('preheat_mcp_tools');
+    if (import.meta.env?.DEV && notFound) {
+      debugLog.log('[MCP] preheat_mcp_tools not available in dev');
+    } else {
+      debugLog.warn('[MCP] preheat_mcp_tools native invoke failed:', err);
+    }
+  }
+
+  return count;
 }
 
 export async function bootstrapMcpFromSettings(options: BootstrapOptions = {}): Promise<void> {
@@ -1878,19 +1900,8 @@ export async function bootstrapMcpFromSettings(options: BootstrapOptions = {}): 
 
     try {
       await McpService.connectAll();
-      if (options.preheat && isTauriEnvironment) {
-        try {
-          const { invoke } = await import('@tauri-apps/api/core');
-          await invoke('preheat_mcp_tools');
-        } catch (err: unknown) {
-          const msg = getErrorMessage(err).toLowerCase();
-          const notFound = msg.includes('command') && msg.includes('not found') && msg.includes('preheat_mcp_tools');
-          if (import.meta.env?.DEV && notFound) {
-            debugLog.log('[MCP] preheat_mcp_tools not available in dev');
-          } else {
-            debugLog.warn('[MCP] preheat_mcp_tools invoke failed:', err);
-          }
-        }
+      if (options.preheat) {
+        await preheatMcpTools();
       }
     } catch (err: unknown) {
       debugLog.warn('[MCP] connectAll failed:', err);

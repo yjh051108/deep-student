@@ -23,7 +23,7 @@ import type { ContentViewProps } from '../UnifiedAppPanel';
 import { dstu } from '@/dstu';
 import { reportError } from '@/shared/result';
 import { showGlobalNotification } from '@/components/UnifiedNotification';
-import { invoke } from '@tauri-apps/api/core';
+import { getFileSize, readFileBytes } from '@/runtime/native';
 import { CustomScrollArea } from '@/components/custom-scroll-area';
 import { vfsFileApi } from '@/api/vfsFileApi';
 import { usePdfLoader } from '@/hooks/usePdfLoader';
@@ -178,7 +178,7 @@ const TextbookContentViewInner: React.FC<ContentViewProps> = ({
 
     const checkFilePath = async () => {
       try {
-        const size = await invoke<number>('get_file_size', { path: filePath });
+        const size = await getFileSize(filePath);
         if (!isActive) return;
         setFilePathStat({ available: true, size });
       } catch (err: unknown) {
@@ -231,9 +231,7 @@ const TextbookContentViewInner: React.FC<ContentViewProps> = ({
         }
 
         const loadFromVfs = async () => {
-          const result = await invoke<{ content: string | null; found: boolean }>('vfs_get_attachment_content', {
-            attachmentId: node.id,
-          });
+          const result = await vfsFileApi.getFileLikeContent(node.id);
           if (!isMounted) return null;
 
           if (result?.found && result?.content) {
@@ -251,7 +249,7 @@ const TextbookContentViewInner: React.FC<ContentViewProps> = ({
         // ★ 优先使用可用的 filePath 读取本地文件，失败则回退到 VFS
         if (effectiveFilePath) {
           try {
-            const fileSize = effectiveFileSize ?? await invoke<number>('get_file_size', { path: effectiveFilePath });
+            const fileSize = effectiveFileSize ?? await getFileSize(effectiveFilePath);
             if (!isMounted) return;
             if (fileSize > LARGE_FILE_THRESHOLD) {
               setContentError(t('learningHub:file.previewTooLarge', '文件过大，无法预览'));
@@ -259,7 +257,7 @@ const TextbookContentViewInner: React.FC<ContentViewProps> = ({
               return;
             }
 
-            const bytes = await invoke<number[]>('read_file_bytes', { path: effectiveFilePath });
+            const bytes = await readFileBytes(effectiveFilePath);
             if (!isMounted) return;
             // 转换为 base64（分块，避免大数组字符串拼接造成卡顿）
             base64Content = uint8ArrayToBase64(new Uint8Array(bytes));
@@ -457,7 +455,7 @@ const TextbookContentViewInner: React.FC<ContentViewProps> = ({
   }, [isPdf, effectiveFilePath, pdfFile, pdfLoading, pdfError]);
 
   // ★ 移除 filePath 为空时的硬性错误，改为在内容加载失败时显示错误
-  // 因为从 attachments 迁移的文件可能没有 filePath，但可以通过 vfs_get_attachment_content 获取内容
+  // 因为从 attachments/Go hybrid VFS 迁移的文件可能没有 filePath，但可以通过 VFS 内容接口获取内容
   
   // PDF 文件：如果没有 filePath 且没有 pdfFile，显示加载中或错误
   if (isPdf && !effectiveFilePath && !pdfFile) {

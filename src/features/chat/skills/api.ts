@@ -1,10 +1,10 @@
 /**
  * Chat V2 - Skills API
  *
- * 封装后端 Tauri 命令调用
+ * 封装 native/Wails 命令调用
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 
 // ============================================================================
 // 类型定义

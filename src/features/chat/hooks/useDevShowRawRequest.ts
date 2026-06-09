@@ -5,9 +5,9 @@
  */
 
 import { useState, useEffect, useSyncExternalStore } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { getSetting, getSettings, native } from '@/runtime/native';
 
-const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+const isNativeRuntime = () => native.runtime.isTauri() || native.runtime.isWails() || native.runtime.isInjected();
 
 export type DebugFilterLevel = 'full' | 'standard' | 'compact';
 
@@ -43,11 +43,11 @@ export function useDevShowRawRequest(): boolean {
   const [showRawRequest, setShowRawRequest] = useState(false);
 
   useEffect(() => {
-    if (!isTauri) return;
+    if (!isNativeRuntime()) return;
 
     const loadSetting = async () => {
       try {
-        const v = await invoke<string>('get_setting', { key: 'dev.show_raw_request' });
+        const v = await getSetting('dev.show_raw_request');
         const value = String(v ?? '').trim().toLowerCase();
         setShowRawRequest(value === 'true' || value === '1');
       } catch {
@@ -96,37 +96,34 @@ function _getFilterSnapshot(): CopyFilterConfig {
 }
 
 function _initFilterConfig() {
-  if (_filterConfigLoaded || !isTauri) return;
+  if (_filterConfigLoaded || !isNativeRuntime()) return;
   _filterConfigLoaded = true;
 
-  invoke<string>('get_setting', { key: 'debug.filter_config' })
-    .then(v => {
-      const raw = String(v ?? '').trim();
-      if (!raw) return;
-      try {
-        const parsed = JSON.parse(raw) as Partial<CopyFilterConfig>;
-        _filterConfig = { ..._filterConfig, ...parsed };
-        _notifyFilterListeners();
-      } catch {
-        // 兼容旧版：纯字符串 level
-        if (raw === 'full' || raw === 'compact') {
-          _filterConfig = configFromPreset(raw);
+  getSettings(['debug.filter_config', 'debug.filter_level'])
+    .then(values => {
+      const raw = String(values['debug.filter_config'] ?? '').trim();
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw) as Partial<CopyFilterConfig>;
+          _filterConfig = { ..._filterConfig, ...parsed };
           _notifyFilterListeners();
+        } catch {
+          // 兼容旧版：纯字符串 level
+          if (raw === 'full' || raw === 'compact') {
+            _filterConfig = configFromPreset(raw);
+            _notifyFilterListeners();
+          }
         }
       }
-    })
-    .catch(() => { /* keep default */ });
 
-  // 兼容旧版 key
-  invoke<string>('get_setting', { key: 'debug.filter_level' })
-    .then(v => {
-      const val = String(v ?? '').trim().toLowerCase();
+      // 兼容旧版 key
+      const val = String(values['debug.filter_level'] ?? '').trim().toLowerCase();
       if (_filterConfig.preset === 'standard' && (val === 'full' || val === 'compact')) {
         _filterConfig = configFromPreset(val as DebugFilterLevel);
         _notifyFilterListeners();
       }
     })
-    .catch(() => {});
+    .catch(() => { /* keep default */ });
 
   const handler = (e: Event) => {
     const detail = (e as CustomEvent<{ copyFilterConfig?: CopyFilterConfig }>).detail;

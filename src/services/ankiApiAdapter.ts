@@ -3,7 +3,7 @@
  * 提供批量操作和断点续传功能的后端API适配
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import i18next from 'i18next';
 import { AnkiCard, AnkiGenerationOptions } from '../types';
 
@@ -177,7 +177,7 @@ export const ankiApiAdapter = {
       const cards: AnkiCard[] = [];
 
       // 创建临时的事件监听器来收集卡片
-      const { guardedListen } = await import('../utils/guardedListen');
+      const { listen } = await import('@/runtime/nativeEvents');
       let resolveListener: (() => void) | null = null;
       const donePromise = new Promise<void>((resolve) => {
         resolveListener = resolve;
@@ -188,43 +188,41 @@ export const ankiApiAdapter = {
       let unlisten: (() => void | Promise<void>) | null = null;
 
       try {
-        unlisten = await new Promise<() => void | Promise<void>>((resolve) => {
-          guardedListen('anki_generation_event', (event: any) => {
-            const payload = event?.payload?.payload ?? event?.payload ?? event;
-            if (!payload) return;
-            const normalized = payload.type
-              ? { type: payload.type, data: payload.data }
-              : (() => {
-                  const keys = Object.keys(payload);
-                  if (keys.length === 0) return null;
-                  const eventType = keys[0];
-                  return { type: eventType, data: payload[eventType] };
-                })();
-            if (!normalized) return;
+        unlisten = await listen('anki_generation_event', (event: any) => {
+          const payload = event?.payload?.payload ?? event?.payload ?? event;
+          if (!payload) return;
+          const normalized = payload.type
+            ? { type: payload.type, data: payload.data }
+            : (() => {
+                const keys = Object.keys(payload);
+                if (keys.length === 0) return null;
+                const eventType = keys[0];
+                return { type: eventType, data: payload[eventType] };
+              })();
+          if (!normalized) return;
 
-            const eventDocumentId =
-              normalized?.data?.document_id ||
-              payload?.document_id ||
-              normalized?.data?.documentId;
-            if (documentIdRef && eventDocumentId && eventDocumentId !== documentIdRef) {
-              return;
-            }
+          const eventDocumentId =
+            normalized?.data?.document_id ||
+            payload?.document_id ||
+            normalized?.data?.documentId;
+          if (documentIdRef && eventDocumentId && eventDocumentId !== documentIdRef) {
+            return;
+          }
 
-            if (normalized.type === 'NewCard' && normalized.data) {
-              const cardData = normalized.data?.card ?? normalized.data;
-              cards.push(cardData);
-            }
+          if (normalized.type === 'NewCard' && normalized.data) {
+            const cardData = normalized.data?.card ?? normalized.data;
+            cards.push(cardData);
+          }
 
-            if (
-              normalized.type === 'TaskCompleted' ||
-              normalized.type === 'DocumentProcessingCompleted' ||
-              normalized.type === 'TaskFailed' ||
-              normalized.type === 'DocumentProcessingFailed' ||
-              normalized.type === 'DocumentProcessingCancelled'
-            ) {
-              resolveListener?.();
-            }
-          }).then(resolve);
+          if (
+            normalized.type === 'TaskCompleted' ||
+            normalized.type === 'DocumentProcessingCompleted' ||
+            normalized.type === 'TaskFailed' ||
+            normalized.type === 'DocumentProcessingFailed' ||
+            normalized.type === 'DocumentProcessingCancelled'
+          ) {
+            resolveListener?.();
+          }
         });
 
         timeoutId = setTimeout(() => {

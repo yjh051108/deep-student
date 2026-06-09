@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { open as dialogOpen } from '@tauri-apps/plugin-dialog';
 import { createSessionWithDefaults } from '../core/session/createSessionWithDefaults';
 import { sessionManager } from '../core/session/sessionManager';

@@ -13,7 +13,7 @@
  * 4. 错误处理使用 getErrorMessage
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { getErrorMessage } from '@/utils/errorUtils';
 import {
   type ResourceStoreApi,

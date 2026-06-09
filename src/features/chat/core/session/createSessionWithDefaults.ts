@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import type { ChatSession } from '../../types/session';
 import { sessionManager } from './sessionManager';
 import { groupCache } from '../store/groupCache';

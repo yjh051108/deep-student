@@ -54,6 +54,7 @@ import { COMMAND_EVENTS, useCommandEvents } from '@/command-palette/hooks/useCom
 import { getCreatableFolderId } from './viewGuards';
 import { getQuickAccessTypeFromLauncherType, getViewCapabilities } from './learningHubContracts';
 import { setLearningHubLocalBackHandler } from './LearningHubNavigationContext';
+import { invoke } from '@/runtime/native';
 
 // ============================================================================
 // 三屏滑动布局类型和常量
@@ -730,7 +731,6 @@ export const LearningHubPage: React.FC = () => {
       if (finalDocumentId.startsWith('res_')) {
         try {
           // 通过 VFS API 查询资源的 source_id
-          const { invoke } = await import('@tauri-apps/api/core');
           const resource = await invoke<{ sourceId?: string } | null>('vfs_get_resource', { resourceId: finalDocumentId });
           if (resource?.sourceId) {
             finalDocumentId = resource.sourceId;

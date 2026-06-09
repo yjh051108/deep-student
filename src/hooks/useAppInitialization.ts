@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import {
   UI_FONT_STORAGE_KEY,
   DEFAULT_UI_FONT,
@@ -12,19 +11,20 @@ import {
 import { t } from '../utils/i18n';
 import { showGlobalNotification } from '../components/UnifiedNotification';
 import { setPendingSettingsTab } from '../utils/pendingSettingsTab';
+import { getSetting } from '../runtime/native';
 
 // 初始化字体设置（应用启动时调用）
 const initializeFontSetting = async () => {
   try {
-    const storedValue = await invoke('get_setting', { key: UI_FONT_STORAGE_KEY }) as string;
+    const storedValue = await getSetting(UI_FONT_STORAGE_KEY);
     const fontValue = storedValue || DEFAULT_UI_FONT;
     applyFontToDocument(fontValue);
   } catch {
     applyFontToDocument(DEFAULT_UI_FONT);
   }
   try {
-    const storedValue = await invoke('get_setting', { key: UI_FONT_SIZE_STORAGE_KEY }) as string;
-    const fontSizeValue = clampFontSize(parseFloat(storedValue));
+    const storedValue = await getSetting(UI_FONT_SIZE_STORAGE_KEY);
+    const fontSizeValue = clampFontSize(parseFloat(storedValue ?? ''));
     applyFontSizeToDocument(fontSizeValue);
   } catch {
     applyFontSizeToDocument(DEFAULT_UI_FONT_SIZE);
@@ -89,7 +89,7 @@ export const useAppInitialization = (): UseAppInitializationReturn => {
         // 添加重试机制，避免迁移期间的瞬态失败导致 banner 永久显示。
         let dbCheckOk = false;
         try {
-          await invoke('get_setting', { key: 'app_initialized' });
+          await getSetting('app_initialized');
           dbCheckOk = true;
         } catch (err: unknown) {
           const errMsg = err instanceof Error ? err.message : String(err);
@@ -109,7 +109,7 @@ export const useAppInitialization = (): UseAppInitializationReturn => {
               await new Promise(resolve => setTimeout(resolve, delay));
               if (cancelledRef.current) return;
               try {
-                await invoke('get_setting', { key: 'app_initialized' });
+                await getSetting('app_initialized');
                 // 重试成功：清除错误状态
                 console.log('[Init] Database check succeeded on retry, clearing error banner');
                 updateStep('database', true);

@@ -17,14 +17,16 @@ describe('IndexStatusView progress display contract', () => {
   });
 
   it('renders text and image progress from their backend counters', () => {
-    expect(source).toContain('indexed: summary.textIndexedCount,');
-    expect(source).toContain('total: summary.textTotalResources,');
-    expect(source).toContain('indexed: summary.mmIndexedCount,');
-    expect(source).toContain('total: summary.mmTotalResources,');
+    expect(source).toContain('indexed: toFiniteCount(source.textIndexedCount, source.indexedCount, source.displayIndexedCount),');
+    expect(source).toContain('total: toFiniteCount(source.textTotalResources, source.totalResources, source.displayTotalResources),');
+    expect(source).toContain('indexed: toFiniteCount(source.mmIndexedCount),');
+    expect(source).toContain('total: toFiniteCount(source.mmTotalResources),');
+    expect(source).toContain('const textProgress = normalizedCounts?.text ?? { indexed: 0, total: 0 };');
+    expect(source).toContain('const imageProgress = normalizedCounts?.image ?? { indexed: 0, total: 0 };');
     expect(source).toContain("renderCount(textProgress.indexed, textProgress.total, t('indexStatus.progress.textIndexProgress'))");
     expect(source).toContain("renderCount(imageProgress.indexed, imageProgress.total, t('indexStatus.progress.imageIndexProgress'))");
-    expect(source).toContain('total: summary?.displayTotalResources ?? 0');
-    expect(source).toContain('indexed: summary?.displayIndexedCount ?? 0');
+    expect(source).toContain('total: normalizedCounts?.display.total ?? 0');
+    expect(source).toContain('indexed: normalizedCounts?.display.indexed ?? 0');
     expect(source).not.toContain('renderCount(displayIndexStats.indexed, displayIndexStats.total)');
   });
 

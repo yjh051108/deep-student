@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+import { getSetting as nativeGetSetting, saveSetting as nativeSaveSetting } from '../runtime/native';
 
 // 系统设置接口
 export interface SystemSettings {
@@ -17,10 +17,6 @@ export interface SystemSettings {
   enableAnkiConnect: boolean;
   markdownRendererMode: 'legacy' | 'enhanced';
 }
-
-// 检查是否在Tauri环境中
-const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
-const invoke = isTauri ? tauriInvoke : null;
 
 // 默认设置 - 强制亮色主题
 const DEFAULT_SETTINGS: SystemSettings = {
@@ -43,56 +39,54 @@ export const useSystemSettings = () => {
   const loadSettings = useCallback(async () => {
     setLoading(true);
     try {
-      if (invoke) {
-        const settingsKeys = [
-          'autoSave',
-          'theme',
-          'language',
-          'enableNotifications',
-          'maxChatHistory',
-          'debugMode',
-          'enableAnkiConnect',
-          'markdownRendererMode'
-        ];
-        
-        const settingsPromises = settingsKeys.map(async (key) => {
-          try {
-            const value = await invoke('get_setting', { key }) as string;
-            return { key, value };
-          } catch {
-            return { key, value: String(DEFAULT_SETTINGS[key as keyof SystemSettings]) };
-          }
-        });
+      const settingsKeys = [
+        'autoSave',
+        'theme',
+        'language',
+        'enableNotifications',
+        'maxChatHistory',
+        'debugMode',
+        'enableAnkiConnect',
+        'markdownRendererMode'
+      ];
 
-        const settingsResults = await Promise.all(settingsPromises);
-        const loadedSettings: SystemSettings = { ...DEFAULT_SETTINGS };
-
-        for (const { key, value } of settingsResults) {
-          const settingKey = key as keyof SystemSettings;
-          
-          // 类型转换
-          switch (settingKey) {
-            case 'autoSave':
-            case 'enableNotifications':
-            case 'debugMode':
-            case 'enableAnkiConnect':
-              loadedSettings[settingKey] = !['0', 'false', 'False', 'FALSE', 'null', 'undefined', ''].includes((value ?? '').toString());
-              break;
-            
-            case 'maxChatHistory':
-              loadedSettings[settingKey] = parseInt(value, 10) || DEFAULT_SETTINGS[settingKey];
-              break;
-
-            case 'markdownRendererMode':
-              loadedSettings[settingKey] = (value === 'enhanced' ? 'enhanced' : 'legacy');
-              break;
-            default:
-              (loadedSettings as any)[settingKey] = value;
-          }
+      const settingsPromises = settingsKeys.map(async (key) => {
+        try {
+          const value = await nativeGetSetting(key);
+          return { key, value: value ?? String(DEFAULT_SETTINGS[key as keyof SystemSettings]) };
+        } catch {
+          return { key, value: String(DEFAULT_SETTINGS[key as keyof SystemSettings]) };
         }
+      });
 
-        setSettings(loadedSettings);
+      const settingsResults = await Promise.all(settingsPromises);
+      const loadedSettings: SystemSettings = { ...DEFAULT_SETTINGS };
+
+      for (const { key, value } of settingsResults) {
+        const settingKey = key as keyof SystemSettings;
+        
+        // 类型转换
+        switch (settingKey) {
+          case 'autoSave':
+          case 'enableNotifications':
+          case 'debugMode':
+          case 'enableAnkiConnect':
+            loadedSettings[settingKey] = !['0', 'false', 'False', 'FALSE', 'null', 'undefined', ''].includes((value ?? '').toString());
+            break;
+          
+          case 'maxChatHistory':
+            loadedSettings[settingKey] = parseInt(value, 10) || DEFAULT_SETTINGS[settingKey];
+            break;
+
+          case 'markdownRendererMode':
+            loadedSettings[settingKey] = (value === 'enhanced' ? 'enhanced' : 'legacy');
+            break;
+          default:
+            (loadedSettings as any)[settingKey] = value;
+        }
       }
+
+      setSettings(loadedSettings);
     } catch (error: unknown) {
       console.error('加载系统设置失败:', error);
       setSettings(DEFAULT_SETTINGS);
@@ -105,22 +99,19 @@ export const useSystemSettings = () => {
   const saveSetting = useCallback(async (key: keyof SystemSettings, value: any) => {
     setSaving(true);
     try {
-      if (invoke) {
-        await invoke('save_setting', { key: key as string, value: String(value) });
-        if (key === 'theme') {
-          try {
-            localStorage.setItem('dstu-theme-mode', String(value));
-            window.dispatchEvent(new CustomEvent('dstu-theme-mode-changed', {
-              detail: { mode: String(value) },
-            }));
-          } catch {
-            // ignore localStorage sync errors
-          }
+      await nativeSaveSetting(key as string, String(value));
+      if (key === 'theme') {
+        try {
+          localStorage.setItem('dstu-theme-mode', String(value));
+          window.dispatchEvent(new CustomEvent('dstu-theme-mode-changed', {
+            detail: { mode: String(value) },
+          }));
+        } catch {
+          // ignore localStorage sync errors
         }
-        setSettings(prev => ({ ...prev, [key]: value }));
-        return true;
       }
-      return false;
+      setSettings(prev => ({ ...prev, [key]: value }));
+      return true;
     } catch (error: unknown) {
       console.error(`保存设置 ${key} 失败:`, error);
       return false;
@@ -133,16 +124,13 @@ export const useSystemSettings = () => {
   const saveAllSettings = useCallback(async (newSettings: SystemSettings) => {
     setSaving(true);
     try {
-      if (invoke) {
-        const savePromises = Object.entries(newSettings).map(([key, value]) =>
-          invoke('save_setting', { key, value: String(value) })
-        );
-        
-        await Promise.all(savePromises);
-        setSettings(newSettings);
-        return true;
-      }
-      return false;
+      const savePromises = Object.entries(newSettings).map(([key, value]) =>
+        nativeSaveSetting(key, String(value))
+      );
+
+      await Promise.all(savePromises);
+      setSettings(newSettings);
+      return true;
     } catch (error: unknown) {
       console.error('保存系统设置失败:', error);
       return false;

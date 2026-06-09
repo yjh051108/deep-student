@@ -19,7 +19,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { NotionButton } from '@/components/ui/NotionButton';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { Input } from '@/components/ui/shad/Input';

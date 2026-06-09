@@ -121,7 +121,14 @@ pub fn visible_scope_roots(group_id: Option<&str>, group_name: Option<&str>) -> 
 }
 
 pub fn readable_scope_roots(group_id: Option<&str>, group_name: Option<&str>) -> Vec<String> {
-    visible_scope_roots(group_id, group_name)
+    let roots = visible_scope_roots(group_id, group_name);
+    if roots.len() > 1 {
+        return roots;
+    }
+    vec![
+        GLOBAL_MEMORY_FOLDER.to_string(),
+        TOPIC_MEMORY_PREFIX.to_string(),
+    ]
 }
 
 pub fn is_folder_path_within_scope(folder_path: &str, scope_root: &str) -> bool {
@@ -246,12 +253,13 @@ mod tests {
 
     #[test]
     fn general_session_reads_global_only() {
-        assert_eq!(
-            readable_scope_roots(None, None),
-            vec!["全局".to_string()]
-        );
+        assert_eq!(readable_scope_roots(None, None), vec!["全局".to_string()]);
         assert!(!is_folder_path_readable("课题/微机原理/经历", None, None));
-        assert!(!is_folder_path_readable("长期记忆/课题/电磁场/经历", None, None));
+        assert!(!is_folder_path_readable(
+            "长期记忆/课题/电磁场/经历",
+            None,
+            None
+        ));
         assert!(is_folder_path_readable("全局/偏好", None, None));
     }
 }

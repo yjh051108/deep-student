@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getErrorMessage } from './errorUtils';
 import { debugLogger } from './debugLogger';
 import { withGraphId, invokeWithDebug } from './shared';
+import { copyFile as nativeCopyFile, getFileSize as nativeGetFileSize, invoke as nativeInvoke, readFileBytes, readFileText as nativeReadFileText } from '@/runtime/native';
 import type { GraphQueryParams, ForceGraphData } from './shared';
 import type { AnkiLibraryCard, AnkiLibraryListResponse, ListAnkiCardsParams, ExportAnkiCardsResult } from '../types';
 import { getAppDataDir } from './systemApi';
@@ -56,7 +57,7 @@ export async function tauriInvoke<T = any>(cmd: string, args?: any): Promise<T> 
  */
 export async function readFileAsText(path: string): Promise<string> {
   try {
-    return await invoke<string>('read_file_text', { path });
+    return await nativeReadFileText(path);
   } catch (error) {
     console.error('Failed to read file:', error);
     throw new Error(`Failed to read file: ${error}`);
@@ -69,7 +70,7 @@ export async function readFileAsText(path: string): Promise<string> {
 export async function copyFile(sourcePath: string, destPath: string): Promise<void> {
   try {
     // 统一走后端命令（同时传两种命名以兼容）
-    await invoke<void>('copy_file', { sourcePath, destPath, source_path: sourcePath, dest_path: destPath });
+    await nativeCopyFile(sourcePath, destPath);
   } catch (error) {
     console.error('Failed to copy file:', error);
     throw new Error(`Failed to copy file: ${error}`);
@@ -81,7 +82,7 @@ export async function copyFile(sourcePath: string, destPath: string): Promise<vo
  */
 export async function readFileAsBytes(path: string): Promise<Uint8Array> {
   try {
-    const bytes = await invoke<number[]>('read_file_bytes', { path });
+    const bytes = await readFileBytes(path);
     return new Uint8Array(bytes);
   } catch (error) {
     console.error('Failed to read binary file:', error);
@@ -92,7 +93,7 @@ export async function readFileAsBytes(path: string): Promise<Uint8Array> {
 /** 获取文件大小（字节） */
 export async function getFileSize(path: string): Promise<number> {
   try {
-    const size = await invoke<number>('get_file_size', { path });
+    const size = await nativeGetFileSize(path);
     return size ?? 0;
   } catch (error) {
     console.error('Failed to get file size:', error);
@@ -196,7 +197,7 @@ export async function exportAnkiCards(options: {
  */
 export async function textbooksAdd(filePaths: string[]): Promise<Array<{ id: string; name: string; path: string; size: number; addedAt: string }>> {
 console.warn('[chatApi] textbooksAdd() is deprecated; use textbookDstuAdapter.addTextbooks() instead.');
-const raw = await invoke<any>('textbooks_add', { sources: filePaths });
+const raw = await nativeInvoke<any>('textbooks_add', { sources: filePaths });
 const list = Array.isArray(raw) ? raw : [];
 const results = list.map((r: any) => ({
   id: r.id,
@@ -327,25 +328,6 @@ export async function getChatIndexStats(): Promise<{ total_fts: number; total_ve
     console.error('[TauriAPI] getChatIndexStats error', { e });
     throw e;
   }
-}
-
-// ========== Research Reports ==========
-export async function researchListReports(params?: { limit?: number }): Promise<Array<{id:string; created_at:string; segments:number; context_window:number}>> {
-  const limit = typeof params?.limit === 'number' ? params!.limit : null;
-  return await invoke('research_list_reports', { request: { limit } });
-}
-
-export async function researchGetReport(id: string): Promise<{ id:string; created_at:string; segments:number; context_window:number; report:string; metadata?: any }>{
-  return await invoke('research_get_report', { id });
-}
-
-export async function researchDeleteReport(id: string): Promise<boolean> {
-  return await invoke('research_delete_report', { id });
-}
-
-export async function researchExportAllReportsZip(params: { format: 'md'|'json'; path: string }): Promise<string> {
-  const { format, path } = params;
-  return await invoke('research_export_all_reports_zip', { request: { format, path } });
 }
 
 // ★ 2026-01 清理：continueMistakeChat 和 continueMistakeChatStream 已删除（错题功能废弃）

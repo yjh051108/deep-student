@@ -17,11 +17,10 @@ import { CustomScrollArea } from '@/components/custom-scroll-area';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/shad/Alert';
 import { isTauriStdioSupported } from '@/mcp/tauriStdioTransport';
 import { type McpStatusInfo } from '@/mcp/mcpService';
-import { testMcpSseFrontend, testMcpHttpFrontend, testMcpWebsocketFrontend } from '@/mcp/mcpFrontendTester';
+import { testMcpSseFrontend, testMcpHttpFrontend, testMcpWebsocketFrontend, testMcpStdioFrontend } from '@/mcp/mcpFrontendTester';
 import { DEFAULT_STDIO_ARGS, DEFAULT_STDIO_ARGS_PLACEHOLDER, CHAT_STREAM_SETTINGS_EVENT } from './constants';
 import { Info as InfoIcon, Plus, Trash, X, Check, ArrowCounterClockwise } from '@phosphor-icons/react';
-import { listen as tauriListen } from '@tauri-apps/api/event';
-import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { useUnifiedErrorHandler } from '@/components/UnifiedErrorHandler';
 import { TauriAPI } from '@/utils/tauriApi';
 import type { UseMcpEditorSectionDeps, McpToolConfig } from './hookDepsTypes';
@@ -46,8 +45,6 @@ interface McpPreviewResource {
 }
 
 const console = debugLog as Pick<typeof debugLog, 'log' | 'warn' | 'error' | 'info' | 'debug'>;
-const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-const invoke = isTauri ? tauriInvoke : null;
 
 export function useMcpEditorSection(deps: UseMcpEditorSectionDeps) {
   const { config, setConfig, isSmallScreen, activeTab, setActiveTab, setScreenPosition, setRightPanelType, t, extra, setExtra, handleSave, normalizedMcpServers, setMcpStatusInfo } = deps;
@@ -1591,12 +1588,7 @@ export function useMcpEditorSection(deps: UseMcpEditorSectionDeps) {
     try {
       // 重新从设置初始化（确保新增/删除的服务器生效），而不仅仅 connectAll
       const { bootstrapMcpFromSettings } = await import('@/mcp/mcpService');
-      await bootstrapMcpFromSettings({ force: true });
-      try {
-        await invoke('preheat_mcp_tools');
-      } catch (e) {
-        console.warn('[MCP] 预热工具缓存失败:', e);
-      }
+      await bootstrapMcpFromSettings({ force: true, preheat: true });
       await refreshSnapshots({ reload: true });
       try {
         window.dispatchEvent(new CustomEvent('systemSettingsChanged', { detail: { mcpReloaded: true } }));
@@ -1617,8 +1609,7 @@ export function useMcpEditorSection(deps: UseMcpEditorSectionDeps) {
               action: async () => {
                 try {
                   const { bootstrapMcpFromSettings } = await import('@/mcp/mcpService');
-                  await bootstrapMcpFromSettings({ force: true });
-                  await invoke('preheat_mcp_tools').catch(() => undefined);
+                  await bootstrapMcpFromSettings({ force: true, preheat: true });
                   await refreshSnapshots({ reload: true });
                   showGlobalNotification('success', t('settings:mcp_descriptions.reconnected_preheated'));
                 } catch (err) {
@@ -1762,7 +1753,7 @@ export function useMcpEditorSection(deps: UseMcpEditorSectionDeps) {
         const fr = await testMcpHttpFrontend(endpoint, String(tool?.apiKey || ''), headerCandidates);
         res = normalizeFrontendResult(fr);
       } else if (transport === 'stdio') {
-        // stdio 走后端 test_mcp_connection，带细粒度进度
+        // stdio uses the same native process transport as the runtime MCP client.
         failureLabel = t('settings:test_labels.connectivity_test_failed');
         const rawArgs = tool?.args;
         const argsArr: string[] = Array.isArray(rawArgs)
@@ -1770,27 +1761,26 @@ export function useMcpEditorSection(deps: UseMcpEditorSectionDeps) {
           : typeof rawArgs === 'string'
             ? rawArgs.split(',').map((s: string) => s.trim()).filter(Boolean)
             : [];
-        let unlisten: (() => void) | undefined;
+        const env =
+          tool?.env && typeof tool.env === 'object' && !Array.isArray(tool.env)
+            ? Object.fromEntries(
+              Object.entries(tool.env as Record<string, unknown>)
+                .filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+            )
+            : {};
+        const framingValue = typeof tool?.framing === 'string' ? tool.framing : '';
         try {
-          unlisten = await tauriListen<{ step: string }>('mcp-test-progress', (event) => {
-            setMcpTestStep(event.payload.step);
-          });
-          setMcpTestStep('spawn_process');
-          const backendRes = await tauriInvoke<{ success?: boolean; tools_count?: number; tools_preview?: Array<{ name: string; description?: string }>; error?: string }>('test_mcp_connection', {
+          const fr = await testMcpStdioFrontend({
             command: String(tool?.command || ''),
             args: argsArr,
-            env: tool?.env || null,
-            cwd: tool?.cwd || null,
-            framing: tool?.framing || null,
+            env,
+            cwd: typeof tool?.cwd === 'string' ? tool.cwd : undefined,
+            framing: ['jsonl', 'json_lines', 'json-lines'].includes(framingValue) ? 'jsonl' : 'content_length',
+          }, {
+            onProgress: setMcpTestStep,
           });
-          res = {
-            success: !!backendRes?.success,
-            tools_count: backendRes?.tools_count,
-            tools: backendRes?.tools_preview,
-            error: backendRes?.error,
-          };
+          res = normalizeFrontendResult(fr);
         } finally {
-          unlisten?.();
           setMcpTestStep(null);
         }
       } else {

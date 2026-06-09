@@ -89,6 +89,7 @@ export { mockResourceStoreApi, MockResourceStoreApi } from './mockApi';
 
 import { tauriResourceStoreApi } from './api';
 import { mockResourceStoreApi } from './mockApi';
+import { isInjectedNativeRuntime, isTauriRuntime, isWailsRuntime } from '@/runtime/native';
 
 /**
  * 资源库 API 单例
@@ -97,11 +98,10 @@ import { mockResourceStoreApi } from './mockApi';
  * - Tauri：使用真实 API（调用后端 VFS）
  * - Web/单元测试：使用 Mock API（内存实现）
  */
-function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
-}
-
-export const resourceStoreApi = isTauriRuntime() ? tauriResourceStoreApi : mockResourceStoreApi;
+export const resourceStoreApi =
+  isTauriRuntime() || isWailsRuntime() || isInjectedNativeRuntime()
+    ? tauriResourceStoreApi
+    : mockResourceStoreApi;
 
 // ============================================================================
 // 便捷方法导出

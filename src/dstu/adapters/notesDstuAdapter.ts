@@ -16,7 +16,7 @@
  */
 
 import i18next from 'i18next';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { isOpaqueDocumentId } from '@/utils/fileManager';
 import { dstu } from '../api';
 import { pathUtils } from '../utils/pathUtils';

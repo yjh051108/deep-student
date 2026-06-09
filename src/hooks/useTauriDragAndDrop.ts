@@ -7,6 +7,7 @@ import {
   ATTACHMENT_DOCUMENT_EXTENSIONS,
 } from '@/features/chat/core/constants';
 import i18n from '@/i18n';
+import { getFileSize, readFileBytes } from '@/runtime/native';
 
 // 扩展名到 MIME 类型映射表（与 UnifiedDragDropZone EXTENSION_TO_MIME 保持一致）
 const EXTENSION_TO_MIME: Record<string, string> = {
@@ -220,7 +221,6 @@ export const useTauriDragAndDrop = ({
         });
         
         // 🔧 使用 Tauri IPC 读取文件，避免 asset protocol 在 Windows 上对含中文/空格路径的 fetch 失败
-        const { invoke } = await import('@tauri-apps/api/core');
         const imageRegex = new RegExp(`\\.(${ATTACHMENT_IMAGE_EXTENSIONS.join('|')})$`, 'i');
         const documentRegex = new RegExp(`\\.(${ATTACHMENT_DOCUMENT_EXTENSIONS.join('|')})$`, 'i');
 
@@ -241,7 +241,7 @@ export const useTauriDragAndDrop = ({
           try {
             // 先检查文件大小（避免读入超大文件到内存）
             if (maxFileSize) {
-              const fileSize = await invoke<number>('get_file_size', { path });
+              const fileSize = await getFileSize(path);
               if (fileSize > maxFileSize) {
                 oversizeCount++;
                 const sizeMB = (maxFileSize / (1024 * 1024)).toFixed(1);
@@ -255,7 +255,7 @@ export const useTauriDragAndDrop = ({
               }
             }
 
-            const rawBytes = await invoke<number[]>('read_file_bytes', { path });
+            const rawBytes = await readFileBytes(path);
             const bytes = new Uint8Array(rawBytes);
             
             // 推断 MIME 类型（使用完整映射表，与 UnifiedDragDropZone 保持一致）

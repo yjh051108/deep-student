@@ -9,7 +9,7 @@
 
 import React, { useState, useCallback, useEffect, useMemo, useDeferredValue, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { Plus, Chat, PencilSimple, Check, X, SquaresFour, Books, FileText, BookOpen, ClipboardText, Image, File, CircleNotch, DotsSixVertical, List, ArrowClockwise, Folder, ArrowSquareOut } from '@phosphor-icons/react';
 import { NotionButton } from '@/components/ui/NotionButton';
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels';

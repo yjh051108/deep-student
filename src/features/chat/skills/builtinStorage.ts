@@ -9,9 +9,9 @@
  * - value: JSON 字符串，包含自定义的元数据和内容
  */
 
-import { invoke } from '@tauri-apps/api/core';
 import type { SkillDefinition, SkillMetadata } from './types';
 import { debugLog } from '@/debug-panel/debugMasterSwitch';
+import { deleteSetting, getSetting, getSettings, native, saveSetting } from '@/runtime/native';
 
 // ============================================================================
 // 常量
@@ -77,8 +77,8 @@ function getStorageKey(skillId: string): string {
 /**
  * 检查是否在 Tauri 运行时
  */
-function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
+function isNativeRuntime(): boolean {
+  return native.runtime.isTauri() || native.runtime.isWails() || native.runtime.isInjected();
 }
 
 // ============================================================================
@@ -94,14 +94,14 @@ function isTauriRuntime(): boolean {
 export async function getBuiltinSkillCustomization(
   skillId: string
 ): Promise<BuiltinSkillCustomization | null> {
-  if (!isTauriRuntime()) {
-    console.warn(LOG_PREFIX, 'Non-Tauri environment, skipping custom load');
+  if (!isNativeRuntime()) {
+    console.warn(LOG_PREFIX, 'Non-native environment, skipping custom load');
     return null;
   }
 
   try {
     const key = getStorageKey(skillId);
-    const stored = await invoke<string | null>('get_setting', { key });
+    const stored = await getSetting(key);
 
     if (!stored || typeof stored !== 'string') {
       return null;
@@ -139,8 +139,8 @@ export async function saveBuiltinSkillCustomization(
   skillId: string,
   customization: BuiltinSkillCustomization
 ): Promise<void> {
-  if (!isTauriRuntime()) {
-    throw new Error('非 Tauri 环境，无法保存自定义');
+  if (!isNativeRuntime()) {
+    throw new Error('非原生环境，无法保存自定义');
   }
 
   try {
@@ -151,7 +151,7 @@ export async function saveBuiltinSkillCustomization(
     };
     const value = JSON.stringify(data);
 
-    await invoke('save_setting', { key, value });
+    await saveSetting(key, value);
     console.log(LOG_PREFIX, `Saved custom data for ${skillId}`);
   } catch (error: unknown) {
     console.error(LOG_PREFIX, `Failed to save custom data for ${skillId}:`, error);
@@ -167,13 +167,13 @@ export async function saveBuiltinSkillCustomization(
 export async function resetBuiltinSkillCustomization(
   skillId: string
 ): Promise<void> {
-  if (!isTauriRuntime()) {
-    throw new Error('非 Tauri 环境，无法重置自定义');
+  if (!isNativeRuntime()) {
+    throw new Error('非原生环境，无法重置自定义');
   }
 
   try {
     const key = getStorageKey(skillId);
-    await invoke('delete_setting', { key });
+    await deleteSetting(key);
     console.log(LOG_PREFIX, `Reset ${skillId} to defaults`);
   } catch (error: unknown) {
     console.error(LOG_PREFIX, `Failed to reset ${skillId}:`, error);
@@ -192,19 +192,24 @@ export async function getAllBuiltinSkillCustomizations(
 ): Promise<Map<string, BuiltinSkillCustomization>> {
   const result = new Map<string, BuiltinSkillCustomization>();
 
-  if (!isTauriRuntime()) {
+  if (!isNativeRuntime()) {
     return result;
   }
 
-  // 并行加载所有自定义数据
-  const promises = skillIds.map(async (id) => {
-    const customization = await getBuiltinSkillCustomization(id);
-    if (customization) {
-      result.set(id, customization);
+  const keys = skillIds.map(getStorageKey);
+  const values = await getSettings(keys).catch(() => ({} as Record<string, string>));
+  skillIds.forEach((id) => {
+    const stored = values[getStorageKey(id)];
+    if (!stored) return;
+    try {
+      const customization = JSON.parse(stored);
+      if (typeof customization === 'object' && customization !== null) {
+        result.set(id, customization as BuiltinSkillCustomization);
+      }
+    } catch {
+      console.warn(LOG_PREFIX, `Invalid customization JSON for ${id}`);
     }
   });
-
-  await Promise.all(promises);
   console.log(LOG_PREFIX, `Loaded ${result.size}/${skillIds.length} custom data entries`);
   return result;
 }

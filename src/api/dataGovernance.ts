@@ -6,6 +6,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { invoke as nativeInvoke } from '@/runtime/native';
 import type {
   SchemaRegistryResponse,
   MigrationStatusResponse,
@@ -164,7 +165,7 @@ export interface BackupConfig {
  * 获取备份配置
  */
 export async function getBackupConfig(): Promise<BackupConfig> {
-  return invoke<BackupConfig>('get_backup_config');
+  return nativeInvoke<BackupConfig>('get_backup_config');
 }
 
 /**
@@ -172,7 +173,7 @@ export async function getBackupConfig(): Promise<BackupConfig> {
  * @param config 备份配置
  */
 export async function setBackupConfig(config: BackupConfig): Promise<void> {
-  return invoke<void>('set_backup_config', { config });
+  return nativeInvoke<void>('set_backup_config', { config });
 }
 
 // ==================== 备份 API ====================

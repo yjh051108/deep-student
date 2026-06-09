@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke as nativeInvoke } from '@/runtime/native';
 import { useTranslation } from 'react-i18next';
 import { ArrowClockwise } from '@phosphor-icons/react';
 import { cn } from '../lib/utils';
@@ -116,18 +116,18 @@ const WebSearchAdvancedConfigInner: React.FC<WebSearchAdvancedConfigProps> = ({
       // 🔧 修复 #1/#7: 移除 get_provider_strategies_config 调用（策略仅由 EngineSettingsSection 管理）
       const [cnWhitelistResult, tavilyDepthOpt] =
         await Promise.all([
-        invoke<{ default_sites: string[]; user_config: CnWhitelistConfig }>(
+        nativeInvoke<{ default_sites: string[]; user_config: CnWhitelistConfig }>(
           'get_cn_whitelist_config'
         ),
-        invoke<string | null>('get_setting', {
+        nativeInvoke<string | null>('get_setting', {
           key: 'web_search.tavily.search_depth',
         }).catch(() => null),
       ]);
 
-      const rerankerEnabledOpt = await invoke<string | null>('get_setting', {
+      const rerankerEnabledOpt = await nativeInvoke<string | null>('get_setting', {
         key: 'web_search.reranker.enabled',
       }).catch(() => null);
-      const rerankerTopKOpt = await invoke<string | null>('get_setting', {
+      const rerankerTopKOpt = await nativeInvoke<string | null>('get_setting', {
         key: 'web_search.reranker.top_k',
       }).catch(() => null);
 
@@ -148,12 +148,12 @@ const WebSearchAdvancedConfigInner: React.FC<WebSearchAdvancedConfigProps> = ({
       setTavilySearchDepth(depth === 'advanced' ? 'advanced' : 'basic');
 
       try {
-        const assignments = await invoke<{
+        const assignments = await nativeInvoke<{
           reranker_model_config_id?: string | null;
         }>('get_model_assignments');
         const rerankerId = assignments?.reranker_model_config_id;
         if (rerankerId) {
-          const apiConfigs = await invoke<any[]>('get_api_configurations');
+          const apiConfigs = await nativeInvoke<any[]>('get_api_configurations');
           const target = (apiConfigs || []).find(
             (config) => config.id === rerankerId
           );
@@ -236,7 +236,7 @@ const WebSearchAdvancedConfigInner: React.FC<WebSearchAdvancedConfigProps> = ({
     const previous = tavilySearchDepth;
     setTavilySearchDepth(next);
     try {
-      await invoke('save_setting', {
+      await nativeInvoke('save_setting', {
         key: 'web_search.tavily.search_depth',
         value: next,
       });
@@ -257,11 +257,11 @@ const WebSearchAdvancedConfigInner: React.FC<WebSearchAdvancedConfigProps> = ({
 
   const saveRerankerConfig = async (config: RerankerConfig) => {
     await Promise.all([
-      invoke('save_setting', {
+      nativeInvoke('save_setting', {
         key: 'web_search.reranker.enabled',
         value: String(config.enabled),
       }),
-      invoke('save_setting', {
+      nativeInvoke('save_setting', {
         key: 'web_search.reranker.top_k',
         value: String(config.top_k ?? 10),
       }),
@@ -272,15 +272,15 @@ const WebSearchAdvancedConfigInner: React.FC<WebSearchAdvancedConfigProps> = ({
 
   const saveCnWhitelistConfig = async (config: CnWhitelistConfig) => {
     await Promise.all([
-      invoke('save_setting', {
+      nativeInvoke('save_setting', {
         key: 'web_search.cn_whitelist.enabled',
         value: String(config.enabled),
       }),
-      invoke('save_setting', {
+      nativeInvoke('save_setting', {
         key: 'web_search.cn_whitelist.use_default',
         value: String(config.use_default_list),
       }),
-      invoke('save_setting', {
+      nativeInvoke('save_setting', {
         key: 'web_search.cn_whitelist.custom_sites',
         value: (config.custom_sites ?? []).join(','),
       }),

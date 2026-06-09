@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import type { NoteItem } from "../../../../utils/notesApi";
 
 export type UseNotesTabsParams = {

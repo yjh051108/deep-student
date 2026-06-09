@@ -15,7 +15,7 @@ import { Textarea } from './ui/shad/Textarea';
 import { ErrorBoundary } from './ErrorBoundary';
 import { ComplexityReport, ComplexityLevel, EnhancedFieldExtractionRule } from '../types/enhanced-field-types';
 import { checkComplexTemplatesStatus } from '../utils/forceImportTemplates';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import FieldTypeConfigurator from './FieldTypeConfigurator';
 import { CustomScrollArea } from './custom-scroll-area';
 import { showGlobalNotification } from './UnifiedNotification';

@@ -29,12 +29,10 @@
 pub mod error;
 pub mod exam_formatter;
 pub mod export; // 统一资源导出模块
-pub mod folder_handlers;
 pub mod handler_utils; // 路径工具和节点转换器
 pub mod handlers;
 pub mod path_parser;
 pub mod path_types; // 新增：契约 C1 类型定义
-pub mod trash_handlers;
 pub mod types;
 
 // ============================================================================
@@ -76,68 +74,11 @@ pub use types::{
 
 // handlers 导出（Prompt 5 实现）
 pub use handlers::{
-    dstu_batch_move,
-    dstu_build_path,
     dstu_copy,
-    dstu_create,
-    dstu_delete,
-    // 批量操作命令
-    dstu_delete_many,
-    dstu_get,
-    dstu_get_content,
     // 题目集识别多模态内容获取（文档 25 实现）
     dstu_get_exam_content,
-    dstu_get_path_by_id,
-    dstu_get_resource_by_path,
-    // E2: 资源定位
-    dstu_get_resource_location,
-    dstu_list,
-    dstu_list_deleted,
     dstu_move,
     dstu_move_many,
-    // E3: 移动操作
-    dstu_move_to_folder,
-    // 契约 E: 真实路径架构命令（文档 28 Prompt 5）
-    // E1: 路径解析
-    dstu_parse_path,
-    dstu_purge,
-    dstu_purge_all,
-    // E4: 路径缓存
-    dstu_refresh_path_cache,
-    dstu_restore,
-    dstu_restore_many,
-    dstu_search,
     // 文件夹内搜索
     dstu_search_in_folder,
-    // 通用能力命令
-    dstu_set_favorite,
-    dstu_set_metadata,
-    dstu_update,
-};
-
-// folder_handlers 导出（文档 23 Prompt 3/4 实现）
-pub use folder_handlers::{
-    // D2: 内容管理
-    dstu_folder_add_item,
-    // D1: 文件夹管理
-    dstu_folder_create,
-    dstu_folder_delete,
-    dstu_folder_get,
-    // D4: 上下文注入专用（Prompt 4 核心功能）
-    dstu_folder_get_all_resources,
-    // P2: 面包屑（27-DSTU统一虚拟路径架构改造设计.md）
-    dstu_folder_get_breadcrumbs,
-    dstu_folder_get_items,
-    dstu_folder_get_tree,
-    // D3: 查询
-    dstu_folder_list,
-    dstu_folder_move,
-    dstu_folder_move_item,
-    dstu_folder_remove_item,
-    dstu_folder_rename,
-    // D5: 排序
-    dstu_folder_reorder,
-    dstu_folder_reorder_items,
-    dstu_folder_set_expanded,
-    BreadcrumbItem,
 };

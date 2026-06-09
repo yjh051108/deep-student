@@ -20,6 +20,7 @@ import { debugMasterSwitch } from '@/debug-panel/debugMasterSwitch';
 import { isAndroid } from '@/utils/platform';
 import { getDefaultConfig, configFromPreset, type CopyFilterConfig } from '@/features/chat/hooks/useDevShowRawRequest';
 import type { VoiceInputAssignedModel } from '@/voice-input/types';
+import { ensureDebugLogDir, getSetting, getSettings, openLogsFolder, saveSetting } from '@/runtime/native';
 
 const SENTRY_CONSENT_KEY = 'sentry_error_reporting_enabled';
 
@@ -61,7 +62,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
   useEffect(() => {
     (async () => {
       try {
-        const val = await tauriInvoke('get_setting', { key: SENTRY_CONSENT_KEY }) as string | null;
+        const val = await getSetting(SENTRY_CONSENT_KEY);
         setSentryEnabled(val === 'true');
       } catch {
         setSentryEnabled(false);
@@ -72,11 +73,14 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
   useEffect(() => {
     (async () => {
       try {
-        const [persistVal, configVal, legacyLevelVal] = await Promise.all([
-          tauriInvoke('get_setting', { key: 'debug.persist_logs' }).catch(() => 'false') as Promise<string>,
-          tauriInvoke('get_setting', { key: 'debug.filter_config' }).catch(() => '') as Promise<string>,
-          tauriInvoke('get_setting', { key: 'debug.filter_level' }).catch(() => '') as Promise<string>,
-        ]);
+        const values = await getSettings([
+          'debug.persist_logs',
+          'debug.filter_config',
+          'debug.filter_level',
+        ]).catch(() => ({}));
+        const persistVal = values['debug.persist_logs'] ?? 'false';
+        const configVal = values['debug.filter_config'] ?? '';
+        const legacyLevelVal = values['debug.filter_level'] ?? '';
         setDebugPersistLogs(String(persistVal ?? '') === 'true');
         const raw = String(configVal ?? '').trim();
         if (raw) {
@@ -215,7 +219,6 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
                 onChange={(e) => setTopbarTopMargin(e.target.value.trim())}
                 onBlur={async () => {
                   if (!topbarTopMarginLoaded) return;
-                  if (!invoke) return;
                   try {
                     const numValue = parseInt(topbarTopMargin, 10);
                     const platformDefault = isAndroid() ? 30 : 0;
@@ -223,7 +226,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
                       setTopbarTopMargin(String(platformDefault));
                       return;
                     }
-                    await invoke('save_setting', { key: 'topbar.top_margin', value: String(numValue) });
+                    await saveSetting('topbar.top_margin', String(numValue));
                     setTopbarTopMargin(String(numValue));
                     showGlobalNotification('success', t('settings:save_success'));
                     try {
@@ -305,7 +308,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
                 size="sm"
                 onClick={async () => {
                   try {
-                    await tauriInvoke('open_logs_folder', { logType: logTypeForOpen });
+                    await openLogsFolder(logTypeForOpen);
                   } catch {
                     showGlobalNotification('error', t('settings:developer.open_logs_failed', '打开日志文件夹失败'));
                   }
@@ -324,9 +327,8 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
             onCheckedChange={async (newValue) => {
               if (!showRawRequestLoaded) return;
               setShowRawRequest(newValue);
-              if (!invoke) return;
               try {
-                await invoke('save_setting', { key: 'dev.show_raw_request', value: String(newValue) });
+                await saveSetting('dev.show_raw_request', String(newValue));
                 showGlobalNotification('success', t('settings:save_notifications.saved', '已保存'));
                 try {
                   window.dispatchEvent(new CustomEvent('systemSettingsChanged', { detail: { showRawRequest: newValue } }));
@@ -344,7 +346,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
               const cfg = { ...next, preset: 'custom' as const };
               setFilterConfig(cfg);
               try {
-                await tauriInvoke('save_setting', { key: 'debug.filter_config', value: JSON.stringify(cfg) });
+                await saveSetting('debug.filter_config', JSON.stringify(cfg));
                 window.dispatchEvent(new CustomEvent('systemSettingsChanged', { detail: { copyFilterConfig: cfg } }));
               } catch {
                 // noop
@@ -456,7 +458,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
               if (debugPersistLogs === null) return;
               setDebugPersistLogs(newValue);
               try {
-                await tauriInvoke('save_setting', { key: 'debug.persist_logs', value: String(newValue) });
+                await saveSetting('debug.persist_logs', String(newValue));
                 showGlobalNotification('success', t('settings:save_notifications.saved', '已保存'));
               } catch (error: unknown) {
                 showGlobalNotification('error', getErrorMessage(error));
@@ -477,7 +479,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
                   size="sm"
                   onClick={async () => {
                     try {
-                      const debugLogsDir = await tauriInvoke('ensure_debug_log_dir') as string;
+                      const debugLogsDir = await ensureDebugLogDir();
                       const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
                       await revealItemInDir(debugLogsDir);
                     } catch {
@@ -524,10 +526,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
                 if (sentryEnabled === null) return;
                 setSentryEnabled(newValue);
                 try {
-                  await tauriInvoke('save_setting', {
-                    key: SENTRY_CONSENT_KEY,
-                    value: String(newValue),
-                  });
+                  await saveSetting(SENTRY_CONSENT_KEY, String(newValue));
                   showGlobalNotification(
                     'success',
                     newValue

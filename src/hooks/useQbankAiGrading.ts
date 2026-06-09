@@ -9,8 +9,8 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { invoke } from '@/runtime/native';
+import { listen, type NativeUnlistenFn } from '@/runtime/nativeEvents';
 import { nanoid } from 'nanoid';
 import { debugLog } from '@/debug-panel/debugMasterSwitch';
 
@@ -68,7 +68,7 @@ export function useQbankAiGrading() {
   const currentStreamSessionIdRef = useRef<string | null>(null);
   const isActiveRef = useRef(false);
   const isStartingRef = useRef(false);
-  const unlistenRef = useRef<UnlistenFn | null>(null);
+  const unlistenRef = useRef<NativeUnlistenFn | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastRequestRef = useRef<{
     questionId: string;

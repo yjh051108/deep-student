@@ -1,8 +1,12 @@
 import i18next from 'i18next';
+import {
+  invoke,
+  isInjectedNativeRuntime,
+  isTauriRuntime,
+  isWailsRuntime,
+} from '../runtime/native';
+import { listen } from '../runtime/nativeEvents';
 import { getErrorMessage } from '../utils/errorUtils';
-
-let invokePromise: Promise<typeof import('@tauri-apps/api/core')['invoke']> | null = null;
-let listenPromise: Promise<typeof import('@tauri-apps/api/event')['listen']> | null = null;
 
 // 调试事件触发辅助函数
 const emitStdioDebugEvent = (eventType: string, detail: any) => {
@@ -15,20 +19,6 @@ const emitStdioDebugEvent = (eventType: string, detail: any) => {
     // 静默失败，避免影响主逻辑
   }
 };
-
-async function getInvoke() {
-  if (!invokePromise) {
-    invokePromise = import('@tauri-apps/api/core').then(m => m.invoke);
-  }
-  return invokePromise;
-}
-
-async function getListen() {
-  if (!listenPromise) {
-    listenPromise = import('@tauri-apps/api/event').then(m => m.listen);
-  }
-  return listenPromise;
-}
 
 export type StdioFraming = 'jsonl' | 'content_length';
 
@@ -48,33 +38,32 @@ function isMobilePlatform(): boolean {
   return ua.includes('android') || ua.includes('iphone') || ua.includes('ipad');
 }
 
-function isTauriEnvironment(): boolean {
-  if (typeof window === 'undefined') return false;
-  // Tauri 2.x 使用 __TAURI_INTERNALS__
-  const hasInternals = Boolean((window as any).__TAURI_INTERNALS__);
-  const result = hasInternals;
+function isNativeStdioEnvironment(): boolean {
+  const result = isInjectedNativeRuntime() || isWailsRuntime() || isTauriRuntime();
 
   // 调试日志
-  console.log('[Tauri Stdio] Environment check:', {
-    hasInternals,
-    isTauri: result,
-    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'N/A'
+  console.log('[Native Stdio] Environment check:', {
+    isInjectedNative: isInjectedNativeRuntime(),
+    isWails: isWailsRuntime(),
+    isTauri: isTauriRuntime(),
+    isNative: result,
+    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'N/A',
   });
-  
+
   return result;
 }
 
 export function isTauriStdioSupported(): boolean {
-  const isTauri = isTauriEnvironment();
+  const isNative = isNativeStdioEnvironment();
   const isMobile = isMobilePlatform();
-  const isSupported = isTauri && !isMobile;
+  const isSupported = isNative && !isMobile;
   
-  console.log('[Tauri Stdio] Support check:', {
-    isTauri,
+  console.log('[Native Stdio] Support check:', {
+    isNative,
     isMobile,
-    isSupported
+    isSupported,
   });
-  
+
   return isSupported;
 }
 
@@ -86,18 +75,18 @@ function enrichStdioSpawnError(error: unknown, command: string): Error {
   }
   
   // 调试日志：查看原始错误
-  console.log('[Tauri Stdio] enrichStdioSpawnError - original error:', {
+  console.log('[Native Stdio] enrichStdioSpawnError - original error:', {
     error,
     type: typeof error,
     isError: error instanceof Error,
     message: (error as any)?.message,
     constructor: (error as any)?.constructor?.name,
-    keys: error && typeof error === 'object' ? Object.keys(error) : []
+    keys: error && typeof error === 'object' ? Object.keys(error) : [],
   });
-  
+
   // 使用 getErrorMessage 正确提取错误信息，避免 [object Object]
   const originalMessage = getErrorMessage(error);
-  console.log('[Tauri Stdio] enrichStdioSpawnError - extracted message:', originalMessage);
+  console.log('[Native Stdio] enrichStdioSpawnError - extracted message:', originalMessage);
   const lowered = originalMessage.toLowerCase();
   const isSpawnFailure =
     lowered.includes('failed to spawn') ||
@@ -157,7 +146,6 @@ export class TauriStdioClientTransport {
     }
 
     try {
-      const invoke = await getInvoke();
       const sessionId = await invoke<string>('mcp_stdio_start', {
         command: this.params.command,
         args: this.params.args ?? [],
@@ -180,16 +168,15 @@ export class TauriStdioClientTransport {
     if (!this.nativeSessionId) {
       throw new Error(i18next.t('mcp:stdio.not_initialized'));
     }
-    const invoke = await getInvoke();
     const payload = JSON.stringify(message);
-    
+
     // 触发发送事件
     emitStdioDebugEvent('mcp-stdio-send', {
       serverId: this.serverId,
       sessionId: this.nativeSessionId,
-      payload,
+      payload: summarizeStdioPayload(payload),
     });
-    
+
     try {
       await invoke('mcp_stdio_send', { sessionId: this.nativeSessionId, payload });
     } catch (error: unknown) {
@@ -200,7 +187,6 @@ export class TauriStdioClientTransport {
 
   async close(): Promise<void> {
     if (!this.nativeSessionId) return;
-    const invoke = await getInvoke();
     try {
       await invoke('mcp_stdio_close', { sessionId: this.nativeSessionId });
     } catch (error: unknown) {
@@ -219,26 +205,28 @@ export class TauriStdioClientTransport {
   }
 
   private async registerListeners(sessionId: string) {
-    const listen = await getListen();
     const eventPrefix = `mcp-stdio-${sessionId}`;
     this.eventPrefix = eventPrefix;
 
     const messageUnlisten = await listen(`${eventPrefix}-message`, event => {
       const payload = (event.payload as any) ?? {};
       if (!payload || typeof payload.message !== 'string') return;
-      
+
       // 触发接收事件
       emitStdioDebugEvent('mcp-stdio-recv', {
         serverId: this.serverId,
         sessionId,
-        payload: payload.message,
+        payload: summarizeStdioPayload(payload.message),
       });
-      
+
       try {
         const parsed = JSON.parse(payload.message) as JsonRpcMessage;
         this.onmessage?.(parsed);
       } catch (error: unknown) {
-        console.warn('[MCP][stdio] Failed to parse message', payload.message, error);
+        console.warn('[MCP][stdio] Failed to parse message', {
+          byteLength: typeof payload.message === 'string' ? payload.message.length : 0,
+          error,
+        });
         this.onerror?.(error);
       }
     });
@@ -246,14 +234,14 @@ export class TauriStdioClientTransport {
     const errorUnlisten = await listen(`${eventPrefix}-error`, event => {
       const payload = (event.payload as any) ?? {};
       const error = payload?.error ?? i18next.t('mcp:stdio.unknown_error');
-      
+
       // 触发错误事件
       emitStdioDebugEvent('mcp-stdio-error', {
         serverId: this.serverId,
         sessionId,
         error,
       });
-      
+
       if (this.onerror) {
         this.onerror(error);
       }
@@ -265,7 +253,7 @@ export class TauriStdioClientTransport {
         serverId: this.serverId,
         sessionId,
       });
-      
+
       this.cleanupListeners();
       this.nativeSessionId = null;
       this.sessionId = undefined;
@@ -289,5 +277,48 @@ export class TauriStdioClientTransport {
 
   get nativeSession(): string | null {
     return this.nativeSessionId;
+  }
+}
+
+function summarizeStdioPayload(payload: string): Record<string, unknown> {
+  const summary: Record<string, unknown> = {
+    byteLength: new TextEncoder().encode(payload).byteLength,
+  };
+  try {
+    const parsed = JSON.parse(payload) as Record<string, unknown>;
+    if (typeof parsed.id === 'string' || typeof parsed.id === 'number') {
+      summary.id = parsed.id;
+    }
+    if (typeof parsed.method === 'string') {
+      summary.method = parsed.method;
+    }
+    if (parsed.params && typeof parsed.params === 'object' && !Array.isArray(parsed.params)) {
+      summary.paramKeys = Object.keys(parsed.params as Record<string, unknown>);
+    }
+    if (parsed.result && typeof parsed.result === 'object' && !Array.isArray(parsed.result)) {
+      summary.resultKeys = Object.keys(parsed.result as Record<string, unknown>);
+    }
+    if (parsed.error && typeof parsed.error === 'object' && !Array.isArray(parsed.error)) {
+      const errorObject = parsed.error as Record<string, unknown>;
+      summary.errorCode = errorObject.code;
+      if (typeof errorObject.message === 'string') {
+        summary.errorMessageLength = errorObject.message.length;
+      }
+    }
+  } catch {
+    summary.parseable = false;
+  }
+
+  if (shouldEmitRawStdioPayload()) {
+    summary.rawPayload = payload;
+  }
+  return summary;
+}
+
+function shouldEmitRawStdioPayload(): boolean {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem('deep_student_mcp_stdio_debug_raw') === '1';
+  } catch {
+    return false;
   }
 }

@@ -725,10 +725,6 @@ pub fn next_session_sequence_id(session_id: &str) -> u64 {
     counter.fetch_add(1, Ordering::SeqCst)
 }
 
-pub fn clear_session_sequence_counter(session_id: &str) {
-    SESSION_SEQUENCE_COUNTERS.remove(session_id);
-}
-
 pub struct ChatV2EventEmitter {
     window: Window,
     session_id: String,

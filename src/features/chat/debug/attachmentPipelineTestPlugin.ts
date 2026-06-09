@@ -14,7 +14,7 @@
  */
 
 import { CHATV2_LOG_EVENT, type ChatV2LogEntry } from './chatV2Logger';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { listen, type NativeUnlistenFn as UnlistenFn } from '@/runtime/nativeEvents';
 import { createSessionWithDefaults } from '../core/session/createSessionWithDefaults';
 import { usePdfProcessingStore } from '@/features/pdf/stores/pdfProcessingStore';
 import { getEffectiveReadyModes, getSelectedInjectModes } from '../components/input-bar/injectModeUtils';
@@ -1146,7 +1146,7 @@ export async function cleanupTestSessions(): Promise<{ deleted: number; errors: 
 export async function cleanupTestData(
   onProgress?: (msg: string) => void,
 ): Promise<CleanupResult> {
-  const { invoke } = await import('@tauri-apps/api/core');
+  const { invoke } = await import('@/runtime/native');
   const sm = await getSessionManager();
   const errors: string[] = [];
   let deletedSessions = 0;
@@ -1285,7 +1285,7 @@ export async function runPdfExtractionDiag(
     onLog?.(line);
   };
 
-  const { invoke } = await import('@tauri-apps/api/core');
+  const { invoke } = await import('@/runtime/native');
 
   if (!pdfFile || pdfFile.size === 0) throw new Error('请提供有效的 PDF 文件');
   log(`文件: ${pdfFile.name} (${pdfFile.size} bytes)`);

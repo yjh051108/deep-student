@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { getErrorMessage } from '@/utils/errorUtils';
 import { sessionManager } from '../core/session/sessionManager';
 import { SESSION_LIST_PAGE_SIZE } from '../core/constants';

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NotionButton } from '@/components/ui/NotionButton';
-import { invoke } from '@tauri-apps/api/core';
+import { testSearchEngine } from '@/utils/settingsApi';
 import { useTranslation } from 'react-i18next';
 import { 
   CheckCircle, 
@@ -55,9 +55,7 @@ export const SearchEngineStatus: React.FC<SearchEngineStatusProps> = ({
   // 测试单个引擎
   const testEngine = async (engineId: string): Promise<EngineStatus> => {
     try {
-      const result = await invoke<{ok: boolean, message: string, response_time?: number}>('test_search_engine', {
-        engine: engineId
-      });
+      const result = await testSearchEngine(engineId);
       
       return {
         id: engineId,

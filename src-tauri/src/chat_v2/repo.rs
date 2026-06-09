@@ -596,27 +596,6 @@ impl ChatV2Repo {
         Ok(())
     }
 
-    /// 软删除分组（并将关联会话置为未分组）
-    pub fn soft_delete_group_with_conn(conn: &mut Connection, group_id: &str) -> ChatV2Result<()> {
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        tx.execute(
-            r#"
-            UPDATE chat_v2_session_groups
-            SET persist_status = 'deleted', updated_at = ?2
-            WHERE id = ?1
-            "#,
-            params![group_id, Utc::now().to_rfc3339()],
-        )?;
-
-        tx.execute(
-            "UPDATE chat_v2_sessions SET group_id = NULL WHERE group_id = ?1",
-            params![group_id],
-        )?;
-
-        tx.commit()?;
-        Ok(())
-    }
-
     /// 批量更新分组排序
     pub fn reorder_groups_with_conn(
         conn: &mut Connection,

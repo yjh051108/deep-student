@@ -835,7 +835,7 @@ async function stepPersistRoundtrip(ctx: StepContext): Promise<StepResult> {
     await sleep(2000);
 
     // 3. 从后端重新加载
-    const { invoke } = await import('@tauri-apps/api/core');
+    const { invoke } = await import('@/runtime/native');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const loaded = await invoke<any>('chat_v2_load_session', { sessionId });
     const loadedMessages = loaded?.messages || [];
@@ -1067,7 +1067,7 @@ export interface CleanupResult {
 export async function cleanupCitationTestData(
   onProgress?: (msg: string) => void,
 ): Promise<CleanupResult> {
-  const { invoke } = await import('@tauri-apps/api/core');
+  const { invoke } = await import('@/runtime/native');
   const sm = await getSessionManager();
   const errors: string[] = [];
   let deletedSessions = 0;

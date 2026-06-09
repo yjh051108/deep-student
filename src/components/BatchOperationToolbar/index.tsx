@@ -2,7 +2,6 @@ import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import { NotionButton } from '@/components/ui/NotionButton';
 import { AnkiCard } from '../../types';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import {
   MagnifyingGlass, Funnel, Download, Tag, PencilSimple, Trash, 

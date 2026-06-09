@@ -8,7 +8,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { Check, X, Clock, Warning, CaretDown, CaretUp } from '@phosphor-icons/react';
 import { NotionButton } from '@/components/ui/NotionButton';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/shad/Card';

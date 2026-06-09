@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import type { ModelInfo } from '../utils/parseModelMentions';
 import { useEventRegistry } from '@/hooks/useEventRegistry';
 

@@ -29,7 +29,7 @@ import {
   CaretRight,
 } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 
 type ChangeType = 'create' | 'update' | 'answer' | 'status_change';
 

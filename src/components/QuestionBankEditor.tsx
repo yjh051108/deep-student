@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { cn } from '../lib/utils';
 import { CustomScrollArea } from './custom-scroll-area';
 import { NotionButton } from '@/components/ui/NotionButton';

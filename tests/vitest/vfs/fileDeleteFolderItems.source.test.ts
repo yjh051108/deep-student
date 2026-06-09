@@ -30,8 +30,8 @@ describe("VfsFileRepo folder item deletion contract", () => {
     ),
     "utf-8",
   );
-  const vfsHandlersSource = readFileSync(
-    resolve(process.cwd(), "src-tauri/src/vfs/handlers.rs"),
+  const goVfsServiceSource = readFileSync(
+    resolve(process.cwd(), "desktop-go/internal/vfs/service.go"),
     "utf-8",
   );
   const folderRepoSource = readFileSync(
@@ -132,40 +132,32 @@ describe("VfsFileRepo folder item deletion contract", () => {
     expect(nodeConvertersSource).not.toContain("DstuNode::resource(&file.id, &path, &display_name, node_type, &file.sha256)");
   });
 
-  it("resolves resource paths from active folder mappings without reviving deleted resources", () => {
-    const start = vfsHandlersSource.indexOf("pub async fn vfs_get_resource_path");
-    const end = vfsHandlersSource.indexOf("/// 批量更新路径缓存", start);
+  it("resolves resource paths through the Go hybrid VFS index", () => {
+    const start = goVfsServiceSource.indexOf("func (s *Service) GetResourcePath");
+    const end = goVfsServiceSource.indexOf("func (s *Service) GetResourceRefCount", start);
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
-    const resourcePathSource = vfsHandlersSource.slice(start, end);
+    const resourcePathSource = goVfsServiceSource.slice(start, end);
 
-    expect(resourcePathSource).toContain(
-      "WHERE item_id = ?1 AND cached_path IS NOT NULL\n              AND deleted_at IS NULL",
-    );
-    expect(resourcePathSource).toContain(
-      "WHERE item_id = ?1\n              AND deleted_at IS NULL",
-    );
-    expect(resourcePathSource).toContain(
-      "if let Some(title) = get_active_resource_title_with_conn(&conn, &source_id)?",
-    );
-    expect(resourcePathSource).toContain(
-      'return Ok(format!("/{}", source_id));',
-    );
-    expect(vfsHandlersSource).toContain(
-      "SELECT file_name FROM files WHERE id = ?1 AND status = 'active' AND deleted_at IS NULL",
-    );
+    expect(resourcePathSource).toContain("resource, ok := s.findResourceByAnyIDLocked(sourceID)");
+    expect(resourcePathSource).toContain("if !ok || resource.ExternalPath == nil");
+    expect(resourcePathSource).toContain("absolute, err := s.resolveLibraryPath(*resource.ExternalPath)");
+    expect(resourcePathSource).toContain("return &absolute, nil");
   });
 
-  it("does not reuse upload dedupe rows whose file or resource was deleted", () => {
-    const start = vfsHandlersSource.indexOf("pub async fn vfs_upload_file");
-    const end = vfsHandlersSource.indexOf("#[derive(Debug, Clone, Serialize)]", start);
+  it("restores deleted upload dedupe rows in the Go hybrid VFS index", () => {
+    const start = goVfsServiceSource.indexOf("func (s *Service) UploadFile");
+    const end = goVfsServiceSource.indexOf("func (s *Service) GetFile", start);
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
-    const uploadSource = vfsHandlersSource.slice(start, end);
+    const uploadSource = goVfsServiceSource.slice(start, end);
 
-    expect(uploadSource).toContain("SELECT EXISTS(SELECT 1 FROM resources WHERE id = ?1 AND deleted_at IS NOT NULL)");
-    expect(uploadSource).toContain('file.status == "active" && file.deleted_at.is_none() && !resource_deleted');
-    expect(uploadSource).toContain("File duplicate needs repository restore");
+    expect(uploadSource).toContain("if index, ok := s.findFileByHashLocked(contentHash, fileType); ok");
+    expect(uploadSource).toContain("if resourceIsDeleted(resource)");
+    expect(uploadSource).toContain('"status":    "active"');
+    expect(uploadSource).toContain('"deletedAt": ""');
+    expect(uploadSource).toContain("metadata := fileMetadata(params, fileType");
+    expect(uploadSource).toContain("return uploadFileResult(file, contentHash, false), nil");
   });
 
   it("emits delete watch events with real paths and stable resource ids", () => {

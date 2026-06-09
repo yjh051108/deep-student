@@ -84,7 +84,7 @@ impl SubagentExecutor {
         let agent_session_id = format!("subagent_{}_{}", skill_id, ulid::Ulid::new());
 
         // 🔧 P0-1 修复：在 chat_v2.db 中创建 ChatSession
-        // 这样 SubagentContainer 才能通过 chat_v2_load_session 加载子代理的消息
+        // SubagentContainer 现在通过 native facade/Wails bridge 加载子代理消息。
         let chat_v2_db = ctx
             .chat_v2_db
             .as_ref()

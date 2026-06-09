@@ -11,11 +11,11 @@ const vfsIndexResourceBySourceMock = vi.fn();
 const reindexResourceMock = vi.fn();
 const eventListeners = new Map<string, Array<(event: { payload: unknown }) => void>>();
 
-vi.mock('@tauri-apps/api/core', () => ({
+vi.mock('@/runtime/native', () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
 }));
 
-vi.mock('@tauri-apps/api/event', () => ({
+vi.mock('@/runtime/nativeEvents', () => ({
   listen: vi.fn(async (event: string, callback: (event: { payload: unknown }) => void) => {
     eventListeners.set(event, [...(eventListeners.get(event) ?? []), callback]);
     return vi.fn();

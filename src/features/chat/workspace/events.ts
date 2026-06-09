@@ -5,6 +5,7 @@
  */
 
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { invoke } from '@/runtime/native';
 import { useWorkspaceStore } from './workspaceStore';
 import { showGlobalNotification } from '@/components/UnifiedNotification';
 import i18n from 'i18next';
@@ -482,7 +483,6 @@ export async function initWorkspaceEventListeners(): Promise<void> {
       // 🆕 P38: 直接通过后端持久化 subagent_retry 块
       // 由于前端 Store 访问较复杂，改为通过后端查询最后助手消息并创建块
       try {
-        const { invoke } = await import('@tauri-apps/api/core');
         // 从 agents 中找到 coordinator 的 session ID
         const agents = useWorkspaceStore.getState().agents;
         const coordinator = agents.find(a => a.role === 'coordinator');

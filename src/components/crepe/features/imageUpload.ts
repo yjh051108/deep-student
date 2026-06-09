@@ -3,21 +3,14 @@
  * 集成 Tauri 文件系统和笔记资产管理
  */
 
-import { convertFileSrc, invoke } from '@tauri-apps/api/core';
-import { appDataDir } from '@tauri-apps/api/path';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { open as dialogOpen } from '@tauri-apps/plugin-dialog';
+import { getImageAsBase64, invoke } from '@/runtime/native';
 import { getErrorMessage } from '../../../utils/errorUtils';
 import { extractFileName, extractFileExtension } from '../../../utils/fileManager';
 import { emitImageUploadDebug } from '../../../debug-panel/plugins/CrepeImageUploadDebugPlugin';
 import { showGlobalNotification } from '../../UnifiedNotification';
 
-/**
- * 通过后端命令获取图片的 base64 数据
- * 绕过 asset:// 协议可能的 scope 限制问题
- */
-async function getImageAsBase64(path: string): Promise<string> {
-  return invoke<string>('get_image_as_base64', { relativePath: path });
-}
 // ImageBlockFeatureConfig 类型定义
 interface ImageBlockFeatureConfig {
   onUpload?: (file: File) => Promise<string>;

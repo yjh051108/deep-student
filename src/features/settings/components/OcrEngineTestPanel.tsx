@@ -20,7 +20,7 @@ import {
 } from '@phosphor-icons/react';
 import { NotionButton } from '@/components/ui/NotionButton';
 import { showGlobalNotification } from '@/components/UnifiedNotification';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { UnifiedDragDropZone, FILE_TYPES } from '@/components/shared/UnifiedDragDropZone';
 
 /** OCR 测试区域 */

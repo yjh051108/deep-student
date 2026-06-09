@@ -9,7 +9,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useStore, type StoreApi } from 'zustand';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import {
   AppMenu,
   AppMenuTrigger,

@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { PencilSimple, Check, X, CircleNotch, PushPin, Archive } from '@phosphor-icons/react';
 import { type DraggableProvided, type DraggableStateSnapshot } from '@hello-pangea/dnd';
 import {

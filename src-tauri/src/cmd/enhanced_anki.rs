@@ -3,12 +3,10 @@
 //! 从 commands.rs 拆分：增强版文档处理、制卡、记忆提取
 
 use crate::commands::{export_cards_as_apkg_with_template, AppState};
-use crate::models::{
-    AnkiDocumentGenerationRequest, AnkiGenerationOptions, AppError, MemoryCandidate,
-};
+use crate::models::{AnkiGenerationOptions, AppError, MemoryCandidate};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use tauri::{State, Window};
+use tauri::State;
 
 type Result<T> = std::result::Result<T, AppError>;
 
@@ -17,146 +15,6 @@ type Result<T> = std::result::Result<T, AppError>;
 // - fix_json_escape_characters_inline
 
 // =================== Enhanced Anki Commands ===================
-/// 开始文档处理 - 增强版 Anki 制卡
-#[tauri::command]
-pub async fn start_enhanced_document_processing(
-    document_content: String,
-    original_document_name: String,
-    options: AnkiGenerationOptions,
-    window: Window,
-    state: State<'_, AppState>,
-) -> Result<String> {
-    println!(
-        "开始增强文档处理: 文档名={}, 内容长度={}",
-        original_document_name,
-        document_content.len()
-    );
-
-    // 创建增强ANKI服务实例
-    let enhanced_service = crate::enhanced_anki_service::EnhancedAnkiService::new(
-        state.anki_database.clone(),
-        state.llm_manager.clone(),
-    );
-
-    // 构建请求
-    let request = AnkiDocumentGenerationRequest {
-        document_content,
-        original_document_name: Some(original_document_name),
-        options: Some(options),
-    };
-
-    // 开始处理
-    let document_id = enhanced_service
-        .start_document_processing(request, window)
-        .await?;
-
-    println!("文档处理已启动: {}", document_id);
-    Ok(document_id)
-}
-/// 暂停文档处理（硬暂停）
-#[tauri::command]
-#[allow(non_snake_case)] // Tauri 前端传入 camelCase 参数名
-pub async fn pause_document_processing(
-    documentId: String,
-    window: Window,
-    state: State<'_, AppState>,
-) -> Result<bool> {
-    println!("暂停文档处理: {}", documentId);
-    let enhanced_service = crate::enhanced_anki_service::EnhancedAnkiService::new(
-        state.anki_database.clone(),
-        state.llm_manager.clone(),
-    );
-    enhanced_service
-        .pause_document_processing(documentId, window)
-        .await?;
-    Ok(true)
-}
-
-/// 恢复文档处理
-#[tauri::command]
-#[allow(non_snake_case)] // Tauri 前端传入 camelCase 参数名
-pub async fn resume_document_processing(
-    documentId: String,
-    window: Window,
-    state: State<'_, AppState>,
-) -> Result<bool> {
-    println!("恢复文档处理: {}", documentId);
-    let enhanced_service = crate::enhanced_anki_service::EnhancedAnkiService::new(
-        state.anki_database.clone(),
-        state.llm_manager.clone(),
-    );
-    enhanced_service
-        .resume_document_processing(documentId, window)
-        .await?;
-    Ok(true)
-}
-
-/// 获取文档处理状态（调试/前端校验用）
-#[tauri::command]
-#[allow(non_snake_case)] // Tauri 前端传入 camelCase 参数名
-pub async fn get_document_processing_state(
-    documentId: String,
-    state: State<'_, AppState>,
-) -> Result<crate::enhanced_anki_service::DocumentStateDto> {
-    let enhanced_service = crate::enhanced_anki_service::EnhancedAnkiService::new(
-        state.anki_database.clone(),
-        state.llm_manager.clone(),
-    );
-    Ok(enhanced_service.get_document_state(documentId).await)
-}
-
-/// 获取文档任务计数（冒烟测试/调试用途）
-#[tauri::command]
-#[allow(non_snake_case)] // Tauri 前端传入 camelCase 参数名
-pub async fn get_document_task_counts(
-    documentId: String,
-    state: State<'_, AppState>,
-) -> Result<crate::enhanced_anki_service::DocumentTaskCountsDto> {
-    let enhanced_service = crate::enhanced_anki_service::EnhancedAnkiService::new(
-        state.anki_database.clone(),
-        state.llm_manager.clone(),
-    );
-    Ok(enhanced_service.get_document_task_counts(documentId).await)
-}
-
-/// 手动触发任务处理
-#[tauri::command]
-pub async fn trigger_task_processing(
-    task_id: String,
-    window: Window,
-    state: State<'_, AppState>,
-) -> Result<()> {
-    println!("触发任务处理: {}", task_id);
-
-    let enhanced_service = crate::enhanced_anki_service::EnhancedAnkiService::new(
-        state.anki_database.clone(),
-        state.llm_manager.clone(),
-    );
-
-    enhanced_service
-        .trigger_task_processing(task_id, window)
-        .await?;
-    Ok(())
-}
-
-/// 获取文档的所有任务
-#[tauri::command]
-#[allow(non_snake_case)] // Tauri 前端传入 camelCase 参数名
-pub async fn get_document_tasks(
-    documentId: String,
-    state: State<'_, AppState>,
-) -> Result<Vec<crate::models::DocumentTask>> {
-    println!("获取文档任务列表: {}", documentId);
-
-    let enhanced_service = crate::enhanced_anki_service::EnhancedAnkiService::new(
-        state.database.clone(),
-        state.llm_manager.clone(),
-    );
-
-    let tasks = enhanced_service.get_document_tasks(documentId)?;
-    println!("找到 {} 个任务", tasks.len());
-    Ok(tasks)
-}
 /// 获取任务的所有卡片
 #[tauri::command]
 pub async fn get_task_cards(
@@ -238,28 +96,6 @@ pub async fn delete_document_task(task_id: String, state: State<'_, AppState>) -
     Ok(true)
 }
 
-/// 删除整个文档会话（所有任务和卡片）
-#[tauri::command]
-#[allow(non_snake_case)] // Tauri 前端传入 camelCase 参数名
-pub async fn delete_document_session(
-    documentId: String,
-    state: State<'_, AppState>,
-) -> Result<bool> {
-    println!("删除文档会话: {}", documentId);
-
-    if documentId.is_empty() {
-        return Err(AppError::validation("文档ID不能为空"));
-    }
-
-    let enhanced_service = crate::enhanced_anki_service::EnhancedAnkiService::new(
-        state.database.clone(),
-        state.llm_manager.clone(),
-    );
-
-    enhanced_service.delete_document_session(documentId).await?;
-    println!("文档会话删除成功");
-    Ok(true)
-}
 /// 导出选定内容为APKG文件
 #[tauri::command]
 #[allow(non_snake_case)] // Tauri 前端传入 camelCase 参数名
@@ -292,24 +128,6 @@ pub async fn export_apkg_for_selection(
     Ok(export_path)
 }
 
-/// 获取文档的所有卡片（用于导出预览）
-#[tauri::command]
-#[allow(non_snake_case)] // Tauri 前端传入 camelCase 参数名
-pub async fn get_document_cards(
-    documentId: String,
-    state: State<'_, AppState>,
-) -> Result<Vec<crate::models::AnkiCard>> {
-    println!("获取文档的所有卡片: {}", documentId);
-
-    let cards = state
-        .anki_database
-        .get_cards_for_document(&documentId)
-        .map_err(|e| AppError::database(format!("获取文档卡片失败: {}", e)))?;
-
-    println!("找到 {} 张卡片", cards.len());
-    Ok(cards)
-}
-
 /// 分页查询卡片库（Prompt C）
 #[tauri::command]
 pub async fn list_anki_library_cards(
@@ -335,18 +153,6 @@ pub async fn list_anki_library_cards(
         page_size,
         total,
     })
-}
-
-/// 🔧 Phase 1: 恢复卡住的制卡任务（崩溃恢复）
-#[tauri::command]
-pub async fn recover_stuck_document_tasks(state: State<'_, AppState>) -> Result<u32> {
-    log::info!("[enhanced_anki] Recovering stuck document tasks...");
-    let count = state
-        .anki_database
-        .recover_stuck_document_tasks()
-        .map_err(|e| AppError::database(format!("恢复卡住任务失败: {}", e)))?;
-    log::info!("[enhanced_anki] Recovered {} stuck tasks", count);
-    Ok(count)
 }
 
 /// 🔧 Phase 1: 按 document_id 汇总任务列表（任务管理页面）

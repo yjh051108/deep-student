@@ -17,15 +17,13 @@ import { inferApiCapabilities } from '@/utils/apiCapabilityEngine';
 import { type UnifiedModelInfo } from '@/components/shared/UnifiedModelSelector';
 import type { UseSettingsVendorStateDeps } from './hookDepsTypes';
 import { buildVendorOrderMap, sortApiConfigsByVendorOrder, sortVendorsBySettingsOrder } from '@/utils/modelSorting';
-import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+import { invoke as nativeInvoke } from '@/runtime/native';
 import {
   getVisibleVoiceInputApis,
   type VoiceInputSelectableApi,
 } from '@/voice-input/modelSelection';
 
 const console = debugLog as Pick<typeof debugLog, 'log' | 'warn' | 'error' | 'info' | 'debug'>;
-const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__;
-const invoke = isTauri ? tauriInvoke : null;
 
 export function useSettingsVendorState(deps: UseSettingsVendorStateDeps) {
   const { resolvedApiConfigs, vendorLoading, vendorSaving, vendors, modelProfiles, modelAssignments, config, t, loading, upsertVendor, upsertModelProfile, deleteModelProfile, persistAssignments, persistModelProfiles, persistVendors, refreshVendors, refreshProfiles, refreshApiConfigsFromBackend, isSmallScreen, setScreenPosition, setRightPanelType, activeTab, deleteVendorById: deleteVendor } = deps;
@@ -132,34 +130,27 @@ export function useSettingsVendorState(deps: UseSettingsVendorStateDeps) {
     setTestingApi(api.id);
 
     try {
-      if (invoke) {
-        // 使用用户指定的模型名称进行测试
-        // 传递 vendor_id 以便后端从安全存储获取真实密钥
-        const vendorId = api.vendorId;
-        const result = await invoke('test_api_connection', {
-          // 双写兼容：后端参数为 snake_case（api_key, api_base），某些桥接层可能校验 camelCase
-          api_key: api.apiKey,
-          apiKey: api.apiKey,
-          api_base: api.baseUrl,
-          apiBase: api.baseUrl,
-          api_protocol: api.apiProtocol,
-          apiProtocol: api.apiProtocol,
-          supports_openai_responses: api.supportsOpenAIResponses,
-          supportsOpenAIResponses: api.supportsOpenAIResponses,
-          model: api.model, // 传递用户指定的模型名称
-          vendor_id: vendorId, // 传递供应商 ID 以便后端获取真实密钥
-          vendorId: vendorId,
-        });
-        
-        if (result) {
-          showGlobalNotification('success', t('settings:notifications.api_test_success', { name: api.name, model: api.model }));
-        } else {
-          showGlobalNotification('error', t('settings:notifications.api_test_failed', { name: api.name, model: api.model }));
-        }
+      // 使用用户指定的模型名称进行测试
+      // 传递 vendor_id 以便后端从已保存的 Go vendor config 中解析真实密钥
+      const vendorId = api.vendorId;
+      const result = await nativeInvoke<boolean>('test_api_connection', {
+        api_key: api.apiKey,
+        apiKey: api.apiKey,
+        api_base: api.baseUrl,
+        apiBase: api.baseUrl,
+        api_protocol: api.apiProtocol,
+        apiProtocol: api.apiProtocol,
+        supports_openai_responses: api.supportsOpenAIResponses,
+        supportsOpenAIResponses: api.supportsOpenAIResponses,
+        model: api.model,
+        vendor_id: vendorId,
+        vendorId: vendorId,
+      });
+
+      if (result) {
+        showGlobalNotification('success', t('settings:notifications.api_test_success', { name: api.name, model: api.model }));
       } else {
-        // 浏览器环境模拟
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        showGlobalNotification('success', t('settings:notifications.api_test_success_mock', { name: api.name }));
+        showGlobalNotification('error', t('settings:notifications.api_test_failed', { name: api.name, model: api.model }));
       }
     } catch (error) {
       console.error('连接测试失败:', error);

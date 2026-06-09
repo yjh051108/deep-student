@@ -8,9 +8,7 @@ pub mod config;
 pub mod global;
 pub mod http_transport;
 pub mod protocol_version;
-pub mod rmcp;
 pub mod sse_transport;
-pub mod stdio_proxy;
 pub mod transport;
 pub mod types;
 

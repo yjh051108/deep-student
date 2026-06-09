@@ -1,0 +1,6235 @@
+{
+  "generatedAt": "2026-06-09T14:09:04.809Z",
+  "uniqueCommands": 606,
+  "byDomain": {
+    "backup-governance": 63,
+    "chat": 107,
+    "llm": 11,
+    "mcp": 4,
+    "other": 112,
+    "pdf-ocr": 3,
+    "settings": 49,
+    "study-data": 238,
+    "system": 19
+  },
+  "byStatus": {
+    "defer": 172,
+    "delete": 26,
+    "merge": 328,
+    "replace": 80
+  },
+  "items": [
+    {
+      "name": "data_governance_get_maintenance_status",
+      "count": 2,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/App.tsx",
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_get_migration_status",
+      "count": 2,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts",
+        "src/hooks/useMigrationStatusListener.ts"
+      ]
+    },
+    {
+      "name": "cloud_sync_delete_version",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/cloudStorageApi.ts"
+      ]
+    },
+    {
+      "name": "cloud_sync_download",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/cloudStorageApi.ts"
+      ]
+    },
+    {
+      "name": "cloud_sync_get_status",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/cloudStorageApi.ts"
+      ]
+    },
+    {
+      "name": "cloud_sync_list_versions",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/cloudStorageApi.ts"
+      ]
+    },
+    {
+      "name": "cloud_sync_upload",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/cloudStorageApi.ts"
+      ]
+    },
+    {
+      "name": "data_governance_backup_and_export_zip",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_backup_tiered",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_cancel_backup",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_check_disk_space_for_restore",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_cleanup_persisted_jobs",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_delete_backup",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_detect_conflicts",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_detect_prune_gap",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_export_sync_data",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_export_zip",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_get_asset_types",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_get_backup_job",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_get_backup_list",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_get_database_status",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_get_migration_diagnostic_report",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_get_schema_registry",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_get_sync_status",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_import_sync_data",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_import_zip",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_list_backup_jobs",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_list_record_conflicts",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_list_resumable_jobs",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_mark_asset_deleted",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_mark_blob_deleted",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_purge_resolved_conflicts",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_resolve_conflicts",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_resolve_record_conflict",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_restore_backup",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_restore_with_assets",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_resume_backup_job",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_run_backup",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_run_sync",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_run_sync_with_progress",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_scan_assets",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_verify_backup",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_verify_backup_with_assets",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "fix_database_schema",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/systemApi.ts"
+      ]
+    },
+    {
+      "name": "optimize_lance_database",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/systemApi.ts"
+      ]
+    },
+    {
+      "name": "purge_all_database_files",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/systemApi.ts"
+      ]
+    },
+    {
+      "name": "clear_test_slot",
+      "count": 2,
+      "domain": "backup-governance",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/components/DataImportExport.tsx"
+      ]
+    },
+    {
+      "name": "clear_test_slots",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/utils/systemApi.ts"
+      ]
+    },
+    {
+      "name": "cloud_sync_get_device_id",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/utils/cloudStorageApi.ts"
+      ]
+    },
+    {
+      "name": "create_test_database_in_slot",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/components/DataImportExport.tsx"
+      ]
+    },
+    {
+      "name": "create_test_files_in_slot",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/components/DataImportExport.tsx"
+      ]
+    },
+    {
+      "name": "data_governance_auto_verify_latest_backup",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_cleanup_audit_logs",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_get_audit_logs",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_run_health_check",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_run_slot_c_empty_db_test",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "data_governance_run_slot_d_clone_db_test",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "debug_get_database_stats",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/api/debugDatabase.ts"
+      ]
+    },
+    {
+      "name": "debug_get_raw_mistake",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/api/debugDatabase.ts"
+      ]
+    },
+    {
+      "name": "debug_get_raw_mistakes_batch",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/api/debugDatabase.ts"
+      ]
+    },
+    {
+      "name": "debug_verify_mistake_integrity",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/api/debugDatabase.ts"
+      ]
+    },
+    {
+      "name": "get_test_slot_info",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/utils/systemApi.ts"
+      ]
+    },
+    {
+      "name": "memory_get_audit_logs",
+      "count": 1,
+      "domain": "backup-governance",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_cancel_variant",
+      "count": 1,
+      "domain": "chat",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/features/chat/adapters/TauriAdapter.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_delete_variant",
+      "count": 1,
+      "domain": "chat",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/features/chat/adapters/TauriAdapter.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_retry_variant",
+      "count": 1,
+      "domain": "chat",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/features/chat/adapters/TauriAdapter.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_retry_variants",
+      "count": 1,
+      "domain": "chat",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/features/chat/adapters/TauriAdapter.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_switch_variant",
+      "count": 1,
+      "domain": "chat",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/features/chat/adapters/TauriAdapter.ts"
+      ]
+    },
+    {
+      "name": "export_multi_template_apkg",
+      "count": 1,
+      "domain": "chat",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/features/chat/anki/index.tsx"
+      ]
+    },
+    {
+      "name": "chat_v2_update_block_tool_output",
+      "count": 2,
+      "domain": "chat",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/features/chat/debug/chatAnkiIntegrationTestPlugin.ts",
+        "src/features/chat/plugins/blocks/ankiCardsBlock.tsx"
+      ]
+    },
+    {
+      "name": "chat_v2_send",
+      "count": 1,
+      "domain": "chat",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/features/chat/dev/playground/eval/cases.ts"
+      ]
+    },
+    {
+      "name": "vfs_delete_attachment",
+      "count": 1,
+      "domain": "chat",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/features/chat/debug/attachmentPipelineTestPlugin.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_update_session_settings",
+      "count": 10,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/components/ModernSidebar.tsx",
+        "src/features/chat/adapters/TauriAdapter.ts",
+        "src/features/chat/hooks/useSessionManagement.ts",
+        "src/features/chat/pages/ChatV2Page.tsx",
+        "src/features/chat/pages/SessionItemRenderer.tsx",
+        "src/features/chat/pages/useChatPageEvents.ts",
+        "src/features/chat/pages/useSessionEdit.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_list_sessions",
+      "count": 9,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/components/ModernSidebar.tsx",
+        "src/features/chat/hooks/useSessionManagement.ts",
+        "src/features/chat/pages/useSessionLifecycle.ts",
+        "src/features/settings/components/data-governance/ChatSessionArchiveTab.tsx",
+        "src/hooks/useChatV2Stats.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_delete_session",
+      "count": 8,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/debug/attachmentPipelineTestPlugin.ts",
+        "src/features/chat/debug/chatAnkiIntegrationTestPlugin.ts",
+        "src/features/chat/debug/chatInteractionTestPlugin.ts",
+        "src/features/chat/debug/citationTestPlugin.ts",
+        "src/features/chat/debug/multiVariantTestPlugin.ts",
+        "src/features/chat/hooks/useSessionManagement.ts",
+        "src/features/chat/pages/useSessionLifecycle.ts",
+        "src/features/settings/components/data-governance/ChatSessionArchiveTab.tsx"
+      ]
+    },
+    {
+      "name": "vfs_get_resource",
+      "count": 7,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/pages/useChatPageEvents.ts",
+        "src/features/chat/resources/api.ts",
+        "src/features/learning-hub/LearningHubPage.tsx",
+        "src/main.tsx"
+      ]
+    },
+    {
+      "name": "chat_v2_list_groups",
+      "count": 5,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/components/ModernSidebar.tsx",
+        "src/features/chat/hooks/useGroupManagement.ts",
+        "src/features/settings/components/data-governance/ChatSessionArchiveTab.tsx"
+      ]
+    },
+    {
+      "name": "chat_v2_load_session",
+      "count": 5,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/adapters/TauriAdapter.ts",
+        "src/features/chat/debug/citationTestPlugin.ts",
+        "src/features/chat/debug/multiVariantTestPlugin.ts",
+        "src/features/chat/debug/sessionSwitchPerf.ts",
+        "src/features/chat/workspace/components/SubagentContainer.tsx"
+      ]
+    },
+    {
+      "name": "chat_v2_upsert_streaming_block",
+      "count": 5,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/adapters/TauriAdapter.ts",
+        "src/features/chat/plugins/events/toolCall.ts",
+        "src/features/chat/workspace/events.ts"
+      ]
+    },
+    {
+      "name": "vfs_upload_attachment",
+      "count": 4,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/components/QuestionInlineEditor.tsx",
+        "src/features/chat/context/vfsRefApi.ts",
+        "src/features/chat/debug/attachmentPipelineTestPlugin.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_archive_session",
+      "count": 3,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/components/ModernSidebar.tsx",
+        "src/features/chat/adapters/TauriAdapter.ts",
+        "src/features/chat/pages/useSessionEdit.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_count_sessions",
+      "count": 3,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/pages/useSessionLifecycle.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_update_group",
+      "count": 3,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/components/ModernSidebar.tsx",
+        "src/features/chat/hooks/useGroupManagement.ts"
+      ]
+    },
+    {
+      "name": "skill_read_file",
+      "count": 3,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/skills/api.ts",
+        "src/features/chat/skills/loader.ts"
+      ]
+    },
+    {
+      "name": "vfs_resolve_resource_refs",
+      "count": 3,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/context/vfsRefApi.ts",
+        "src/features/chat/context/vfsRefApiEnhancements.ts",
+        "src/features/learning-hub/apps/views/FileContentView.tsx"
+      ]
+    },
+    {
+      "name": "chat_v2_ask_user_respond",
+      "count": 2,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/components/input-bar/BlockingAskUserBar.tsx",
+        "src/features/chat/plugins/blocks/askUserBlock.tsx"
+      ]
+    },
+    {
+      "name": "chat_v2_create_session",
+      "count": 2,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/adapters/TauriAdapter.ts",
+        "src/features/chat/core/session/createSessionWithDefaults.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_get_group",
+      "count": 2,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/core/store/restoreActions.ts",
+        "src/features/learning-hub/LearningHubSidebar.tsx"
+      ]
+    },
+    {
+      "name": "chat_v2_get_session",
+      "count": 2,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/pages/useChatPageEvents.ts",
+        "src/features/chat/pages/useSessionLifecycle.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_reorder_groups",
+      "count": 2,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/components/ModernSidebar.tsx",
+        "src/features/chat/hooks/useGroupManagement.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_send_message",
+      "count": 2,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/adapters/TauriAdapter.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_tool_approval_respond",
+      "count": 2,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/components/ToolApprovalCard.tsx",
+        "src/features/chat/components/input-bar/BlockingApprovalBar.tsx"
+      ]
+    },
+    {
+      "name": "skill_list_directories",
+      "count": 2,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/skills/api.ts",
+        "src/features/chat/skills/loader.ts"
+      ]
+    },
+    {
+      "name": "vfs_create_or_reuse",
+      "count": 2,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/resources/api.ts",
+        "src/services/resourceSyncService.ts"
+      ]
+    },
+    {
+      "name": "vfs_get_resource_path",
+      "count": 2,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/context/vfsRefApi.ts",
+        "src/main.tsx"
+      ]
+    },
+    {
+      "name": "chat_v2_add_tag",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/hooks/useSessionTags.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_branch_session",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/components/MessageItem.tsx"
+      ]
+    },
+    {
+      "name": "chat_v2_cancel_stream",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/adapters/TauriAdapter.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_clear_approval_history",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/settings/components/McpToolsSection.tsx"
+      ]
+    },
+    {
+      "name": "chat_v2_continue_message",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/adapters/TauriAdapter.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_create_group",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/hooks/useGroupManagement.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_delete_message",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/adapters/TauriAdapter.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_edit_and_resend",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/adapters/TauriAdapter.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_get_message_summary",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/hooks/useChatV2Stats.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_list_all_tags",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/hooks/useSessionTags.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_move_session_to_group",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/pages/useSessionEdit.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_remove_tag",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/hooks/useSessionTags.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_retry_message",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/adapters/TauriAdapter.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_save_session",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/adapters/TauriAdapter.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_update_block_content",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/adapters/TauriAdapter.ts"
+      ]
+    },
+    {
+      "name": "skill_create",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/skills/api.ts"
+      ]
+    },
+    {
+      "name": "skill_delete",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/skills/api.ts"
+      ]
+    },
+    {
+      "name": "skill_update",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/skills/api.ts"
+      ]
+    },
+    {
+      "name": "vfs_decrement_ref",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/resources/api.ts"
+      ]
+    },
+    {
+      "name": "vfs_get_resource_ref_count",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/context/vfsRefApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_get_resource_refs",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/context/vfsRefApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_increment_ref",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/resources/api.ts"
+      ]
+    },
+    {
+      "name": "vfs_resource_exists",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/resources/api.ts"
+      ]
+    },
+    {
+      "name": "vfs_update_path_cache",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/context/vfsRefApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_update_resource_hash",
+      "count": 1,
+      "domain": "chat",
+      "status": "merge",
+      "rationale": "Fold into a smaller chat service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/context/vfsRefApi.ts"
+      ]
+    },
+    {
+      "name": "cancel_stream",
+      "count": 6,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/essay-grading/useEssayGradingStream.ts",
+        "src/features/chat/components/TranslationPopover.tsx",
+        "src/translation/useTranslationStream.ts"
+      ]
+    },
+    {
+      "name": "call_llm_for_boundary",
+      "count": 3,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/components/anki/cardforge/engines/CardAgent.ts",
+        "src/components/anki/cardforge/engines/SegmentEngine.ts",
+        "src/features/chat/components/ExplainPopover.tsx"
+      ]
+    },
+    {
+      "name": "delete_anki_card",
+      "count": 2,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/services/ankiApiAdapter.ts",
+        "src/utils/chatApi.ts"
+      ]
+    },
+    {
+      "name": "import_question_bank_stream",
+      "count": 2,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/components/ExamSheetUploader.tsx"
+      ]
+    },
+    {
+      "name": "chat_v2_anki_cards_result",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/components/anki/cardforge/engines/CardAgent.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_canvas_edit_result",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/notes/hooks/useCanvasAIEditHandler.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_check_migration_status",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_get_anki_cards_from_block_by_document_id",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/components/anki/TaskDashboardPage.tsx"
+      ]
+    },
+    {
+      "name": "chat_v2_migrate_legacy_chat",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_perform_ocr",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/chat/plugins/modes/analysis.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_rollback_migration",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "chat_v2_search_content",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/chat/hooks/useContentSearch.ts"
+      ]
+    },
+    {
+      "name": "clear_message_embeddings",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/utils/testApi.ts"
+      ]
+    },
+    {
+      "name": "continue_unified_chat_stream",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "essay_grading_create_session",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/essay-grading/essayGradingApi.ts"
+      ]
+    },
+    {
+      "name": "essay_grading_delete_session",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/essay-grading/essayGradingApi.ts"
+      ]
+    },
+    {
+      "name": "essay_grading_get_session",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/essay-grading/essayGradingApi.ts"
+      ]
+    },
+    {
+      "name": "essay_grading_list_sessions",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/essay-grading/essayGradingApi.ts"
+      ]
+    },
+    {
+      "name": "essay_grading_stream",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/essay-grading/useEssayGradingStream.ts"
+      ]
+    },
+    {
+      "name": "essay_grading_update_session",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/essay-grading/essayGradingApi.ts"
+      ]
+    },
+    {
+      "name": "export_anki_cards",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/utils/chatApi.ts"
+      ]
+    },
+    {
+      "name": "get_chat_index_stats",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/utils/chatApi.ts"
+      ]
+    },
+    {
+      "name": "list_anki_library_cards",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/utils/chatApi.ts"
+      ]
+    },
+    {
+      "name": "list_document_sessions",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/components/anki/TaskDashboardPage.tsx"
+      ]
+    },
+    {
+      "name": "rebuild_chat_fts",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/utils/chatApi.ts"
+      ]
+    },
+    {
+      "name": "translate_text_stream",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/translation/useTranslationStream.ts"
+      ]
+    },
+    {
+      "name": "unified_generate_tag_hierarchy_preview_stream",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "unified_get_force_graph_data",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/utils/chatApi.ts"
+      ]
+    },
+    {
+      "name": "unified_import_tag_hierarchy_from_content_stream",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "unified_search_cards",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/utils/chatApi.ts"
+      ]
+    },
+    {
+      "name": "update_anki_card",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/utils/chatApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_download_paper",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/chat/plugins/blocks/paperSave.tsx"
+      ]
+    },
+    {
+      "name": "workspace_cancel_agent",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/chat/workspace/api.ts"
+      ]
+    },
+    {
+      "name": "workspace_cancel_sleep",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/chat/workspace/api.ts"
+      ]
+    },
+    {
+      "name": "workspace_close",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/chat/workspace/api.ts"
+      ]
+    },
+    {
+      "name": "workspace_create",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/chat/workspace/api.ts"
+      ]
+    },
+    {
+      "name": "workspace_create_agent",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/chat/workspace/api.ts"
+      ]
+    },
+    {
+      "name": "workspace_delete",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/chat/workspace/api.ts"
+      ]
+    },
+    {
+      "name": "workspace_get",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/chat/workspace/api.ts"
+      ]
+    },
+    {
+      "name": "workspace_get_context",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/chat/workspace/api.ts"
+      ]
+    },
+    {
+      "name": "workspace_get_document",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/chat/workspace/api.ts"
+      ]
+    },
+    {
+      "name": "workspace_list_agents",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/chat/workspace/api.ts"
+      ]
+    },
+    {
+      "name": "workspace_list_all",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/chat/workspace/api.ts"
+      ]
+    },
+    {
+      "name": "workspace_list_documents",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/chat/workspace/api.ts"
+      ]
+    },
+    {
+      "name": "workspace_list_messages",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/chat/workspace/api.ts"
+      ]
+    },
+    {
+      "name": "workspace_manual_wake",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/chat/workspace/api.ts"
+      ]
+    },
+    {
+      "name": "workspace_restore_executions",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/chat/workspace/api.ts"
+      ]
+    },
+    {
+      "name": "workspace_run_agent",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/chat/workspace/api.ts"
+      ]
+    },
+    {
+      "name": "workspace_send_message",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/chat/workspace/api.ts"
+      ]
+    },
+    {
+      "name": "workspace_set_context",
+      "count": 1,
+      "domain": "chat",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/chat/workspace/api.ts"
+      ]
+    },
+    {
+      "name": "llm_usage_by_caller",
+      "count": 1,
+      "domain": "llm",
+      "status": "merge",
+      "rationale": "Fold into a smaller llm service instead of preserving per-command shape.",
+      "files": [
+        "src/api/llmUsageApi.ts"
+      ]
+    },
+    {
+      "name": "llm_usage_by_model",
+      "count": 1,
+      "domain": "llm",
+      "status": "merge",
+      "rationale": "Fold into a smaller llm service instead of preserving per-command shape.",
+      "files": [
+        "src/api/llmUsageApi.ts"
+      ]
+    },
+    {
+      "name": "llm_usage_cleanup",
+      "count": 1,
+      "domain": "llm",
+      "status": "merge",
+      "rationale": "Fold into a smaller llm service instead of preserving per-command shape.",
+      "files": [
+        "src/api/llmUsageApi.ts"
+      ]
+    },
+    {
+      "name": "llm_usage_daily",
+      "count": 1,
+      "domain": "llm",
+      "status": "merge",
+      "rationale": "Fold into a smaller llm service instead of preserving per-command shape.",
+      "files": [
+        "src/api/llmUsageApi.ts"
+      ]
+    },
+    {
+      "name": "llm_usage_get_trends",
+      "count": 1,
+      "domain": "llm",
+      "status": "merge",
+      "rationale": "Fold into a smaller llm service instead of preserving per-command shape.",
+      "files": [
+        "src/api/llmUsageApi.ts"
+      ]
+    },
+    {
+      "name": "llm_usage_recent",
+      "count": 1,
+      "domain": "llm",
+      "status": "merge",
+      "rationale": "Fold into a smaller llm service instead of preserving per-command shape.",
+      "files": [
+        "src/api/llmUsageApi.ts"
+      ]
+    },
+    {
+      "name": "llm_usage_summary",
+      "count": 1,
+      "domain": "llm",
+      "status": "merge",
+      "rationale": "Fold into a smaller llm service instead of preserving per-command shape.",
+      "files": [
+        "src/api/llmUsageApi.ts"
+      ]
+    },
+    {
+      "name": "essay_grading_get_models",
+      "count": 1,
+      "domain": "llm",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/essay-grading/essayGradingApi.ts"
+      ]
+    },
+    {
+      "name": "get_anki_model_names",
+      "count": 1,
+      "domain": "llm",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/services/ankiConnectClient.ts"
+      ]
+    },
+    {
+      "name": "llm_generate_answer_with_context",
+      "count": 1,
+      "domain": "llm",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/utils/systemApi.ts"
+      ]
+    },
+    {
+      "name": "voice_input_transcribe",
+      "count": 1,
+      "domain": "llm",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/voice-input/providerRegistry.ts"
+      ]
+    },
+    {
+      "name": "mcp_stdio_close",
+      "count": 4,
+      "domain": "mcp",
+      "status": "merge",
+      "rationale": "Fold into a smaller mcp service instead of preserving per-command shape.",
+      "files": [
+        "src/main.tsx",
+        "src/mcp/tauriStdioTransport.ts"
+      ]
+    },
+    {
+      "name": "mcp_stdio_send",
+      "count": 3,
+      "domain": "mcp",
+      "status": "merge",
+      "rationale": "Fold into a smaller mcp service instead of preserving per-command shape.",
+      "files": [
+        "src/main.tsx",
+        "src/mcp/tauriStdioTransport.ts"
+      ]
+    },
+    {
+      "name": "mcp_stdio_start",
+      "count": 3,
+      "domain": "mcp",
+      "status": "merge",
+      "rationale": "Fold into a smaller mcp service instead of preserving per-command shape.",
+      "files": [
+        "src/main.tsx",
+        "src/mcp/tauriStdioTransport.ts"
+      ]
+    },
+    {
+      "name": "preheat_mcp_tools",
+      "count": 1,
+      "domain": "mcp",
+      "status": "merge",
+      "rationale": "Fold into a smaller mcp service instead of preserving per-command shape.",
+      "files": [
+        "src/mcp/mcpService.ts"
+      ]
+    },
+    {
+      "name": "unified_create_tag",
+      "count": 3,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "unified_outline_update_tag",
+      "count": 3,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_unwatch",
+      "count": 2,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "memory_get_tree",
+      "count": 2,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_list",
+      "count": 2,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_search",
+      "count": 2,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "unified_fix_tag_hierarchy",
+      "count": 2,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts",
+        "src/utils/systemApi.ts"
+      ]
+    },
+    {
+      "name": "unified_get_tags",
+      "count": 2,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "add_cards_to_anki_connect",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/components/anki/cardforge/engines/CardAgent.ts"
+      ]
+    },
+    {
+      "name": "auto_install_package_manager",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/systemApi.ts"
+      ]
+    },
+    {
+      "name": "batch_export_cards",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/services/ankiApiAdapter.ts"
+      ]
+    },
+    {
+      "name": "check_all_package_managers",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/systemApi.ts"
+      ]
+    },
+    {
+      "name": "check_anki_connect_status",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/services/ankiConnectClient.ts"
+      ]
+    },
+    {
+      "name": "check_package_manager",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/systemApi.ts"
+      ]
+    },
+    {
+      "name": "cloud_storage_check_connection",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/cloudStorageApi.ts"
+      ]
+    },
+    {
+      "name": "cloud_storage_delete",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/cloudStorageApi.ts"
+      ]
+    },
+    {
+      "name": "cloud_storage_exists",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/cloudStorageApi.ts"
+      ]
+    },
+    {
+      "name": "cloud_storage_get",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/cloudStorageApi.ts"
+      ]
+    },
+    {
+      "name": "cloud_storage_is_s3_enabled",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/cloudStorageApi.ts"
+      ]
+    },
+    {
+      "name": "cloud_storage_list",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/cloudStorageApi.ts"
+      ]
+    },
+    {
+      "name": "cloud_storage_put",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/cloudStorageApi.ts"
+      ]
+    },
+    {
+      "name": "cloud_storage_stat",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/cloudStorageApi.ts"
+      ]
+    },
+    {
+      "name": "delete_memory_internalization_tasks",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "dismiss_pending_memory_candidates",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_copy",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "dstu_export",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "dstu_export_formats",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "dstu_move",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "dstu_move_many",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "dstu_rename",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "dstu_search_in_folder",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "dstu_watch",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "essay_grading_create_custom_mode",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/essay-grading/essayGradingApi.ts"
+      ]
+    },
+    {
+      "name": "essay_grading_delete_custom_mode",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/essay-grading/essayGradingApi.ts"
+      ]
+    },
+    {
+      "name": "essay_grading_get_mode",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/essay-grading/essayGradingApi.ts"
+      ]
+    },
+    {
+      "name": "essay_grading_get_modes",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/essay-grading/essayGradingApi.ts"
+      ]
+    },
+    {
+      "name": "essay_grading_get_round",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/essay-grading/essayGradingApi.ts"
+      ]
+    },
+    {
+      "name": "essay_grading_get_rounds",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/essay-grading/essayGradingApi.ts"
+      ]
+    },
+    {
+      "name": "essay_grading_has_builtin_override",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/essay-grading/essayGradingApi.ts"
+      ]
+    },
+    {
+      "name": "essay_grading_list_custom_modes",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/essay-grading/essayGradingApi.ts"
+      ]
+    },
+    {
+      "name": "essay_grading_reset_builtin_mode",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/essay-grading/essayGradingApi.ts"
+      ]
+    },
+    {
+      "name": "essay_grading_toggle_favorite",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/essay-grading/essayGradingApi.ts"
+      ]
+    },
+    {
+      "name": "essay_grading_update_custom_mode",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/essay-grading/essayGradingApi.ts"
+      ]
+    },
+    {
+      "name": "export_cards_as_apkg_with_template",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/services/ankiApiAdapter.ts"
+      ]
+    },
+    {
+      "name": "export_knowledge_graph_data",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "generate_anki_cards_for_segment",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/services/ankiApiAdapter.ts"
+      ]
+    },
+    {
+      "name": "get_all_tags",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "get_anki_deck_names",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/services/ankiConnectClient.ts"
+      ]
+    },
+    {
+      "name": "get_anki_stats",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/components/anki/TaskDashboardPage.tsx"
+      ]
+    },
+    {
+      "name": "get_ann_status",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/App.tsx"
+      ]
+    },
+    {
+      "name": "get_app_version",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/systemApi.ts"
+      ]
+    },
+    {
+      "name": "get_data_space_info",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/systemApi.ts"
+      ]
+    },
+    {
+      "name": "get_detailed_tag_hierarchy",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "get_learning_heatmap",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/hooks/useLearningHeatmap.ts"
+      ]
+    },
+    {
+      "name": "get_security_status",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/components/SecurityStatusIndicator.tsx"
+      ]
+    },
+    {
+      "name": "get_storage_info",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/systemApi.ts"
+      ]
+    },
+    {
+      "name": "get_tag_mapping_history",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "graph_batch_reorder_tags",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "graph_reorder_tag",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "import_knowledge_graph_data",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "initialize_default_tag_hierarchy",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/systemApi.ts"
+      ]
+    },
+    {
+      "name": "initialize_unified_irec",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "mark_data_space_pending_switch_to_inactive",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/systemApi.ts"
+      ]
+    },
+    {
+      "name": "mark_pending_memory_candidates_saved",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "memory_add_relation",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_batch_delete",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_batch_move",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_create_root_folder",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_delete",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_export_all",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_get_related",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_get_tags",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_move_to_folder",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_read",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_remove_relation",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_set_auto_create_subfolders",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_set_auto_extract_frequency",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_set_default_category",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_set_privacy_mode",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_set_root_folder",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_update_by_id",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_update_tags",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_write",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_write_batch",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "memory_write_smart",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "plugin:clipboard-manager|write_text",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/clipboardUtils.ts"
+      ]
+    },
+    {
+      "name": "purge_active_data_dir_now",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/systemApi.ts"
+      ]
+    },
+    {
+      "name": "restart_app",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/systemApi.ts"
+      ]
+    },
+    {
+      "name": "search_existing_tags",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "secure_delete_cloud_credentials",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/cloudStorageApi.ts"
+      ]
+    },
+    {
+      "name": "secure_get_cloud_credentials",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/cloudStorageApi.ts"
+      ]
+    },
+    {
+      "name": "secure_store_is_available",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/cloudStorageApi.ts"
+      ]
+    },
+    {
+      "name": "tts_check_available",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/tts.ts"
+      ]
+    },
+    {
+      "name": "tts_speak",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/tts.ts"
+      ]
+    },
+    {
+      "name": "tts_stop",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/tts.ts"
+      ]
+    },
+    {
+      "name": "unified_add_card_tag",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "unified_auto_generate_tag_hierarchy",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "unified_delete_card",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "unified_delete_tag",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "unified_export_tag_hierarchy",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "unified_generate_missing_tag_vectors",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/systemApi.ts"
+      ]
+    },
+    {
+      "name": "unified_get_card",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "unified_get_card_stats",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "unified_get_card_tags",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "unified_get_tag_hierarchy",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "unified_graph_recall_sql",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "unified_import_tag_hierarchy_from_content",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "unified_outline_move_tag",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "unified_remove_card_tag",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "unified_track_card_access",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "unified_update_card",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "update_card_content",
+      "count": 1,
+      "domain": "other",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "memory_to_anki_document",
+      "count": 1,
+      "domain": "pdf-ocr",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "ocr_extract_text",
+      "count": 1,
+      "domain": "pdf-ocr",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/testApi.ts"
+      ]
+    },
+    {
+      "name": "parse_document_from_base64",
+      "count": 1,
+      "domain": "pdf-ocr",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/components/TranslateWorkbench.tsx"
+      ]
+    },
+    {
+      "name": "save_setting",
+      "count": 22,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/components/WebSearchAdvancedConfig.tsx",
+        "src/features/settings/components/McpEditorSection.tsx",
+        "src/features/settings/components/McpToolsSection.tsx",
+        "src/main.tsx",
+        "src/runtime/native.ts"
+      ]
+    },
+    {
+      "name": "get_api_configurations",
+      "count": 12,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/components/NoTagTreeShadPanel.tsx",
+        "src/components/WebSearchAdvancedConfig.tsx",
+        "src/features/chat/components/TranslationPopover.tsx",
+        "src/features/chat/components/input-bar/ModelPicker.tsx",
+        "src/features/chat/components/input-bar/RuntimeModelMenu.tsx",
+        "src/features/chat/hooks/useAvailableModels.ts",
+        "src/features/chat/plugins/chat/ModelPanel.tsx",
+        "src/features/chat/plugins/chat/MultiSelectModelPanel.tsx",
+        "src/features/settings/components/Settings.tsx",
+        "src/features/settings/components/useSettingsConfig.ts",
+        "src/utils/configApi.ts",
+        "src/voice-input/runtimeConfig.ts"
+      ]
+    },
+    {
+      "name": "get_model_assignments",
+      "count": 12,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/components/NoTagTreeShadPanel.tsx",
+        "src/components/WebSearchAdvancedConfig.tsx",
+        "src/features/chat/adapters/TauriAdapter.ts",
+        "src/features/chat/components/TranslationPopover.tsx",
+        "src/features/chat/components/input-bar/ModelPicker.tsx",
+        "src/features/chat/hooks/useAvailableModels.ts",
+        "src/features/chat/plugins/chat/ModelPanel.tsx",
+        "src/features/chat/plugins/chat/MultiSelectModelPanel.tsx",
+        "src/features/chat/readiness/readinessGate.ts",
+        "src/features/settings/components/Settings.tsx",
+        "src/features/settings/components/useSettingsConfig.ts",
+        "src/utils/configApi.ts"
+      ]
+    },
+    {
+      "name": "get_setting",
+      "count": 8,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/components/WebSearchAdvancedConfig.tsx",
+        "src/main.tsx",
+        "src/mcp/mcpService.ts",
+        "src/runtime/native.ts"
+      ]
+    },
+    {
+      "name": "get_vendor_configs",
+      "count": 4,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/components/input-bar/ModelPicker.tsx",
+        "src/features/chat/components/input-bar/RuntimeModelMenu.tsx",
+        "src/features/chat/plugins/chat/ModelPanel.tsx",
+        "src/utils/configApi.ts"
+      ]
+    },
+    {
+      "name": "save_model_assignments",
+      "count": 4,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/components/input-bar/ModelPicker.tsx",
+        "src/features/chat/plugins/chat/ModelPanel.tsx",
+        "src/features/chat/plugins/chat/MultiSelectModelPanel.tsx",
+        "src/utils/configApi.ts"
+      ]
+    },
+    {
+      "name": "update_ocr_engine_priority",
+      "count": 3,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/settings/components/OcrEngineCard.tsx"
+      ]
+    },
+    {
+      "name": "delete_setting",
+      "count": 2,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/settings/components/McpToolsSection.tsx",
+        "src/runtime/native.ts"
+      ]
+    },
+    {
+      "name": "get_available_ocr_models",
+      "count": 2,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/settings/components/OcrEngineCard.tsx",
+        "src/features/settings/components/SiliconFlowSection.tsx"
+      ]
+    },
+    {
+      "name": "get_model_profiles",
+      "count": 2,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/components/input-bar/InputBarV2.tsx",
+        "src/utils/configApi.ts"
+      ]
+    },
+    {
+      "name": "test_api_connection",
+      "count": 2,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/settings/components/useSettingsVendorState.tsx",
+        "src/utils/settingsApi.ts"
+      ]
+    },
+    {
+      "name": "add_ocr_engine",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/settings/components/OcrEngineCard.tsx"
+      ]
+    },
+    {
+      "name": "chat_v2_delete_group",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/settings/components/data-governance/ChatSessionArchiveTab.tsx"
+      ]
+    },
+    {
+      "name": "chat_v2_restore_group",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/settings/components/data-governance/ChatSessionArchiveTab.tsx"
+      ]
+    },
+    {
+      "name": "chat_v2_restore_session",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/settings/components/data-governance/ChatSessionArchiveTab.tsx"
+      ]
+    },
+    {
+      "name": "check_api_config_status",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/components/ApiConfigRecovery.tsx"
+      ]
+    },
+    {
+      "name": "cleanup_orphaned_images",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/configApi.ts"
+      ]
+    },
+    {
+      "name": "get_backup_config",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "get_cn_whitelist_config",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/components/WebSearchAdvancedConfig.tsx"
+      ]
+    },
+    {
+      "name": "get_enhanced_statistics",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/settingsApi.ts"
+      ]
+    },
+    {
+      "name": "get_mcp_status",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/settingsApi.ts"
+      ]
+    },
+    {
+      "name": "get_model_adapter_options",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/settings/components/ShadApiEditModal.tsx"
+      ]
+    },
+    {
+      "name": "get_ocr_engine_type",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/settings/components/ModelsTab.tsx"
+      ]
+    },
+    {
+      "name": "get_ocr_engines",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/settings/components/OcrEngineCard.tsx"
+      ]
+    },
+    {
+      "name": "get_ocr_thinking_enabled",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/settings/components/OcrEngineCard.tsx"
+      ]
+    },
+    {
+      "name": "get_provider_strategies_config",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/settings/components/EngineSettingsSection.tsx"
+      ]
+    },
+    {
+      "name": "get_settings_by_prefix",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/settings/components/McpToolsSection.tsx"
+      ]
+    },
+    {
+      "name": "get_statistics",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/settingsApi.ts"
+      ]
+    },
+    {
+      "name": "memory_get_config",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "reload_mcp_client",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/settingsApi.ts"
+      ]
+    },
+    {
+      "name": "remove_ocr_engine",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/settings/components/OcrEngineCard.tsx"
+      ]
+    },
+    {
+      "name": "restore_default_api_configs",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/components/ApiConfigRecovery.tsx"
+      ]
+    },
+    {
+      "name": "save_api_configurations",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/configApi.ts"
+      ]
+    },
+    {
+      "name": "save_available_ocr_models",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/settings/components/SiliconFlowSection.tsx"
+      ]
+    },
+    {
+      "name": "save_image_from_base64_path",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/configApi.ts"
+      ]
+    },
+    {
+      "name": "save_model_profiles",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/configApi.ts"
+      ]
+    },
+    {
+      "name": "save_provider_strategies_config",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/settings/components/EngineSettingsSection.tsx"
+      ]
+    },
+    {
+      "name": "save_settings",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/runtime/native.ts"
+      ]
+    },
+    {
+      "name": "save_vendor_configs",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/configApi.ts"
+      ]
+    },
+    {
+      "name": "save_webview_settings",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/systemApi.ts"
+      ]
+    },
+    {
+      "name": "set_backup_config",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "set_ocr_thinking_enabled",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/settings/components/OcrEngineCard.tsx"
+      ]
+    },
+    {
+      "name": "test_all_search_engines",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/settingsApi.ts"
+      ]
+    },
+    {
+      "name": "test_ocr_engine",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/features/settings/components/OcrEngineTestPanel.tsx"
+      ]
+    },
+    {
+      "name": "test_search_engine",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/settingsApi.ts"
+      ]
+    },
+    {
+      "name": "test_web_search_connectivity",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/settingsApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_create_attachment_root_folder",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/api/attachmentConfigApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_get_attachment_config",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/api/attachmentConfigApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_set_attachment_root_folder",
+      "count": 1,
+      "domain": "settings",
+      "status": "merge",
+      "rationale": "Fold into a smaller settings service instead of preserving per-command shape.",
+      "files": [
+        "src/api/attachmentConfigApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_debug_index_status",
+      "count": 1,
+      "domain": "study-data",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/api/vfsRagApi.ts"
+      ]
+    },
+    {
+      "name": "get_all_custom_templates",
+      "count": 8,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/components/anki/TaskDashboardPage.tsx",
+        "src/data/ankiTemplates.ts",
+        "src/main.tsx",
+        "src/utils/forceImportTemplates.ts"
+      ]
+    },
+    {
+      "name": "import_builtin_templates",
+      "count": 6,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/components/TemplateManagementPage.tsx",
+        "src/components/TemplateManager.tsx",
+        "src/data/ankiTemplates.ts",
+        "src/main.tsx",
+        "src/utils/forceImportTemplates.ts"
+      ]
+    },
+    {
+      "name": "qbank_list_questions",
+      "count": 6,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/components/QuestionFavoritesView.tsx",
+        "src/hooks/useQuestionBankSession.ts",
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "notes_get_pref",
+      "count": 5,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/notes/NotesContext.tsx",
+        "src/features/notes/NotesSidebar.tsx",
+        "src/features/notes/NotesSidebarV2.tsx",
+        "src/features/notes/notes-split/hooks/useNotesTabs.ts",
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "delete_document_session",
+      "count": 4,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/components/anki/TaskDashboardPage.tsx",
+        "src/components/anki/cardforge/engines/CardAgent.ts",
+        "src/components/anki/cardforge/engines/TaskController.ts",
+        "src/services/ankiApiAdapter.ts"
+      ]
+    },
+    {
+      "name": "get_default_template_id",
+      "count": 4,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/data/ankiTemplates.ts",
+        "src/main.tsx"
+      ]
+    },
+    {
+      "name": "get_document_tasks",
+      "count": 4,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/components/anki/TaskDashboardPage.tsx",
+        "src/components/anki/cardforge/engines/CardAgent.ts",
+        "src/components/anki/cardforge/engines/TaskController.ts"
+      ]
+    },
+    {
+      "name": "notes_set_pref",
+      "count": 4,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/notes/NotesContext.tsx",
+        "src/features/notes/NotesSidebar.tsx",
+        "src/features/notes/NotesSidebarV2.tsx",
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "qbank_cancel_grading",
+      "count": 4,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/hooks/useQbankAiGrading.ts"
+      ]
+    },
+    {
+      "name": "get_document_cards",
+      "count": 3,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/components/anki/TaskDashboardPage.tsx",
+        "src/features/chat/debug/chatAnkiIntegrationTestPlugin.ts"
+      ]
+    },
+    {
+      "name": "import_custom_templates_bulk",
+      "count": 3,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/components/TemplateManagementPage.tsx",
+        "src/components/TemplateManager.tsx",
+        "src/main.tsx"
+      ]
+    },
+    {
+      "name": "pause_document_processing",
+      "count": 3,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/components/anki/TaskDashboardPage.tsx",
+        "src/components/anki/cardforge/engines/CardAgent.ts",
+        "src/components/anki/cardforge/engines/TaskController.ts"
+      ]
+    },
+    {
+      "name": "qbank_refresh_stats",
+      "count": 3,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/hooks/useQuestionBankSession.ts",
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_toggle_favorite",
+      "count": 3,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/learning-hub/apps/views/ExamContentView.tsx",
+        "src/hooks/useQuestionBankSession.ts",
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_update_question",
+      "count": 3,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/components/QuestionInlineEditor.tsx",
+        "src/features/learning-hub/apps/views/ExamContentView.tsx",
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "resume_document_processing",
+      "count": 3,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/components/anki/TaskDashboardPage.tsx",
+        "src/components/anki/cardforge/engines/CardAgent.ts",
+        "src/components/anki/cardforge/engines/TaskController.ts"
+      ]
+    },
+    {
+      "name": "trigger_task_processing",
+      "count": 3,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/components/anki/TaskDashboardPage.tsx",
+        "src/components/anki/cardforge/engines/CardAgent.ts",
+        "src/components/anki/cardforge/engines/TaskController.ts"
+      ]
+    },
+    {
+      "name": "update_custom_template",
+      "count": 3,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/data/ankiTemplates.ts",
+        "src/main.tsx"
+      ]
+    },
+    {
+      "name": "vfs_get_attachment_content",
+      "count": 3,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsFileApi.ts",
+        "src/components/QuestionBankEditor.tsx",
+        "src/components/QuestionInlineEditor.tsx"
+      ]
+    },
+    {
+      "name": "create_custom_template",
+      "count": 2,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/data/ankiTemplates.ts",
+        "src/main.tsx"
+      ]
+    },
+    {
+      "name": "export_questions_csv",
+      "count": 2,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/components/QuestionBankExportDialog.tsx",
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "export_template",
+      "count": 2,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/components/TemplateManagementPage.tsx",
+        "src/main.tsx"
+      ]
+    },
+    {
+      "name": "get_csv_preview",
+      "count": 2,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/components/CsvImportDialog.tsx",
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "import_questions_csv",
+      "count": 2,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/components/CsvImportDialog.tsx",
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "notes_save_asset",
+      "count": 2,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/components/crepe/features/imageUpload.ts",
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "qbank_delete_question",
+      "count": 2,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/learning-hub/apps/views/ExamContentView.tsx",
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_get_question",
+      "count": 2,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/hooks/useQuestionBankSession.ts",
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_get_stats",
+      "count": 2,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/hooks/useQuestionBankSession.ts",
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_get_sync_conflicts",
+      "count": 2,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_submit_answer",
+      "count": 2,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/hooks/useQuestionBankSession.ts",
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "set_default_template",
+      "count": 2,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/data/ankiTemplates.ts",
+        "src/main.tsx"
+      ]
+    },
+    {
+      "name": "start_enhanced_document_processing",
+      "count": 2,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/components/anki/cardforge/engines/CardAgent.ts",
+        "src/services/ankiApiAdapter.ts"
+      ]
+    },
+    {
+      "name": "textbooks_add",
+      "count": 2,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/adapters/textbookDstuAdapter.ts",
+        "src/utils/chatApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_get_file_content",
+      "count": 2,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsFileApi.ts",
+        "src/features/notes/PreviewPanel.tsx"
+      ]
+    },
+    {
+      "name": "vfs_get_mindmap",
+      "count": 2,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/mindmap/api/mindmapApi.ts",
+        "src/features/mindmap/components/mindmap/MindMapEmbed.tsx"
+      ]
+    },
+    {
+      "name": "vfs_get_mindmap_content",
+      "count": 2,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/mindmap/api/mindmapApi.ts",
+        "src/features/mindmap/components/mindmap/MindMapEmbed.tsx"
+      ]
+    },
+    {
+      "name": "canvas_note_append",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "canvas_note_read",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "canvas_note_replace",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "canvas_note_set",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "delete_custom_template",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/data/ankiTemplates.ts"
+      ]
+    },
+    {
+      "name": "dstu_batch_move",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/pathApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_build_path",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/pathApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_create",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "dstu_delete",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "dstu_delete_many",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "dstu_empty_trash",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/trashApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_folder_add_item",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/folderApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_folder_create",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/folderApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_folder_delete",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/folderApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_folder_get",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/folderApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_folder_get_all_resources",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/folderApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_folder_get_breadcrumbs",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/folderApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_folder_get_items",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/folderApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_folder_get_tree",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/folderApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_folder_list",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/folderApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_folder_move",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/folderApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_folder_move_item",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/folderApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_folder_remove_item",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/folderApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_folder_rename",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/folderApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_folder_reorder",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/folderApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_folder_reorder_items",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/folderApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_folder_set_expanded",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/folderApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_get",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "dstu_get_content",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "dstu_get_path_by_id",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/pathApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_get_resource_by_path",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/pathApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_get_resource_location",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/pathApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_list",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "dstu_list_deleted",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "dstu_list_trash",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/trashApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_move_to_folder",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/pathApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_parse_path",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/pathApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_permanently_delete",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/trashApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_purge",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "dstu_purge_all",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "dstu_refresh_path_cache",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/pathApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_restore",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "dstu_restore_many",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "dstu_search",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "dstu_set_favorite",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "dstu_set_metadata",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "dstu_soft_delete",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/trashApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_trash_restore",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api/trashApi.ts"
+      ]
+    },
+    {
+      "name": "dstu_update",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/api.ts"
+      ]
+    },
+    {
+      "name": "get_document_processing_state",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/components/anki/cardforge/engines/TaskController.ts"
+      ]
+    },
+    {
+      "name": "get_document_state",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/components/anki/cardforge/engines/TaskController.ts"
+      ]
+    },
+    {
+      "name": "get_image_as_base64",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/runtime/native.ts"
+      ]
+    },
+    {
+      "name": "notes_assets_bulk_delete",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "notes_assets_index_scan",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "notes_assets_scan_orphans",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "notes_db_stats",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "notes_db_vacuum",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "notes_delete_asset",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "notes_empty_trash",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "notes_export",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "notes_export_single",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "notes_hard_delete",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "notes_import",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "notes_import_markdown",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/adapters/notesDstuAdapter.ts"
+      ]
+    },
+    {
+      "name": "notes_import_markdown_batch",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/dstu/adapters/notesDstuAdapter.ts"
+      ]
+    },
+    {
+      "name": "notes_list_assets",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "notes_list_deleted",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "notes_list_tags",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "notes_mentions_search",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "notes_resolve_asset_path",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "notes_restore",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "notes_search",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/utils/notesApi.ts"
+      ]
+    },
+    {
+      "name": "pomodoro_create_record",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/pomodoro/api.ts"
+      ]
+    },
+    {
+      "name": "pomodoro_get_record",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/pomodoro/api.ts"
+      ]
+    },
+    {
+      "name": "pomodoro_list_by_todo",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/pomodoro/api.ts"
+      ]
+    },
+    {
+      "name": "pomodoro_list_today",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/pomodoro/api.ts"
+      ]
+    },
+    {
+      "name": "pomodoro_today_stats",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/pomodoro/api.ts"
+      ]
+    },
+    {
+      "name": "qbank_ai_grade",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/hooks/useQbankAiGrading.ts"
+      ]
+    },
+    {
+      "name": "qbank_batch_delete_questions",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/learning-hub/apps/views/ExamContentView.tsx"
+      ]
+    },
+    {
+      "name": "qbank_batch_resolve_conflicts",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_generate_mock_exam",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_generate_paper",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_get_activity_heatmap",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_get_check_in_calendar",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_get_daily_practice",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_get_history",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/components/QuestionHistoryView.tsx"
+      ]
+    },
+    {
+      "name": "qbank_get_knowledge_stats_with_comparison",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_get_learning_trend",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_rebuild_fts_index",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_reset_progress",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_reset_questions_progress",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/learning-hub/apps/views/ExamContentView.tsx"
+      ]
+    },
+    {
+      "name": "qbank_resolve_sync_conflict",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_search_questions",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_set_sync_enabled",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_start_timed_practice",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_submit_mock_exam",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_sync_check",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "qbank_update_sync_config",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/questionBankStore.ts"
+      ]
+    },
+    {
+      "name": "recover_stuck_document_tasks",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/components/anki/TaskDashboardPage.tsx"
+      ]
+    },
+    {
+      "name": "resource_check_sync_needed",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/services/resourceSyncService.ts"
+      ]
+    },
+    {
+      "name": "resource_sync_exam",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/services/resourceSyncService.ts"
+      ]
+    },
+    {
+      "name": "resource_sync_note",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/services/resourceSyncService.ts"
+      ]
+    },
+    {
+      "name": "resource_sync_textbook_pages",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/services/resourceSyncService.ts"
+      ]
+    },
+    {
+      "name": "review_plan_batch_create",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/reviewPlanStore.ts"
+      ]
+    },
+    {
+      "name": "review_plan_create",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/reviewPlanStore.ts"
+      ]
+    },
+    {
+      "name": "review_plan_create_for_exam",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/reviewPlanStore.ts"
+      ]
+    },
+    {
+      "name": "review_plan_delete",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/reviewPlanStore.ts"
+      ]
+    },
+    {
+      "name": "review_plan_get_by_question",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/reviewPlanStore.ts"
+      ]
+    },
+    {
+      "name": "review_plan_get_calendar_data",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/reviewPlanStore.ts"
+      ]
+    },
+    {
+      "name": "review_plan_get_due",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/reviewPlanStore.ts"
+      ]
+    },
+    {
+      "name": "review_plan_get_due_with_filter",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/reviewPlanStore.ts"
+      ]
+    },
+    {
+      "name": "review_plan_get_history",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/reviewPlanStore.ts"
+      ]
+    },
+    {
+      "name": "review_plan_get_or_create",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/reviewPlanStore.ts"
+      ]
+    },
+    {
+      "name": "review_plan_get_stats",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/reviewPlanStore.ts"
+      ]
+    },
+    {
+      "name": "review_plan_list_by_exam",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/reviewPlanStore.ts"
+      ]
+    },
+    {
+      "name": "review_plan_process",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/reviewPlanStore.ts"
+      ]
+    },
+    {
+      "name": "review_plan_refresh_stats",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/reviewPlanStore.ts"
+      ]
+    },
+    {
+      "name": "review_plan_resume",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/reviewPlanStore.ts"
+      ]
+    },
+    {
+      "name": "review_plan_suspend",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/stores/reviewPlanStore.ts"
+      ]
+    },
+    {
+      "name": "save_anki_cards",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/services/ankiApiAdapter.ts"
+      ]
+    },
+    {
+      "name": "textbooks_update_bookmarks",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsFileApi.ts"
+      ]
+    },
+    {
+      "name": "todo_create_item",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/todo/api.ts"
+      ]
+    },
+    {
+      "name": "todo_create_list",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/todo/api.ts"
+      ]
+    },
+    {
+      "name": "todo_delete_item",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/todo/api.ts"
+      ]
+    },
+    {
+      "name": "todo_delete_list",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/todo/api.ts"
+      ]
+    },
+    {
+      "name": "todo_ensure_inbox",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/todo/api.ts"
+      ]
+    },
+    {
+      "name": "todo_get_active_summary",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/todo/api.ts"
+      ]
+    },
+    {
+      "name": "todo_get_item",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/todo/api.ts"
+      ]
+    },
+    {
+      "name": "todo_get_list",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/todo/api.ts"
+      ]
+    },
+    {
+      "name": "todo_list_completed",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/todo/api.ts"
+      ]
+    },
+    {
+      "name": "todo_list_items",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/todo/api.ts"
+      ]
+    },
+    {
+      "name": "todo_list_lists",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/todo/api.ts"
+      ]
+    },
+    {
+      "name": "todo_list_overdue",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/todo/api.ts"
+      ]
+    },
+    {
+      "name": "todo_list_today",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/todo/api.ts"
+      ]
+    },
+    {
+      "name": "todo_list_upcoming",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/todo/api.ts"
+      ]
+    },
+    {
+      "name": "todo_reorder_items",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/todo/api.ts"
+      ]
+    },
+    {
+      "name": "todo_search",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/todo/api.ts"
+      ]
+    },
+    {
+      "name": "todo_toggle_item",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/todo/api.ts"
+      ]
+    },
+    {
+      "name": "todo_toggle_list_favorite",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/todo/api.ts"
+      ]
+    },
+    {
+      "name": "todo_update_item",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/todo/api.ts"
+      ]
+    },
+    {
+      "name": "todo_update_list",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/todo/api.ts"
+      ]
+    },
+    {
+      "name": "vfs_batch_index_pending",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_cancel_pdf_processing",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsPdfProcessingApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_clear_resource_ocr",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_create_mindmap",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/mindmap/api/mindmapApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_delete_file",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsFileApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_delete_mindmap",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/mindmap/api/mindmapApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_delete_resource_index",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_get_all_index_status",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_get_attachment",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/learning-hub/apps/views/ImageContentView.tsx"
+      ]
+    },
+    {
+      "name": "vfs_get_batch_pdf_processing_status",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsPdfProcessingApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_get_blob_base64",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/chat/context/blobApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_get_file",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsFileApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_get_mindmap_version",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/mindmap/components/mindmap/MindMapEmbed.tsx"
+      ]
+    },
+    {
+      "name": "vfs_get_mindmap_version_content",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/mindmap/components/mindmap/MindMapEmbed.tsx"
+      ]
+    },
+    {
+      "name": "vfs_get_pdf_page_image",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsRagApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_get_pdf_processing_status",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsPdfProcessingApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_get_resource_ocr_info",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_get_resource_text_chunks",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_get_resource_units",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_list_dimensions",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_list_embedding_dims",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_list_files",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsFileApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_list_mindmaps",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/mindmap/api/mindmapApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_rag_search",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsRagApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_reindex_resource",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_reindex_unit",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_retry_pdf_processing",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsPdfProcessingApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_set_mindmap_favorite",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/mindmap/api/mindmapApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_start_pdf_processing",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsPdfProcessingApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_sync_resource_units",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_unified_batch_index",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_unified_index_status",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_update_mindmap",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/features/mindmap/api/mindmapApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_upload_file",
+      "count": 1,
+      "domain": "study-data",
+      "status": "merge",
+      "rationale": "Fold into a smaller study-data service instead of preserving per-command shape.",
+      "files": [
+        "src/api/vfsFileApi.ts"
+      ]
+    },
+    {
+      "name": "qbank_crop_source_image",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/components/ImageCropDialog.tsx"
+      ]
+    },
+    {
+      "name": "qbank_get_source_images",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/components/ImageCropDialog.tsx"
+      ]
+    },
+    {
+      "name": "unified_generate_tag_hierarchy_preview",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "update_exam_sheet_cards",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/questionBankApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_assign_dimension_model",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_clear_default_embedding_dimension",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_clear_media_cache",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "vfs_create_dimension",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_delete_dimension",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_diagnose_lance_schema",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/vfsRagApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_get_default_embedding_dimension",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_get_dimension_range",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_get_lance_stats",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/vfsRagApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_get_media_cache_stats",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/dataGovernance.ts"
+      ]
+    },
+    {
+      "name": "vfs_get_multimodal_index_capability",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/features/learning-hub/views/IndexStatusView.tsx"
+      ]
+    },
+    {
+      "name": "vfs_get_preset_dimensions",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_multimodal_delete",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/vfsRagApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_multimodal_index",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/vfsRagApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_multimodal_index_resource",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/vfsRagApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_multimodal_search",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/vfsRagApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_multimodal_stats",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/vfsRagApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_optimize_lance",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/vfsRagApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_reset_all_index_state",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/vfsRagApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_reset_disabled_to_pending",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/vfsRagApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_reset_indexed_without_embeddings",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/vfsRagApi.ts"
+      ]
+    },
+    {
+      "name": "vfs_set_default_embedding_dimension",
+      "count": 1,
+      "domain": "study-data",
+      "status": "replace",
+      "rationale": "Keep the product capability, but redesign the Go API and data flow.",
+      "files": [
+        "src/api/vfsUnifiedIndexApi.ts"
+      ]
+    },
+    {
+      "name": "essay_grading_save_builtin_override",
+      "count": 1,
+      "domain": "system",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/essay-grading/essayGradingApi.ts"
+      ]
+    },
+    {
+      "name": "memory_get_profile",
+      "count": 1,
+      "domain": "system",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/api/memoryApi.ts"
+      ]
+    },
+    {
+      "name": "plugin:clipboard-manager|read_text",
+      "count": 1,
+      "domain": "system",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/clipboardUtils.ts"
+      ]
+    },
+    {
+      "name": "secure_save_cloud_credentials",
+      "count": 1,
+      "domain": "system",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/cloudStorageApi.ts"
+      ]
+    },
+    {
+      "name": "unified_log_metric_event",
+      "count": 1,
+      "domain": "system",
+      "status": "defer",
+      "rationale": "Not part of the first lean release slice; revisit after core workflows work.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "create_edge_case_test_files",
+      "count": 1,
+      "domain": "system",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/components/DataImportExport.tsx"
+      ]
+    },
+    {
+      "name": "create_symlink_test",
+      "count": 1,
+      "domain": "system",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/components/DataImportExport.tsx"
+      ]
+    },
+    {
+      "name": "essay_grading_get_latest_round_number",
+      "count": 1,
+      "domain": "system",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/essay-grading/essayGradingApi.ts"
+      ]
+    },
+    {
+      "name": "graph_recall_test",
+      "count": 1,
+      "domain": "system",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/utils/graphApi.ts"
+      ]
+    },
+    {
+      "name": "write_debug_logs",
+      "count": 1,
+      "domain": "system",
+      "status": "delete",
+      "rationale": "Likely debug/test/internal surface; exclude from lean release unless proven product-critical.",
+      "files": [
+        "src/utils/debugLogger.ts"
+      ]
+    },
+    {
+      "name": "report_frontend_log",
+      "count": 2,
+      "domain": "system",
+      "status": "merge",
+      "rationale": "Fold into a smaller system service instead of preserving per-command shape.",
+      "files": [
+        "src/main.tsx",
+        "src/runtime/native.ts"
+      ]
+    },
+    {
+      "name": "copy_file",
+      "count": 1,
+      "domain": "system",
+      "status": "merge",
+      "rationale": "Fold into a smaller system service instead of preserving per-command shape.",
+      "files": [
+        "src/runtime/native.ts"
+      ]
+    },
+    {
+      "name": "ensure_debug_log_dir",
+      "count": 1,
+      "domain": "system",
+      "status": "merge",
+      "rationale": "Fold into a smaller system service instead of preserving per-command shape.",
+      "files": [
+        "src/runtime/native.ts"
+      ]
+    },
+    {
+      "name": "get_app_data_dir",
+      "count": 1,
+      "domain": "system",
+      "status": "merge",
+      "rationale": "Fold into a smaller system service instead of preserving per-command shape.",
+      "files": [
+        "src/runtime/native.ts"
+      ]
+    },
+    {
+      "name": "get_file_size",
+      "count": 1,
+      "domain": "system",
+      "status": "merge",
+      "rationale": "Fold into a smaller system service instead of preserving per-command shape.",
+      "files": [
+        "src/runtime/native.ts"
+      ]
+    },
+    {
+      "name": "open_logs_folder",
+      "count": 1,
+      "domain": "system",
+      "status": "merge",
+      "rationale": "Fold into a smaller system service instead of preserving per-command shape.",
+      "files": [
+        "src/runtime/native.ts"
+      ]
+    },
+    {
+      "name": "read_file_bytes",
+      "count": 1,
+      "domain": "system",
+      "status": "merge",
+      "rationale": "Fold into a smaller system service instead of preserving per-command shape.",
+      "files": [
+        "src/runtime/native.ts"
+      ]
+    },
+    {
+      "name": "read_file_text",
+      "count": 1,
+      "domain": "system",
+      "status": "merge",
+      "rationale": "Fold into a smaller system service instead of preserving per-command shape.",
+      "files": [
+        "src/runtime/native.ts"
+      ]
+    },
+    {
+      "name": "save_text_to_file",
+      "count": 1,
+      "domain": "system",
+      "status": "merge",
+      "rationale": "Fold into a smaller system service instead of preserving per-command shape.",
+      "files": [
+        "src/runtime/native.ts"
+      ]
+    }
+  ]
+}

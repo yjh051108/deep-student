@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const invokeMock = vi.fn();
 const createMock = vi.fn();
 
-vi.mock('@tauri-apps/api/core', () => ({
+vi.mock('@/runtime/native', () => ({
   invoke: invokeMock,
 }));
 

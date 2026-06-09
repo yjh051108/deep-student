@@ -11,7 +11,6 @@ pub mod batch_operations;
 pub mod canonical_tools;
 pub mod cmd;
 pub mod commands;
-pub mod config_recovery;
 pub mod crash_logger;
 pub mod crypto;
 pub mod database;
@@ -63,13 +62,11 @@ pub mod pdf_protocol;
 pub mod pdfium_utils; // Pdfium 公共工具（库加载 + 文本提取）
 pub mod persistent_message_queue;
 pub mod providers;
-pub mod qbank_grading;
 pub mod question_bank_service;
 pub mod question_export_service;
 pub mod question_import_service;
 pub mod question_sync_service;
 pub mod reasoning_policy; // 思维链回传策略模块（文档 29 第 7 节）
-pub mod review_plan_service; // 复习计划服务（与错题系统集成）
 pub mod secure_store;
 pub mod services;
 pub mod session_manager;
@@ -843,7 +840,6 @@ pub fn run() {
             // =================================================
             crate::pdfium_utils::test_pdfium_status,
             crate::commands::get_app_version,
-            crate::commands::get_app_data_dir,
             crate::commands::process_pdf_ocr,
             crate::commands::init_pdf_ocr_session, // 🎯
             crate::commands::upload_pdf_ocr_page, // 🎯
@@ -869,71 +865,32 @@ pub fn run() {
             crate::commands::qbank_get_source_images,
             crate::commands::qbank_crop_source_image,
             crate::commands::qbank_remove_question_image,
-            // CSV 导入导出命令
-            crate::commands::import_questions_csv,
-            crate::commands::export_questions_csv,
-            crate::commands::get_csv_preview,
-            crate::commands::get_csv_exportable_fields,
             crate::commands::pin_images,
             crate::commands::unpin_images,
-
-            crate::commands::get_enhanced_statistics,
-
-            // 通用设置保存/读取命令
-            crate::commands::save_setting,
-            crate::commands::get_setting,
-            crate::commands::delete_setting,
-            crate::commands::get_settings_by_prefix,
             crate::commands::delete_settings_by_prefix,
             crate::voice_input::voice_input_transcribe,
             // 调试日志管理
             crate::commands::get_debug_logs_info,
             crate::commands::clear_debug_logs,
             crate::commands::cleanup_old_debug_logs,
-            crate::commands::ensure_debug_log_dir,
             crate::commands::read_debug_log_file,
             crate::commands::get_security_status,
-            crate::commands::get_cn_whitelist_config,
             crate::commands::detect_tool_conflicts,
             crate::commands::get_tools_namespace_config,
-            crate::commands::get_provider_strategies_config,
-            crate::commands::save_provider_strategies_config,
             crate::commands::get_feature_flags,
             crate::commands::update_feature_flag,
             crate::commands::is_feature_enabled,
             crate::commands::get_injection_budget_config,
             crate::commands::simulate_budget_allocation,
-            crate::commands::test_search_engine,
-            crate::commands::get_image_as_base64,
-            crate::commands::get_api_configurations,
-            crate::commands::save_api_configurations,
-            crate::commands::get_model_assignments,
-            crate::commands::save_model_assignments,
-            crate::commands::get_vendor_configs,
-            crate::commands::save_vendor_configs,
-            crate::commands::get_model_profiles,
-            crate::commands::save_model_profiles,
-            crate::commands::test_api_connection,
 
-            crate::commands::get_model_adapter_options,
             crate::commands::save_model_adapter_options,
             crate::commands::reset_model_adapter_options,
             crate::commands::estimate_tokens,
             // OCR 引擎配置命令
-            crate::commands::get_ocr_engines,
-            crate::commands::get_ocr_engine_type,
             crate::commands::set_ocr_engine_type,
-            crate::commands::get_ocr_thinking_enabled,
-            crate::commands::set_ocr_thinking_enabled,
             crate::commands::infer_ocr_engine_from_model,
             crate::commands::validate_ocr_model,
             crate::commands::get_ocr_prompt_template,
-            crate::commands::get_available_ocr_models,
-            crate::commands::save_available_ocr_models,
-            crate::commands::test_ocr_engine,
-            crate::commands::update_ocr_engine_priority,
-            crate::commands::add_ocr_engine,
-            crate::commands::remove_ocr_engine,
             // Lance 向量表优化命令
             crate::commands::optimize_chat_embeddings_table,
             crate::commands::create_performance_indexes,
@@ -948,7 +905,6 @@ pub fn run() {
             crate::commands::get_anki_deck_names,
             crate::commands::get_anki_model_names,
             crate::commands::create_anki_deck,
-            crate::commands::save_anki_cards,
             crate::commands::add_cards_to_anki_connect,
             crate::commands::import_anki_package,
             crate::commands::export_cards_as_apkg,
@@ -957,23 +913,13 @@ pub fn run() {
             // 🔧 P0-30 修复：注册批量导出命令
             crate::commands::batch_export_cards,
             crate::commands::save_json_file,
-            crate::commands::start_enhanced_document_processing,
-            crate::commands::pause_document_processing,
-            crate::commands::resume_document_processing,
-            crate::commands::get_document_processing_state,
-            crate::commands::get_document_task_counts,
-            crate::commands::trigger_task_processing,
-            crate::commands::get_document_tasks,
             crate::commands::get_task_cards,
             crate::commands::update_anki_card,
             crate::commands::delete_anki_card,
             crate::commands::delete_document_task,
-            crate::commands::delete_document_session,
             crate::commands::export_apkg_for_selection,
-            crate::commands::get_document_cards,
             crate::commands::list_anki_library_cards,
             crate::commands::export_anki_cards,
-            crate::cmd::enhanced_anki::recover_stuck_document_tasks,
             crate::cmd::enhanced_anki::list_document_sessions,
             crate::cmd::enhanced_anki::get_anki_stats,
             // 状态恢复相关命令
@@ -1011,40 +957,19 @@ pub fn run() {
             crate::essay_grading::essay_grading_save_builtin_override,
             crate::essay_grading::essay_grading_reset_builtin_mode,
             crate::essay_grading::essay_grading_has_builtin_override,
-            // Qbank AI Grading Commands
-            crate::qbank_grading::qbank_ai_grade,
-            crate::qbank_grading::qbank_cancel_grading,
             // TTS Commands (optional fallback for Web Speech API)
             crate::tts::tts_check_available,
             crate::tts::tts_speak,
             crate::tts::tts_stop,
-            crate::commands::read_file_text,
-            crate::commands::get_file_size,
             crate::commands::hash_file,
-            crate::commands::read_file_bytes,
-            crate::commands::copy_file,
-            crate::commands::save_text_to_file,
-            crate::commands::get_all_custom_templates,
             crate::commands::get_custom_template_by_id,
-            crate::commands::create_custom_template,
-            crate::commands::update_custom_template,
-            crate::commands::delete_custom_template,
-            crate::commands::export_template,
             crate::commands::import_template,
-            crate::commands::import_custom_templates_bulk,
-            crate::commands::import_builtin_templates,
-            crate::commands::set_default_template,
-            crate::commands::get_default_template_id,
             crate::commands::save_test_log,
             crate::commands::get_test_logs,
             crate::commands::open_log_file,
-            crate::commands::open_logs_folder,
-            crate::commands::report_frontend_log,
             crate::commands::save_template_debug_data,
             crate::commands::export_unified_backup_data,
             // 备份配置
-            crate::backup_config::get_backup_config,
-            crate::backup_config::set_backup_config,
             crate::backup_config::pick_backup_directory,
             crate::backup_config::clear_backup_directory,
             crate::backup_config::get_default_backup_directory,
@@ -1072,11 +997,6 @@ pub fn run() {
             // AnkiConnect compatibility
             crate::commands::anki_get_deck_names,
             // =================================================
-            // config_recovery.rs
-            // =================================================
-            crate::config_recovery::restore_default_api_configs,
-            crate::config_recovery::check_api_config_status,
-            // =================================================
             // debug_logger.rs
             // =================================================
             crate::debug_logger::write_debug_logs,
@@ -1092,63 +1012,25 @@ pub fn run() {
             crate::commands::optimize_lance_database,
             crate::commands::cancel_stream,
             // MCP 相关命令
-            crate::commands::get_mcp_status,
-            crate::commands::get_mcp_tools,
-            crate::commands::test_mcp_connection,
-            crate::commands::test_mcp_websocket,
-            crate::commands::test_mcp_sse,
-            crate::commands::test_mcp_http,
-            crate::commands::mcp_stdio_start,
-            crate::commands::mcp_stdio_send,
-            crate::commands::mcp_stdio_close,
             crate::commands::save_mcp_config,
-            crate::commands::reload_mcp_client,
             crate::commands::get_mcp_config,
             crate::commands::import_mcp_config,
             crate::commands::export_mcp_config,
-            crate::commands::test_all_search_engines
 
             // =============== Notes (isolated) ===============
-            ,crate::commands::notes_list,
+            crate::commands::notes_list,
             crate::commands::notes_list_meta,
             crate::commands::notes_create,
             crate::commands::notes_update,
             crate::commands::notes_set_favorite,
             crate::commands::notes_delete,
             crate::commands::notes_get,
-            crate::commands::notes_save_asset
-            ,crate::commands::notes_list_assets
-            ,crate::commands::notes_delete_asset
-            ,crate::commands::notes_resolve_asset_path
-            ,crate::commands::notes_restore
-            ,crate::commands::notes_assets_index_scan
-            ,crate::commands::notes_assets_scan_orphans
-            ,crate::commands::notes_assets_bulk_delete
-            ,crate::commands::notes_list_advanced
+            // Go/Wails NotesService handles notes assets, preferences, import/export, trash, tags, and search.
+            crate::commands::notes_list_advanced
             ,crate::commands::notes_get_subject_rag_config
             ,crate::commands::notes_update_subject_rag_config
-            ,crate::commands::notes_set_pref
-            ,crate::commands::notes_get_pref
-            ,crate::commands::notes_export
-            ,crate::commands::notes_export_single
-            ,crate::commands::notes_import
-            ,crate::commands::notes_import_markdown
-            ,crate::commands::notes_import_markdown_batch
-            ,crate::commands::notes_db_stats
-            ,crate::commands::notes_db_vacuum
-            ,crate::commands::notes_list_tags
-            ,crate::commands::notes_search
-            ,crate::commands::notes_mentions_search
             ,crate::commands::rag_rebuild_fts_index
             ,crate::commands::notes_rag_rebuild_fts_index
-            ,crate::commands::notes_hard_delete
-            ,crate::commands::notes_empty_trash
-            ,crate::commands::notes_list_deleted
-            // Canvas AI 工具命令（智能笔记）
-            ,crate::commands::canvas_note_read
-            ,crate::commands::canvas_note_append
-            ,crate::commands::canvas_note_replace
-            ,crate::commands::canvas_note_set
             // DataSpace (A/B) commands
             ,crate::data_space::get_data_space_info
             ,crate::data_space::mark_data_space_pending_switch_to_inactive
@@ -1172,49 +1054,20 @@ pub fn run() {
             ,crate::commands::set_test_run_id
             ,crate::commands::write_test_report
             // P0-27: WebView 设置备份/恢复命令
-            ,crate::commands::save_webview_settings
             ,crate::commands::load_webview_settings
             // =================================================
             // Chat V2 - 新版聊天后端命令
             // =================================================
-            ,crate::chat_v2::handlers::send_message::chat_v2_send_message
-            ,crate::chat_v2::handlers::send_message::chat_v2_cancel_stream
-            ,crate::chat_v2::handlers::send_message::chat_v2_retry_message
-            ,crate::chat_v2::handlers::send_message::chat_v2_edit_and_resend
-            ,crate::chat_v2::handlers::send_message::chat_v2_continue_message
-            ,crate::chat_v2::handlers::load_session::chat_v2_load_session
-            ,crate::chat_v2::handlers::manage_session::chat_v2_create_session
-            ,crate::chat_v2::handlers::manage_session::chat_v2_get_session
-            ,crate::chat_v2::handlers::manage_session::chat_v2_update_session_settings
-            ,crate::chat_v2::handlers::manage_session::chat_v2_archive_session
-            ,crate::chat_v2::handlers::manage_session::chat_v2_save_session
-            ,crate::chat_v2::handlers::block_actions::chat_v2_delete_message
             ,crate::chat_v2::handlers::block_actions::chat_v2_copy_block_content
-            ,crate::chat_v2::handlers::block_actions::chat_v2_update_block_content
             ,crate::chat_v2::handlers::block_actions::chat_v2_update_block_tool_output
             ,crate::chat_v2::handlers::block_actions::chat_v2_get_anki_cards_from_block_by_document_id
-            ,crate::chat_v2::handlers::block_actions::chat_v2_upsert_streaming_block
             ,crate::chat_v2::handlers::block_actions::chat_v2_anki_cards_result
-            ,crate::chat_v2::handlers::manage_session::chat_v2_list_sessions
             ,crate::chat_v2::handlers::manage_session::chat_v2_list_agent_sessions
-            ,crate::chat_v2::handlers::manage_session::chat_v2_count_sessions
             ,crate::chat_v2::handlers::manage_session::chat_v2_session_message_count
-            ,crate::chat_v2::handlers::manage_session::chat_v2_delete_session
             // P1-3: 清空回收站（一次性删除所有已删除会话）
             ,crate::chat_v2::handlers::manage_session::chat_v2_empty_deleted_sessions
             // P1-23: 会话软删除与恢复
             ,crate::chat_v2::handlers::manage_session::chat_v2_soft_delete_session
-            ,crate::chat_v2::handlers::manage_session::chat_v2_restore_session
-            // 会话分支
-            ,crate::chat_v2::handlers::manage_session::chat_v2_branch_session
-            // 会话分组命令
-            ,crate::chat_v2::handlers::group_handlers::chat_v2_create_group
-            ,crate::chat_v2::handlers::group_handlers::chat_v2_update_group
-            ,crate::chat_v2::handlers::group_handlers::chat_v2_delete_group
-            ,crate::chat_v2::handlers::group_handlers::chat_v2_get_group
-            ,crate::chat_v2::handlers::group_handlers::chat_v2_list_groups
-            ,crate::chat_v2::handlers::group_handlers::chat_v2_reorder_groups
-            ,crate::chat_v2::handlers::group_handlers::chat_v2_move_session_to_group
             ,crate::chat_v2::handlers::ocr::chat_v2_perform_ocr
             // 变体管理命令
             ,crate::chat_v2::handlers::variant_handlers::chat_v2_switch_variant
@@ -1223,11 +1076,7 @@ pub fn run() {
             ,crate::chat_v2::handlers::variant_handlers::chat_v2_retry_variants
             ,crate::chat_v2::handlers::variant_handlers::chat_v2_cancel_variant
             // 工具审批命令（敏感工具用户确认）
-            ,crate::chat_v2::handlers::approval_handlers::chat_v2_tool_approval_respond
             ,crate::chat_v2::handlers::approval_handlers::chat_v2_tool_approval_cancel
-            ,crate::chat_v2::handlers::approval_handlers::chat_v2_clear_approval_history
-            // 🆕 用户提问命令（轻量级问答交互）
-            ,crate::chat_v2::handlers::ask_user_handlers::chat_v2_ask_user_respond
             // Canvas 工具前端回调命令（完全前端模式）
             ,crate::chat_v2::handlers::canvas_handlers::chat_v2_canvas_edit_result
             // 数据迁移命令（旧版 chat_messages 迁移到 Chat V2）
@@ -1236,11 +1085,6 @@ pub fn run() {
             ,crate::chat_v2::handlers::migration::chat_v2_rollback_migration
             // 内容搜索 + 标签管理命令
             ,crate::chat_v2::handlers::search_handlers::chat_v2_search_content
-            ,crate::chat_v2::handlers::search_handlers::chat_v2_get_session_tags
-            ,crate::chat_v2::handlers::search_handlers::chat_v2_get_tags_batch
-            ,crate::chat_v2::handlers::search_handlers::chat_v2_add_tag
-            ,crate::chat_v2::handlers::search_handlers::chat_v2_remove_tag
-            ,crate::chat_v2::handlers::search_handlers::chat_v2_list_all_tags
             // 工作区命令（Agent 协作系统）
             ,crate::chat_v2::handlers::workspace_handlers::workspace_create
             ,crate::chat_v2::handlers::workspace_handlers::workspace_get
@@ -1269,21 +1113,9 @@ pub fn run() {
             ,crate::chat_v2::handlers::resource_handlers::resource_increment_ref
             ,crate::chat_v2::handlers::resource_handlers::resource_decrement_ref
             ,crate::chat_v2::handlers::resource_handlers::resource_get_versions_by_source
-            // 🆕 Skills 文件系统命令
-            ,crate::chat_v2::skills::skill_list_directories
-            ,crate::chat_v2::skills::skill_read_file
-            ,crate::chat_v2::skills::skill_create
-            ,crate::chat_v2::skills::skill_update
-            ,crate::chat_v2::skills::skill_delete
             // =================================================
             // VFS 虚拟文件系统命令
             // =================================================
-            // 🆕 资源操作（已启用 - 替代独立 resources.db）
-            ,crate::vfs::handlers::vfs_create_or_reuse
-            ,crate::vfs::handlers::vfs_get_resource
-            ,crate::vfs::handlers::vfs_resource_exists
-            ,crate::vfs::handlers::vfs_increment_ref
-            ,crate::vfs::handlers::vfs_decrement_ref
             // 笔记操作
             ,crate::vfs::handlers::vfs_create_note
             ,crate::vfs::handlers::vfs_update_note
@@ -1297,39 +1129,10 @@ pub fn run() {
             ,crate::vfs::handlers::vfs_list_translations
             ,crate::vfs::handlers::vfs_list_essays
             ,crate::vfs::handlers::vfs_search_all
-            // 路径缓存操作（文档 24 Prompt 3）
-            ,crate::vfs::handlers::vfs_get_resource_path
-            ,crate::vfs::handlers::vfs_update_path_cache
-            // 引用模式命令（Prompt 2）
-            ,crate::vfs::ref_handlers::vfs_get_resource_refs
-            ,crate::vfs::ref_handlers::vfs_resolve_resource_refs
-            ,crate::vfs::ref_handlers::vfs_get_resource_ref_count
-            // 附件操作命令
-            ,crate::vfs::handlers::vfs_upload_attachment
-            ,crate::vfs::handlers::vfs_get_attachment_content
-            ,crate::vfs::handlers::vfs_get_attachment
             ,crate::vfs::handlers::vfs_delete_attachment
-            ,crate::vfs::handlers::vfs_get_attachment_config
-            ,crate::vfs::handlers::vfs_set_attachment_root_folder
-            ,crate::vfs::handlers::vfs_create_attachment_root_folder
             ,crate::vfs::handlers::vfs_get_or_create_attachment_root_folder
-            // 统一文件操作命令（files 表）
-            ,crate::vfs::handlers::vfs_upload_file
             ,crate::vfs::handlers::vfs_download_paper
-            ,crate::vfs::handlers::vfs_get_file
-            ,crate::vfs::handlers::vfs_list_files
-            ,crate::vfs::handlers::vfs_delete_file
-            ,crate::vfs::handlers::vfs_get_file_content
-            // Blob 操作命令（整卷识别多模态改造 - 2025-12-09）
-            ,crate::vfs::handlers::vfs_get_blob_base64
-            // PDF 页面图片获取（支持 RAG 引用渲染 - 2026-01）
-            ,crate::vfs::handlers::vfs_get_pdf_page_image
             // PDF 预处理流水线命令（2026-02）
-            ,crate::vfs::handlers::vfs_get_pdf_processing_status
-            ,crate::vfs::handlers::vfs_cancel_pdf_processing
-            ,crate::vfs::handlers::vfs_retry_pdf_processing
-            ,crate::vfs::handlers::vfs_start_pdf_processing
-            ,crate::vfs::handlers::vfs_get_batch_pdf_processing_status
             ,crate::vfs::handlers::vfs_list_pending_pdf_processing
             // 媒体缓存管理命令
             ,crate::vfs::handlers::vfs_get_media_cache_stats
@@ -1337,11 +1140,9 @@ pub fn run() {
             // 整卷图片迁移命令（文档25）
             // VFS 统一知识管理命令
             ,crate::vfs::handlers::vfs_search
-            ,crate::vfs::handlers::vfs_reindex_resource
             ,crate::vfs::handlers::vfs_get_index_status
             ,crate::vfs::handlers::vfs_toggle_index_disabled
             ,crate::vfs::handlers::vfs_get_embedding_stats
-            ,crate::vfs::handlers::vfs_list_dimensions
             ,crate::vfs::handlers::vfs_assign_dimension_model
             ,crate::vfs::handlers::vfs_create_dimension
             ,crate::vfs::handlers::vfs_delete_dimension
@@ -1351,17 +1152,9 @@ pub fn run() {
             ,crate::vfs::handlers::vfs_get_default_embedding_dimension
             ,crate::vfs::handlers::vfs_clear_default_embedding_dimension
             ,crate::vfs::handlers::vfs_get_pending_resources
-            ,crate::vfs::handlers::vfs_batch_index_pending
             ,crate::vfs::handlers::vfs_set_indexing_config
             ,crate::vfs::handlers::vfs_get_indexing_config
             ,crate::vfs::handlers::vfs_get_multimodal_index_capability
-            ,crate::vfs::handlers::vfs_get_all_index_status
-            // VFS 数据透视命令（OCR 查看/清除、文本块查看）
-            ,crate::vfs::handlers::vfs_get_resource_ocr_info
-            ,crate::vfs::handlers::vfs_clear_resource_ocr
-            ,crate::vfs::handlers::vfs_get_resource_text_chunks
-            // VFS RAG 向量检索命令
-            ,crate::vfs::handlers::vfs_rag_search
             ,crate::vfs::handlers::vfs_get_lance_stats
             ,crate::vfs::handlers::vfs_optimize_lance
             // VFS 多模态统一管理命令（2026-01）
@@ -1370,44 +1163,6 @@ pub fn run() {
             ,crate::vfs::handlers::vfs_multimodal_stats
             ,crate::vfs::handlers::vfs_multimodal_delete
             ,crate::vfs::handlers::vfs_multimodal_index_resource
-            // 知识导图操作
-            ,crate::vfs::handlers::vfs_create_mindmap
-            ,crate::vfs::handlers::vfs_get_mindmap
-            ,crate::vfs::handlers::vfs_get_mindmap_content
-            ,crate::vfs::handlers::vfs_get_mindmap_versions
-            ,crate::vfs::handlers::vfs_get_mindmap_version_content
-            ,crate::vfs::handlers::vfs_get_mindmap_version
-            ,crate::vfs::handlers::vfs_update_mindmap
-            ,crate::vfs::handlers::vfs_delete_mindmap
-            ,crate::vfs::handlers::vfs_list_mindmaps
-            ,crate::vfs::handlers::vfs_set_mindmap_favorite
-            // 待办列表操作（独立于 VFS）
-            ,crate::vfs::todo_handlers::todo_create_list
-            ,crate::vfs::todo_handlers::todo_get_list
-            ,crate::vfs::todo_handlers::todo_list_lists
-            ,crate::vfs::todo_handlers::todo_update_list
-            ,crate::vfs::todo_handlers::todo_delete_list
-            ,crate::vfs::todo_handlers::todo_toggle_list_favorite
-            ,crate::vfs::todo_handlers::todo_ensure_inbox
-            ,crate::vfs::todo_handlers::todo_create_item
-            ,crate::vfs::todo_handlers::todo_get_item
-            ,crate::vfs::todo_handlers::todo_list_items
-            ,crate::vfs::todo_handlers::todo_update_item
-            ,crate::vfs::todo_handlers::todo_toggle_item
-            ,crate::vfs::todo_handlers::todo_delete_item
-            ,crate::vfs::todo_handlers::todo_reorder_items
-            ,crate::vfs::todo_handlers::todo_list_today
-            ,crate::vfs::todo_handlers::todo_list_overdue
-            ,crate::vfs::todo_handlers::todo_list_upcoming
-            ,crate::vfs::todo_handlers::todo_list_completed
-            ,crate::vfs::todo_handlers::todo_search
-            ,crate::vfs::todo_handlers::todo_get_active_summary
-            // 番茄钟命令
-            ,crate::vfs::todo_handlers::pomodoro_create_record
-            ,crate::vfs::todo_handlers::pomodoro_get_record
-            ,crate::vfs::todo_handlers::pomodoro_list_by_todo
-            ,crate::vfs::todo_handlers::pomodoro_today_stats
-            ,crate::vfs::todo_handlers::pomodoro_list_today
             // 索引诊断命令
             ,crate::vfs::handlers::vfs_debug_index_status
             ,crate::vfs::handlers::vfs_reset_disabled_to_pending
@@ -1415,39 +1170,13 @@ pub fn run() {
             ,crate::vfs::handlers::vfs_reset_all_index_state
             ,crate::vfs::handlers::vfs_diagnose_lance_schema
             // =================================================
-            // LLM Usage 统计命令
-            // =================================================
-            ,crate::llm_usage::handlers::llm_usage_get_trends
-            ,crate::llm_usage::handlers::llm_usage_by_model
-            ,crate::llm_usage::handlers::llm_usage_by_caller
-            ,crate::llm_usage::handlers::llm_usage_summary
-            ,crate::llm_usage::handlers::llm_usage_recent
-            ,crate::llm_usage::handlers::llm_usage_daily
-            ,crate::llm_usage::handlers::llm_usage_cleanup
-            // =================================================
             // DSTU 访达协议层命令
             // =================================================
-            ,crate::dstu::handlers::dstu_list
-            ,crate::dstu::handlers::dstu_get
-            ,crate::dstu::handlers::dstu_create
-            ,crate::dstu::handlers::dstu_update
-            ,crate::dstu::handlers::dstu_delete
-            ,crate::dstu::handlers::dstu_restore
-            ,crate::dstu::handlers::dstu_purge
-            ,crate::dstu::handlers::dstu_set_favorite
-            ,crate::dstu::handlers::dstu_list_deleted
-            ,crate::dstu::handlers::dstu_purge_all
             ,crate::dstu::handlers::dstu_move
             ,crate::dstu::handlers::dstu_rename
             ,crate::dstu::handlers::dstu_copy
-            ,crate::dstu::handlers::dstu_search
-            ,crate::dstu::handlers::dstu_get_content
-            ,crate::dstu::handlers::dstu_set_metadata
             ,crate::dstu::handlers::dstu_watch
             ,crate::dstu::handlers::dstu_unwatch
-            // 批量操作命令
-            ,crate::dstu::handlers::dstu_delete_many
-            ,crate::dstu::handlers::dstu_restore_many
             ,crate::dstu::handlers::dstu_move_many
             // 文件夹内搜索
             ,crate::dstu::handlers::dstu_search_in_folder
@@ -1456,18 +1185,6 @@ pub fn run() {
             // =================================================
             // 契约 E: 真实路径架构命令（文档 28 Prompt 5）
             // =================================================
-            // E1: 路径解析
-            ,crate::dstu::handlers::dstu_parse_path
-            ,crate::dstu::handlers::dstu_build_path
-            // E2: 资源定位
-            ,crate::dstu::handlers::dstu_get_resource_location
-            ,crate::dstu::handlers::dstu_get_resource_by_path
-            // E3: 移动操作
-            ,crate::dstu::handlers::dstu_move_to_folder
-            ,crate::dstu::handlers::dstu_batch_move
-            // E4: 路径缓存
-            ,crate::dstu::handlers::dstu_refresh_path_cache
-            ,crate::dstu::handlers::dstu_get_path_by_id
             // =================================================
             // DSTU 统一资源导出命令
             // =================================================
@@ -1475,81 +1192,20 @@ pub fn run() {
             ,crate::dstu::export::dstu_export
             // E5: Subject 迁移命令
             // =================================================
-            // DSTU 文件夹命令（文档 23 Prompt 3）
-            // =================================================
-            // D1: 文件夹管理
-            ,crate::dstu::folder_handlers::dstu_folder_create
-            ,crate::dstu::folder_handlers::dstu_folder_get
-            ,crate::dstu::folder_handlers::dstu_folder_rename
-            ,crate::dstu::folder_handlers::dstu_folder_delete
-            ,crate::dstu::folder_handlers::dstu_folder_move
-            ,crate::dstu::folder_handlers::dstu_folder_set_expanded
-            // D2: 内容管理
-            ,crate::dstu::folder_handlers::dstu_folder_add_item
-            ,crate::dstu::folder_handlers::dstu_folder_remove_item
-            ,crate::dstu::folder_handlers::dstu_folder_move_item
-            // D3: 查询
-            ,crate::dstu::folder_handlers::dstu_folder_list
-            ,crate::dstu::folder_handlers::dstu_folder_get_tree
-            ,crate::dstu::folder_handlers::dstu_folder_get_items
-            // D4: 上下文注入专用（文档 23 Prompt 4）
-            ,crate::dstu::folder_handlers::dstu_folder_get_all_resources
-            // D5: 排序
-            ,crate::dstu::folder_handlers::dstu_folder_reorder
-            ,crate::dstu::folder_handlers::dstu_folder_reorder_items
-            // D6: 面包屑导航
-            ,crate::dstu::folder_handlers::dstu_folder_get_breadcrumbs
-            // =================================================
-            // DSTU 回收站命令
-            // =================================================
-            ,crate::dstu::trash_handlers::dstu_soft_delete
-            ,crate::dstu::trash_handlers::dstu_trash_restore
-            ,crate::dstu::trash_handlers::dstu_list_trash
-            ,crate::dstu::trash_handlers::dstu_empty_trash
-            ,crate::dstu::trash_handlers::dstu_permanently_delete
-            // =================================================
             // 教材库命令
             // =================================================
-            ,crate::cmd::textbooks::textbooks_add
-            ,crate::cmd::textbooks::textbooks_update_bookmarks
             // =================================================
             // 智能题目集命令（Question Bank V2）
             // =================================================
-            ,crate::commands::qbank_list_questions
-            ,crate::commands::qbank_search_questions      // FTS5 全文搜索
-            ,crate::commands::qbank_rebuild_fts_index     // FTS5 索引重建
-            ,crate::commands::qbank_get_question
             ,crate::commands::qbank_get_question_by_card_id
             ,crate::commands::qbank_create_question
             ,crate::commands::qbank_batch_create_questions
-            ,crate::commands::qbank_update_question
             ,crate::commands::qbank_batch_update_questions
-            ,crate::commands::qbank_delete_question
-            ,crate::commands::qbank_batch_delete_questions
-            ,crate::commands::qbank_submit_answer
-            ,crate::commands::qbank_toggle_favorite
-            ,crate::commands::qbank_get_stats
-            ,crate::commands::qbank_refresh_stats
-            ,crate::commands::qbank_get_history
             ,crate::commands::qbank_get_submissions
-            ,crate::commands::qbank_reset_progress
-            ,crate::commands::qbank_reset_questions_progress
             // =================================================
             // 时间维度统计命令（2026-01 新增）
             // =================================================
-            ,crate::commands::qbank_get_learning_trend
-            ,crate::commands::qbank_get_activity_heatmap
             ,crate::commands::qbank_get_knowledge_stats
-            ,crate::commands::qbank_get_knowledge_stats_with_comparison
-            // =================================================
-            // 练习模式扩展命令（2026-01 新增）
-            // =================================================
-            ,crate::commands::qbank_start_timed_practice
-            ,crate::commands::qbank_generate_mock_exam
-            ,crate::commands::qbank_submit_mock_exam
-            ,crate::commands::qbank_get_daily_practice
-            ,crate::commands::qbank_generate_paper
-            ,crate::commands::qbank_get_check_in_calendar
             // =================================================
             // 学习热力图命令
             // =================================================
@@ -1557,7 +1213,6 @@ pub fn run() {
             // =================================================
             // Memory-as-VFS 记忆系统命令
             // =================================================
-            ,crate::memory::handlers::memory_get_config
             ,crate::memory::handlers::memory_set_root_folder
             ,crate::memory::handlers::memory_set_privacy_mode
             ,crate::memory::handlers::memory_create_root_folder
@@ -1587,35 +1242,6 @@ pub fn run() {
             ,crate::memory::handlers::memory_export_all
             ,crate::memory::handlers::memory_get_profile
             ,crate::memory::handlers::memory_get_audit_logs
-            // =================================================
-            // 复习计划与间隔重复系统（SM-2 算法）
-            // =================================================
-            ,crate::review_plan_service::review_plan_create
-            ,crate::review_plan_service::review_plan_process
-            ,crate::review_plan_service::review_plan_get_due
-            ,crate::review_plan_service::review_plan_get_due_with_filter
-            ,crate::review_plan_service::review_plan_get_stats
-            ,crate::review_plan_service::review_plan_refresh_stats
-            ,crate::review_plan_service::review_plan_get_by_question
-            ,crate::review_plan_service::review_plan_get
-            ,crate::review_plan_service::review_plan_suspend
-            ,crate::review_plan_service::review_plan_resume
-            ,crate::review_plan_service::review_plan_delete
-            ,crate::review_plan_service::review_plan_get_history
-            ,crate::review_plan_service::review_plan_batch_create
-            ,crate::review_plan_service::review_plan_create_for_exam
-            ,crate::review_plan_service::review_plan_list_by_exam
-            ,crate::review_plan_service::review_plan_get_or_create
-            ,crate::review_plan_service::review_plan_get_calendar_data
-            // =================================================
-            // 题目集同步冲突策略
-            // =================================================
-            ,crate::question_sync_service::qbank_sync_check
-            ,crate::question_sync_service::qbank_get_sync_conflicts
-            ,crate::question_sync_service::qbank_resolve_sync_conflict
-            ,crate::question_sync_service::qbank_batch_resolve_conflicts
-            ,crate::question_sync_service::qbank_set_sync_enabled
-            ,crate::question_sync_service::qbank_update_sync_config
             // =================================================
             // 数据治理系统命令（2026-01-30）
             // 注意：data_governance 已在 default features 中启用
@@ -1817,7 +1443,7 @@ fn build_app_state(
         llm_manager.clone(),
         file_manager.clone(),
     )));
-    // 注册 PdfProcessingService 到 Tauri 状态（供 vfs_get_pdf_processing_status 等命令使用）
+    // 注册 PdfProcessingService 到 Tauri 状态（供剩余 PDF 处理命令使用）
     if let Some(ref pps) = pdf_processing_service {
         app_handle.manage(pps.clone());
 

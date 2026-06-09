@@ -13,7 +13,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { NotionButton } from '@/components/ui/NotionButton';
 import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import {
   CaretDown,

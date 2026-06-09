@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { Button } from '../../components/ui/shad/Button';
 import { Badge } from '../../components/ui/shad/Badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/shad/Card';

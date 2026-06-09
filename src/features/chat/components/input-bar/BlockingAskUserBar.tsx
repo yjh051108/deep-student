@@ -16,7 +16,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { NotionButton } from '@/components/ui/NotionButton';
 import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import {
   ChatCircleDots,
   Check,

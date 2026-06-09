@@ -1,4 +1,5 @@
 import i18n from 'i18next';
+import { invoke } from '@/runtime/native';
 
 export type ReadinessCode = 'MODEL2_MISSING';
 export type ReadinessAction = 'OPEN_SETTINGS_MODELS';
@@ -40,7 +41,6 @@ export const resolveChatReadiness = async (
     const fetchAssignments =
       getAssignments ??
       (async (): Promise<ModelAssignments> => {
-        const { invoke } = await import('@tauri-apps/api/core');
         return invoke<ModelAssignments>('get_model_assignments');
       });
 

@@ -35,7 +35,6 @@ pub mod pdf_preview;
 pub mod pomodoro_repo;
 pub mod question_repo;
 pub mod resource_repo;
-pub mod review_plan_repo;
 pub mod textbook_repo;
 pub mod todo_repo;
 pub mod translation_repo;
@@ -87,8 +86,3 @@ pub use translation_repo::VfsTranslationRepo;
 pub use embedding_dim_repo::VfsEmbeddingDim;
 pub use index_segment_repo::{CreateSegmentInput, ModalityDimStats, VfsIndexSegment};
 pub use index_unit_repo::{CreateUnitInput, IndexState as UnitIndexState, UnitStats, VfsIndexUnit};
-pub use review_plan_repo::{
-    CreateReviewPlanParams, DueReviewsFilter, DueReviewsResult, RecordReviewHistoryParams,
-    ReviewHistory, ReviewPlan, ReviewPlanStatus, ReviewStats, UpdateReviewPlanParams,
-    VfsReviewPlanRepo,
-};

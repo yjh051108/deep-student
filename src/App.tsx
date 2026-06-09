@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 // getCurrentWebviewWindow 已无使用（2026-02 清理）
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getSetting } from '@/runtime/native';
 // 🚀 性能优化：Settings, Dashboard, SOTADashboard 改为懒加载
 import { ArrowLeft, CaretLeft, CaretRight, CaretUp, CircleNotch, Terminal, Warning, X } from '@phosphor-icons/react';
 import { useSystemStatusStore } from '@/stores/systemStatusStore';
@@ -656,7 +657,7 @@ function App() {
     // 桌面端读取用户设置
     const loadSetting = async () => {
       try {
-        const v = await invoke<string>('get_setting', { key: 'topbar.top_margin' });
+        const v = await getSetting('topbar.top_margin');
         if (cancelled) return;
         const value = String(v ?? '').trim();
         if (value) {
@@ -694,9 +695,7 @@ function App() {
 
     const loadFontSmoothingSetting = async () => {
       try {
-        const value = await invoke<string | null>('get_setting', {
-          key: MACOS_NATIVE_FONT_SMOOTHING_SETTING_KEY,
-        });
+        const value = await getSetting(MACOS_NATIVE_FONT_SMOOTHING_SETTING_KEY);
         if (cancelled) return;
         applyMacOSFontSmoothingPreference(String(value ?? '').trim() !== 'false');
       } catch {
@@ -739,7 +738,7 @@ function App() {
 
     (async () => {
       try {
-        const val = await invoke<string | null>('get_setting', { key: SIDEBAR_TRANSLUCENT_KEY });
+        const val = await getSetting(SIDEBAR_TRANSLUCENT_KEY);
         if (cancelled) return;
         document.documentElement.setAttribute(
           'data-sidebar-translucent',
@@ -759,7 +758,7 @@ function App() {
 
     const loadPointerCursorSetting = async () => {
       try {
-        const val = await invoke<string | null>('get_setting', { key: POINTER_CURSOR_SETTING_KEY });
+        const val = await getSetting(POINTER_CURSOR_SETTING_KEY);
         if (cancelled) return;
         applyPointerCursorPreference(String(val ?? '').trim() !== 'false');
       } catch {

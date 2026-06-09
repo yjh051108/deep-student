@@ -3473,27 +3473,6 @@ impl Database {
         Ok(changes > 0)
     }
 
-    /// 按前缀查询设置（用于工具权限管理等批量查询场景）
-    pub fn get_settings_by_prefix(&self, prefix: &str) -> Result<Vec<(String, String, String)>> {
-        let conn = self.get_conn_safe()?;
-        let mut stmt = conn.prepare(
-            "SELECT key, value, updated_at FROM settings WHERE key LIKE ?1 ORDER BY updated_at DESC",
-        )?;
-        let pattern = format!("{}%", prefix);
-        let rows = stmt.query_map(params![pattern], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-            ))
-        })?;
-        let mut out = Vec::new();
-        for row in rows {
-            out.push(row?);
-        }
-        Ok(out)
-    }
-
     /// 按前缀批量删除设置
     pub fn delete_settings_by_prefix(&self, prefix: &str) -> Result<usize> {
         let conn = self.get_conn_safe()?;

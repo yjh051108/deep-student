@@ -29,7 +29,7 @@
  * @module TaskController
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import type {
   ControlTaskInput,
   ControlTaskOutput,

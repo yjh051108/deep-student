@@ -11,8 +11,8 @@
  * 5. 所有 invoke 调用必须 try-catch 并记录错误
  */
 
-import { invoke } from '@tauri-apps/api/core';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { invoke, isWailsRuntime } from '@/runtime/native';
+import { listen, type NativeUnlistenFn as UnlistenFn } from '@/runtime/nativeEvents';
 import i18n from 'i18next';
 import { getErrorMessage } from '@/utils/errorUtils';
 import { showGlobalNotification } from '@/components/UnifiedNotification';
@@ -87,11 +87,12 @@ import { resetRound as resetToolCallRound } from '@/debug-panel/plugins/ToolCall
 // 日志前缀
 // ============================================================================
 
-function isTauriRuntimeAvailable(): boolean {
+function isNativeEventRuntimeAvailable(): boolean {
   return (
-    typeof window !== 'undefined' &&
-    (Boolean((window as any).__TAURI_INTERNALS__) ||
-      Boolean((window as any).__TAURI_IPC__))
+    isWailsRuntime() ||
+    (typeof window !== 'undefined' &&
+      (Boolean((window as any).__TAURI_INTERNALS__) ||
+        Boolean((window as any).__TAURI_IPC__)))
   );
 }
 
@@ -459,10 +460,10 @@ export class ChatV2TauriAdapter {
       return;
     }
 
-    if (!isTauriRuntimeAvailable()) {
-      console.warn(LOG_PREFIX, 'Tauri runtime not available, skip setup.');
+    if (!isNativeEventRuntimeAvailable()) {
+      console.warn(LOG_PREFIX, 'Native event runtime not available, skip setup.');
       this.isSetup = true;
-      sessionSwitchPerf.mark('adapter_setup_skipped', { reason: 'not_tauri' });
+      sessionSwitchPerf.mark('adapter_setup_skipped', { reason: 'not_native_event_runtime' });
       sessionSwitchPerf.endTrace();
       return;
     }
@@ -2608,6 +2609,9 @@ export class ChatV2TauriAdapter {
         }
       }
 
+      const assistantMessageId = this.generateMessageId();
+      this.beginStreamExpectation(assistantMessageId);
+
       // 🆕 P1 状态同步修复: 后端返回增强的结果，包含状态变更信息
       const result = await invoke<{
         new_message_id?: string;
@@ -2617,6 +2621,7 @@ export class ChatV2TauriAdapter {
         sessionId: this.sessionId,
         messageId,
         newContent,
+        assistantMessageId,
         // 🆕 P1-2: 传递新的上下文引用给后端
         newContextRefs: newContextRefsForBackend,
         newPathMap,
@@ -2626,11 +2631,11 @@ export class ChatV2TauriAdapter {
       // 发送成功后清空多变体 ID
       this.store.setPendingParallelModelIds(null);
 
-      const newMessageId = result.new_message_id ?? null;
+      const newMessageId = result.new_message_id ?? assistantMessageId;
       const deletedMessageIds = result.deleted_message_ids ?? [];
       const newVariantId = result.new_variant_id;
-      if (newMessageId) {
-        this.beginStreamExpectation(newMessageId);
+      if (newMessageId !== assistantMessageId) {
+        this.setStreamExpectationMessageId(newMessageId);
       }
 
       console.log(LOG_PREFIX, 'Edit and resend initiated:', {
@@ -2649,6 +2654,7 @@ export class ChatV2TauriAdapter {
     } catch (error) {
       const errorMsg = getErrorMessage(error);
       console.error(LOG_PREFIX, 'Edit and resend failed:', errorMsg);
+      this.clearStreamExpectation();
       // 显示错误提示（使用 i18n）
       const editFailedMsg = i18n.t('chatV2:messageItem.actions.editFailed');
       showGlobalNotification('error', `${editFailedMsg}: ${errorMsg}`);
@@ -2839,8 +2845,8 @@ export class ChatV2TauriAdapter {
   async saveSession(): Promise<void> {
     console.log(LOG_PREFIX, 'Saving session:', this.sessionId);
 
-    if (!isTauriRuntimeAvailable()) {
-      console.warn(LOG_PREFIX, 'Skip save session: not in Tauri runtime');
+    if (!isNativeEventRuntimeAvailable()) {
+      console.warn(LOG_PREFIX, 'Skip save session: not in native event runtime');
       return;
     }
 

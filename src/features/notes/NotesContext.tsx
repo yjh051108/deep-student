@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from "react";
 import type { CrepeEditorApi } from "@/components/crepe/types";
 import type { NoteItem } from "../../utils/notesApi";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { invoke } from "@/runtime/native";
 // ★ DSTU API 导入 (Prompt 8)
 import { dstu, pathUtils } from "@/dstu";
 import type { DstuNode } from "@/dstu/types";

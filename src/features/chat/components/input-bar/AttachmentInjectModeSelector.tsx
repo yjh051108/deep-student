@@ -182,7 +182,6 @@ const ImageModeSelector: React.FC<ImageModeSelectorProps> = memo(({
   
   const isModeReady = (mode: ImageInjectMode) => {
     if (!processingStatus) return true;
-    if (mode === 'image') return true;
     return readyModes.has(mode);
   };
 
@@ -372,7 +371,7 @@ export const AttachmentInjectModeSelector: React.FC<AttachmentInjectModeSelector
     ? {
         stage: 'pending',
         percent: 0,
-        readyModes: isImage ? ['image'] : [],
+        readyModes: [],
         mediaType: isPdf ? 'pdf' : 'image',
       }
     : undefined;

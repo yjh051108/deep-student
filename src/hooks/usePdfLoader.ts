@@ -9,10 +9,10 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { base64ToFile, estimateBase64Size, LARGE_FILE_THRESHOLD } from '@/utils/base64FileUtils';
 import { debugLog } from '@/debug-panel/debugMasterSwitch';
 import i18n from '@/i18n';
+import { vfsFileApi } from '@/api/vfsFileApi';
 
 // 简单的内存缓存，避免重复加载同一文件（真正的 LRU + 内存大小限制）
 const pdfCache = new Map<string, File>();
@@ -159,9 +159,7 @@ export function usePdfLoader({
     try {
       debugLog.log('[usePdfLoader] Loading PDF from database for:', resolvedCacheKey);
       
-      const result = await invoke<{ content: string | null; found: boolean }>('vfs_get_attachment_content', {
-        attachmentId: nodeId,
-      });
+      const result = await vfsFileApi.getFileLikeContent(nodeId);
       
       // 检查是否被取消
       if (controller.signal.aborted || requestId !== requestIdRef.current) {

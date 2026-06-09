@@ -948,7 +948,10 @@ impl VfsMultimodalService {
                 params![state, error_val, now, res_id],
             );
 
-            if matches!(state, "pending" | "indexing" | "indexed" | "failed" | "disabled") {
+            if matches!(
+                state,
+                "pending" | "indexing" | "indexed" | "failed" | "disabled"
+            ) {
                 let now_ms = chrono::Utc::now().timestamp_millis();
                 if state == "indexed" {
                     let indexed_page_indices: Vec<i32> = indexed_pages_json_or_error

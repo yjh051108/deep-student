@@ -11,7 +11,7 @@
  * @module vfsRagApi
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { debugLog } from '../debug-panel/debugMasterSwitch';
 
 const console = debugLog as Pick<typeof debugLog, 'log' | 'warn' | 'error' | 'info' | 'debug'>;

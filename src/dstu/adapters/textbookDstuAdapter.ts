@@ -11,7 +11,7 @@ import { pathUtils } from '../utils/pathUtils';
 import type { DstuNode, DstuListOptions, DstuPreviewType } from '../types';
 import { Result, VfsError, ok, err, reportError, toVfsError } from '@/shared/result';
 import { isOpaqueDocumentId } from '@/utils/fileManager';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 
 // ============================================================================
 // 配置
@@ -216,10 +216,16 @@ export const textbookDstuAdapter = {
           size: typeof r.size === 'number' ? r.size : 0,
           createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
           updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : Date.now(),
+          resourceId: r.resource_id || r.resourceId,
+          resourceHash: r.resource_hash || r.resourceHash || r.sha256,
           previewType: getPreviewType(ext),
           metadata: {
+            ...(r.metadata && typeof r.metadata === 'object' ? r.metadata : {}),
             pageCount: r.page_count || 0,
             filePath: r.file_path,
+            resourceId: r.resource_id || r.resourceId,
+            resourceHash: r.resource_hash || r.resourceHash || r.sha256,
+            sha256: r.sha256,
           },
         };
       });

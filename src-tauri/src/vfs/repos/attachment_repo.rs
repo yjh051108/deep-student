@@ -2598,8 +2598,7 @@ mod tests {
         )
         .expect("first upload should succeed");
 
-        VfsAttachmentRepo::delete_attachment(&db, &first.source_id)
-            .expect("delete should succeed");
+        VfsAttachmentRepo::delete_attachment(&db, &first.source_id).expect("delete should succeed");
         conn.execute(
             "INSERT INTO folder_items (id, folder_id, item_type, item_id, sort_order, created_at)
              VALUES (?1, ?2, 'attachment', ?3, 0, ?4)",
@@ -2628,13 +2627,10 @@ mod tests {
         assert_eq!(restored.source_id, first.source_id);
         assert_eq!(restored.attachment.name, "second.txt");
 
-        let folder_item = VfsFolderRepo::get_folder_item_by_item_id_with_conn(
-            &conn,
-            "file",
-            &restored.source_id,
-        )
-        .unwrap()
-        .expect("restored attachment should have an active folder item");
+        let folder_item =
+            VfsFolderRepo::get_folder_item_by_item_id_with_conn(&conn, "file", &restored.source_id)
+                .unwrap()
+                .expect("restored attachment should have an active folder item");
         assert_eq!(folder_item.folder_id.as_deref(), Some(folder_b.id.as_str()));
         let legacy_active_count: i64 = conn
             .query_row(

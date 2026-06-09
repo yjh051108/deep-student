@@ -4,7 +4,7 @@
 //!
 //! ## T03 统一 PDF 文本抽取策略 (2026-01-26)
 //!
-//! `get_content_by_type` 函数与 `vfs_resolve_resource_refs` 使用完全一致的策略：
+//! `get_content_by_type` 函数与 Go/Wails VFS 引用解析路径使用一致的策略：
 //! 1. 优先使用 OCR 页级文本 (`ocr_pages_json`)
 //! 2. 其次使用预提取文本 (`extracted_text`)
 //! 3. 最后回退到 `DocumentParser` 实时解析

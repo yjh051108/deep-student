@@ -16,8 +16,8 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { invoke, isTauriRuntime } from '@/runtime/native';
 import { NotionDialog, NotionDialogHeader, NotionDialogTitle, NotionDialogDescription, NotionDialogBody, NotionDialogFooter } from '@/components/ui/NotionDialog';
 import { NotionButton } from '@/components/ui/NotionButton';
 import { Label } from '@/components/ui/shad/Label';
@@ -318,26 +318,28 @@ export const CsvImportDialog: React.FC<CsvImportDialogProps> = ({
 
     try {
       // 设置进度事件监听
-      const unlisten = await listen<CsvImportProgressEvent>('csv_import_progress', (event) => {
-        const payload = event.payload;
+      if (isTauriRuntime()) {
+        const unlisten = await listen<CsvImportProgressEvent>('csv_import_progress', (event) => {
+          const payload = event.payload;
 
-        // M-022: 会话隔离 - 只处理当前 exam 的事件，防止多任务进度串台
-        if (payload.exam_id && payload.exam_id !== examId) return;
-        
-        if (payload.type === 'Progress') {
-          setImportProgress({
-            current: payload.current || 0,
-            total: payload.total || preview.total_rows,
-            success: payload.success || 0,
-            skipped: payload.skipped || 0,
-            failed: payload.failed || 0,
-          });
-        } else if (payload.type === 'Failed') {
-          setImportError(payload.error || t('exam_sheet:csv.import_failed_generic'));
-          setIsImporting(false);
-        }
-      });
-      unlistenRef.current = unlisten;
+          // M-022: 会话隔离 - 只处理当前 exam 的事件，防止多任务进度串台
+          if (payload.exam_id && payload.exam_id !== examId) return;
+
+          if (payload.type === 'Progress') {
+            setImportProgress({
+              current: payload.current || 0,
+              total: payload.total || preview.total_rows,
+              success: payload.success || 0,
+              skipped: payload.skipped || 0,
+              failed: payload.failed || 0,
+            });
+          } else if (payload.type === 'Failed') {
+            setImportError(payload.error || t('exam_sheet:csv.import_failed_generic'));
+            setIsImporting(false);
+          }
+        });
+        unlistenRef.current = unlisten;
+      }
 
       // 构建字段映射（CSV 列名 -> 目标字段）
       const mapping: Record<string, string> = {};

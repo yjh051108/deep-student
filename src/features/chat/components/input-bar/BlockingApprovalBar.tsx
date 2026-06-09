@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { ShieldCheck, Clock, CaretDown, CaretUp } from '@phosphor-icons/react';
 import { NotionButton } from '@/components/ui/NotionButton';
 import { Badge } from '@/components/ui/shad/Badge';

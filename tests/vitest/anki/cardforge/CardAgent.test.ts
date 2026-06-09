@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('@tauri-apps/api/core', () => ({
+vi.mock('@/runtime/native', () => ({
   invoke: vi.fn(),
 }));
 
-vi.mock('@tauri-apps/api/event', () => ({
+vi.mock('@/runtime/nativeEvents', () => ({
   listen: vi.fn(),
   emit: vi.fn(),
 }));
@@ -53,8 +53,8 @@ vi.mock('@/components/anki/cardforge/engines/SegmentEngine', () => ({
   },
 }));
 
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { invoke } from '@/runtime/native';
+import { listen } from '@/runtime/nativeEvents';
 
 type GenerationCallback = (event: { payload: any }) => void;
 
@@ -122,14 +122,18 @@ describe('CardAgent', () => {
     await agent.waitForReady();
 
     let startResolve: (() => void) | null = null;
+    let resolveStartCommand: (() => void) | null = null;
     const startPromise = new Promise<void>((resolve) => {
       startResolve = resolve;
+    });
+    const startCommandPromise = new Promise<string>((resolve) => {
+      resolveStartCommand = () => resolve('doc-1');
     });
 
     vi.mocked(invoke).mockImplementation(async (command) => {
       if (command === 'start_enhanced_document_processing') {
         startResolve?.();
-        return 'doc-1';
+        return startCommandPromise;
       }
       if (command === 'get_document_tasks') {
         return [
@@ -149,8 +153,25 @@ describe('CardAgent', () => {
 
     generationCallback?.({
       payload: {
+        NewCard: createBackendCard({ id: 'card-no-document', task_id: 'task-no-document' }),
+      },
+    });
+    generationCallback?.({
+      payload: {
+        DocumentProcessingCompleted: {},
+      },
+    });
+    generationCallback?.({
+      payload: {
         NewCard: {
           card: createBackendCard({ id: 'card-ignore', task_id: 'task-ignore' }),
+          document_id: 'doc-other',
+        },
+      },
+    });
+    generationCallback?.({
+      payload: {
+        DocumentProcessingCompleted: {
           document_id: 'doc-other',
         },
       },
@@ -163,6 +184,10 @@ describe('CardAgent', () => {
         },
       },
     });
+
+    resolveStartCommand?.();
+    await Promise.resolve();
+
     generationCallback?.({
       payload: {
         DocumentProcessingCompleted: {

@@ -46,7 +46,8 @@ import { ChatAnkiProgressCompact } from './components/ChatAnkiProgressCompact';
 import { RenderedAnkiCard } from './components/RenderedAnkiCard';
 import { useTemplateLoader } from '../../hooks/useTemplateLoader';
 import { useMultiTemplateLoader } from '../../hooks/useMultiTemplateLoader';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
+import { ankiConnectClient } from '@/services/ankiConnectClient';
 
 // ============================================================================
 // 类型定义
@@ -998,7 +999,7 @@ const AnkiCardsBlock: React.FC<BlockComponentProps> = React.memo(({
   const handleRefreshAnkiConnect = useCallback(async () => {
     if (!store) return;
     try {
-      const available = await invoke<boolean>('check_anki_connect_status');
+      const available = await ankiConnectClient.check();
       const latestBlock = store.getState().blocks.get(block.id);
       const latestData = latestBlock?.toolOutput as AnkiCardsBlockData | undefined;
       if (!latestData) return;

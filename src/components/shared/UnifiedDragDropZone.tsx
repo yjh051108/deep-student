@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
-import { invoke } from '@tauri-apps/api/core';
+import { getFileSize, readFileBytes } from '@/runtime/native';
 import { guardedListen } from '../../utils/guardedListen';
 import { getErrorMessage } from '../../utils/errorUtils';
 import { showGlobalNotification } from '../UnifiedNotification';
@@ -432,7 +432,7 @@ export const UnifiedDragDropZone: React.FC<UnifiedDragDropZoneProps> = ({
           // 🔧 使用 Tauri IPC 读取文件，避免 asset protocol 在 Windows 上对含中文/空格路径的 fetch 失败
           try {
             // 先检查文件大小（避免读入超大文件到内存）
-            const fileSize = await invoke<number>('get_file_size', { path: p });
+            const fileSize = await getFileSize(p);
             if (!validateFileSize(fileSize)) {
               const sizeMB = (maxFileSize / (1024 * 1024)).toFixed(1);
               const reason = `${name}: ${t('drag_drop:errors.file_too_large', { size: sizeMB })}`;
@@ -445,7 +445,7 @@ export const UnifiedDragDropZone: React.FC<UnifiedDragDropZoneProps> = ({
               continue;
             }
 
-            const rawBytes = await invoke<number[]>('read_file_bytes', { path: p });
+            const rawBytes = await readFileBytes(p);
             const bytes = new Uint8Array(rawBytes);
             
             // 验证通过，添加到有效路径列表

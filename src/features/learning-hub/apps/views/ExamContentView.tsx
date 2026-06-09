@@ -13,7 +13,7 @@ import {
   type QuestionStatus,
   type Difficulty,
 } from '@/api/questionBankApi';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { useQuestionBankSession } from '@/hooks/useQuestionBankSession';
 import { useQuestionBankStore } from '@/stores/questionBankStore';
 import { cn } from '@/lib/utils';

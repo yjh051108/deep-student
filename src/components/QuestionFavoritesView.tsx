@@ -28,7 +28,7 @@ import {
   ClockCounterClockwise,
 } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import type { Question as ApiQuestion, QuestionStatus } from '@/api/questionBankApi';
 import type { Question as StoreQuestion } from '@/stores/questionBankStore';
 import { showGlobalNotification } from '@/components/UnifiedNotification';

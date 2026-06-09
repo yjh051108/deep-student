@@ -13,7 +13,12 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
+vi.mock('@/runtime/native', () => ({
+  invoke: vi.fn(),
+}));
+
 import { invoke } from '@tauri-apps/api/core';
+import { invoke as nativeInvoke } from '@/runtime/native';
 import {
   getMemoryConfig,
   setMemoryRootFolder,
@@ -32,6 +37,7 @@ import {
 } from '@/api/memoryApi';
 
 const mockInvoke = vi.mocked(invoke);
+const mockNativeInvoke = vi.mocked(nativeInvoke);
 
 describe('memoryApi', () => {
   beforeEach(() => {
@@ -51,11 +57,11 @@ describe('memoryApi', () => {
         defaultCategory: 'general',
       };
 
-      mockInvoke.mockResolvedValue(mockConfig);
+      mockNativeInvoke.mockResolvedValue(mockConfig);
 
       const result = await getMemoryConfig();
 
-      expect(mockInvoke).toHaveBeenCalledWith('memory_get_config');
+      expect(mockNativeInvoke).toHaveBeenCalledWith('memory_get_config');
       expect(result).toEqual(mockConfig);
     });
 
@@ -67,7 +73,7 @@ describe('memoryApi', () => {
         defaultCategory: 'general',
       };
 
-      mockInvoke.mockResolvedValue(mockConfig);
+      mockNativeInvoke.mockResolvedValue(mockConfig);
 
       const result = await getMemoryConfig();
 

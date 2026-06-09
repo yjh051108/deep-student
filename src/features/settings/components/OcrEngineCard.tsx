@@ -15,7 +15,7 @@ import { NotionButton } from '@/components/ui/NotionButton';
 import { NotionAlertDialog } from '@/components/ui/NotionDialog';
 import { Switch } from '@/components/ui/shad/Switch';
 import { showGlobalNotification } from '@/components/UnifiedNotification';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { OcrEngineTestPanel } from './OcrEngineTestPanel';
 import { cn } from '@/lib/utils';
 import { SiliconFlowLogo } from '@/components/ui/SiliconFlowLogo';

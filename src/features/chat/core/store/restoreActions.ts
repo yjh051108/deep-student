@@ -635,7 +635,7 @@ export function createRestoreActions(
               const currentGroupId = getState().groupId;
               if (currentGroupId) {
                 try {
-                  const { invoke } = await import('@tauri-apps/api/core');
+                  const { invoke } = await import('@/runtime/native');
                   const group = await invoke<{ pinnedResourceIds?: string[] } | null>('chat_v2_get_group', { groupId: currentGroupId });
                   const pinnedIds = group?.pinnedResourceIds ?? [];
                   if (pinnedIds.length > 0) {

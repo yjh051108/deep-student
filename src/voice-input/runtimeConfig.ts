@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, isInjectedNativeRuntime, isTauriRuntime, isWailsRuntime } from '@/runtime/native';
 
 import type { ApiConfig, ModelAssignments } from '@/types';
 
@@ -10,14 +10,14 @@ const EMPTY_ASSIGNMENTS: Pick<ModelAssignments, 'voice_input_asr_model_config_id
   voice_input_asr_model_config_id: null,
 };
 
-function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && Boolean((window as any).__TAURI_INTERNALS__);
+function isNativeRuntime(): boolean {
+  return isInjectedNativeRuntime() || isTauriRuntime() || isWailsRuntime();
 }
 
 export async function loadVoiceInputRuntimeConfig(): Promise<VoiceInputRuntimeConfig> {
   const behaviorConfig = await loadVoiceInputConfig();
 
-  if (!isTauriRuntime()) {
+  if (!isNativeRuntime()) {
     return {
       ...behaviorConfig,
       assignedModel: resolveVoiceInputModelAssignment(EMPTY_ASSIGNMENTS, []),

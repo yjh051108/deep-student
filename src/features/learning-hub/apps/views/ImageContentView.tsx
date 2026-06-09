@@ -16,8 +16,9 @@ import { MagnifyingGlassPlus, MagnifyingGlassMinus, ArrowClockwise, ArrowsOut, W
 import { NotionButton } from '@/components/ui/NotionButton';
 import { getErrorMessage } from '@/utils/errorUtils';
 import type { ContentViewProps } from '../UnifiedAppPanel';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { CustomScrollArea } from '@/components/custom-scroll-area';
+import { vfsFileApi } from '@/api/vfsFileApi';
 
 import { LARGE_FILE_THRESHOLD } from '@/utils/base64FileUtils';
 import { formatFileSize } from './previewUtils';
@@ -84,10 +85,7 @@ const ImageContentView: React.FC<ContentViewProps> = ({
     setError(null);
     
     try {
-      // 调用后端获取附件内容
-      const result = await invoke<{ content: string | null; found: boolean }>('vfs_get_attachment_content', {
-        attachmentId: node.id,
-      });
+      const result = await vfsFileApi.getFileLikeContent(node.id);
       
       if (result.found && result.content) {
         setImageData(result.content);
@@ -112,7 +110,7 @@ const ImageContentView: React.FC<ContentViewProps> = ({
   }, [loadImageContent]);
 
   // 初始化：先检查文件大小。部分图片资源（如 img_ / tb_）没有 attachment 元数据，
-  // 但 vfs_get_attachment_content 可以读取内容；元数据失败时不能阻断预览。
+  // 但 file-like VFS 内容接口可以读取内容；元数据失败时不能阻断预览。
   useEffect(() => {
     const checkAndLoad = async () => {
       setLoadingStage('checking');

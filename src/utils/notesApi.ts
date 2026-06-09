@@ -13,7 +13,7 @@
  * @see src/dstu/adapters/notesDstuAdapter.ts for CRUD operations
  * @see src/features/notes/NotesContext.tsx for DSTU integration
  */
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 
 export type NoteItem = {
   id: string;

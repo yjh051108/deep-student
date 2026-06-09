@@ -2,7 +2,7 @@
  * 待办管理系统 Tauri API 层
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import type {
   TodoList,
   TodoItem,

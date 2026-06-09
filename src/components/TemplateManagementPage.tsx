@@ -16,7 +16,7 @@ import {
   UnifiedSidebarItem,
 } from './ui/unified-sidebar/UnifiedSidebar';
 import { CustomAnkiTemplate, CreateTemplateRequest, FieldExtractionRule, TemplateExportResponse } from '../types';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { templateManager } from '../data/ankiTemplates';
 import { IframePreview, renderCardPreview } from './SharedPreview';
 import MinimalTemplateEditor, { EditorTabType } from './MinimalTemplateEditor';

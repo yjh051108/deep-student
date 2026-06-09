@@ -5,12 +5,12 @@
  * 支持全局目录（~/.deep-student/skills）和项目目录（.skills）
  *
  * 设计说明：
- * - 使用 Tauri invoke 调用后端读取文件
+ * - 使用 native/Wails facade 调用后端读取文件
  * - 解析 SKILL.md 文件并注册到 skillRegistry
  * - 支持热重载（reload）
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { getAppDataDir, invoke } from '@/runtime/native';
 import { parseSkillFile } from './parser';
 import { skillRegistry } from './registry';
 import type { SkillDefinition, SkillLocation, SkillLoadConfig } from './types';
@@ -40,10 +40,6 @@ const SKILL_FILE_NAME = 'SKILL.md';
  *
  * 说明：在 Web/测试环境中可能不存在 window 或 __TAURI_INTERNALS__
  */
-function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
-}
-
 /**
  * 解析默认的项目根目录（用于生产环境下的 project skills）
  *
@@ -57,11 +53,9 @@ function isTauriRuntime(): boolean {
 async function resolveDefaultProjectRootDir(): Promise<string | null> {
   // 开发环境保持原语义：相对路径直接交给后端 cwd 处理
   if (import.meta.env.DEV) return null;
-  if (!isTauriRuntime()) return null;
 
   try {
-    const { appDataDir } = await import('@tauri-apps/api/path');
-    return await appDataDir();
+    return await getAppDataDir();
   } catch (error: unknown) {
     console.warn(LOG_PREFIX, 'Cannot get appDataDir as default projectRootDir, falling back to relative path:', error);
     return null;

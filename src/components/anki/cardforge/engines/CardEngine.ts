@@ -32,7 +32,7 @@ import {
   TemplateInfo,
 } from '../types';
 
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { listen, type NativeUnlistenFn as UnlistenFn } from '@/runtime/nativeEvents';
 
 // ============================================================================
 // 类型定义
@@ -594,14 +594,14 @@ export class CardEngine {
 
   /**
    * 监听后端事件流
-   * 使用 @tauri-apps/api/event 的 listen 监听 'anki_generation_event'
+   * 使用 nativeEvents 的 listen 监听 'anki_generation_event'
    *
    * 注意：此方法现在是异步的，必须等待 listen() 完成后才能开始处理任务
    * 否则可能丢失后端在监听器设置期间发送的事件
    */
   private async setupBackendEventListener(documentId: string): Promise<void> {
     try {
-      // 使用统一的 Tauri API，等待监听器设置完成
+      // 使用统一 native event facade，等待监听器设置完成
       this.eventUnlistener = await listen<unknown>('anki_generation_event', (tauriEvent) => {
         try {
           const rawPayload = (tauriEvent as { payload?: unknown }).payload;

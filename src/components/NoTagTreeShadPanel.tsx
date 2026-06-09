@@ -8,7 +8,7 @@ import { UnifiedModelSelector, type UnifiedModelInfo } from './shared/UnifiedMod
 import { TauriAPI } from '../utils/tauriApi';
 import { Skeleton } from './ui/shad/Skeleton';
 import { showGlobalNotification } from './UnifiedNotification';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke as nativeInvoke } from '@/runtime/native';
 import { validateMarkdownTagTree, ValidationResult } from '../utils/TagTreeValidator';
 import { useTranslation } from 'react-i18next';
 import { CustomScrollArea } from './custom-scroll-area';
@@ -87,8 +87,8 @@ const NoTagTreeShadPanel: React.FC<Props> = ({ graphId = 'default', onImported }
   const loadModelOptions = useCallback(async () => {
     try {
       const [configs, assignments] = await Promise.all([
-        invoke<any>('get_api_configurations'),
-        invoke<any>('get_model_assignments'),
+        nativeInvoke<any>('get_api_configurations'),
+        nativeInvoke<any>('get_model_assignments'),
       ]);
       const model2Id: string | null = assignments?.model2_config_id ?? null;
       const options: UnifiedModelInfo[] = (configs as any[])

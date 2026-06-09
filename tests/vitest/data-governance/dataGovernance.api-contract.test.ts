@@ -15,6 +15,12 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
 }));
 
+// ── Mock native facade for migrated Go/Wails commands ──
+const mockNativeInvoke = vi.fn();
+vi.mock('@/runtime/native', () => ({
+  invoke: (...args: unknown[]) => mockNativeInvoke(...args),
+}));
+
 // ── Mock @tauri-apps/api/event（部分 API 依赖 listen） ──
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(),
@@ -87,6 +93,7 @@ import type {
 
 beforeEach(() => {
   mockInvoke.mockReset();
+  mockNativeInvoke.mockReset();
 });
 
 /** 断言 invoke 只被调用一次并返回命令名+参数 */
@@ -1500,16 +1507,17 @@ describe('DataGovernanceApi Backup Config contract', () => {
 
   describe('getBackupConfig()', () => {
     it('calls invoke with correct command name and no params', async () => {
-      mockInvoke.mockResolvedValue(mockConfig);
+      mockNativeInvoke.mockResolvedValue(mockConfig);
       await getBackupConfig();
 
-      expect(mockInvoke).toHaveBeenCalledTimes(1);
-      expect(mockInvoke.mock.calls[0]![0]).toBe('get_backup_config');
-      expect(mockInvoke.mock.calls[0]![1]).toBeUndefined();
+      expect(mockNativeInvoke).toHaveBeenCalledTimes(1);
+      expect(mockNativeInvoke.mock.calls[0]![0]).toBe('get_backup_config');
+      expect(mockNativeInvoke.mock.calls[0]![1]).toBeUndefined();
+      expect(mockInvoke).not.toHaveBeenCalled();
     });
 
     it('returns BackupConfig with all required fields', async () => {
-      mockInvoke.mockResolvedValue(mockConfig);
+      mockNativeInvoke.mockResolvedValue(mockConfig);
       const result = await getBackupConfig();
 
       expect(result).toHaveProperty('backupDirectory');
@@ -1529,7 +1537,7 @@ describe('DataGovernanceApi Backup Config contract', () => {
         maxBackupCount: null,
       };
 
-      mockInvoke.mockResolvedValue(defaultConfig);
+      mockNativeInvoke.mockResolvedValue(defaultConfig);
       const result = await getBackupConfig();
 
       expect(result.backupDirectory).toBeNull();
@@ -1542,7 +1550,7 @@ describe('DataGovernanceApi Backup Config contract', () => {
         backupTiers: ['core', 'important'],
       };
 
-      mockInvoke.mockResolvedValue(configWithTiers);
+      mockNativeInvoke.mockResolvedValue(configWithTiers);
       const result = await getBackupConfig();
 
       expect(result.backupTiers).toEqual(['core', 'important']);
@@ -1551,16 +1559,19 @@ describe('DataGovernanceApi Backup Config contract', () => {
 
   describe('setBackupConfig()', () => {
     it('calls invoke with correct command name and config param', async () => {
-      mockInvoke.mockResolvedValue(undefined);
+      mockNativeInvoke.mockResolvedValue(undefined);
       await setBackupConfig(mockConfig);
 
-      expectSingleInvoke('set_backup_config', {
+      expect(mockNativeInvoke).toHaveBeenCalledTimes(1);
+      expect(mockNativeInvoke.mock.calls[0]![0]).toBe('set_backup_config');
+      expect(mockNativeInvoke.mock.calls[0]![1]).toEqual({
         config: mockConfig,
       });
+      expect(mockInvoke).not.toHaveBeenCalled();
     });
 
     it('passes config object as-is (camelCase — no snake_case conversion)', async () => {
-      mockInvoke.mockResolvedValue(undefined);
+      mockNativeInvoke.mockResolvedValue(undefined);
       const config: BackupConfig = {
         backupDirectory: '/new/path',
         autoBackupEnabled: false,
@@ -1571,7 +1582,7 @@ describe('DataGovernanceApi Backup Config contract', () => {
 
       await setBackupConfig(config);
 
-      const passedConfig = mockInvoke.mock.calls[0]![1]!.config;
+      const passedConfig = mockNativeInvoke.mock.calls[0]![1]!.config;
       expect(passedConfig.backupDirectory).toBe('/new/path');
       expect(passedConfig.autoBackupEnabled).toBe(false);
       expect(passedConfig.autoBackupIntervalHours).toBe(24);
@@ -1580,7 +1591,7 @@ describe('DataGovernanceApi Backup Config contract', () => {
     });
 
     it('returns void (undefined)', async () => {
-      mockInvoke.mockResolvedValue(undefined);
+      mockNativeInvoke.mockResolvedValue(undefined);
       const result = await setBackupConfig(mockConfig);
 
       expect(result).toBeUndefined();

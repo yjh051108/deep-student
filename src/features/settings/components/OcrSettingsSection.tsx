@@ -9,7 +9,7 @@ import { ArrowCounterClockwise, CircleNotch } from '@phosphor-icons/react';
 import { Switch } from '@/components/ui/shad/Switch';
 import { NotionButton } from '@/components/ui/NotionButton';
 import { showGlobalNotification } from '@/components/UnifiedNotification';
-import { invoke } from '@tauri-apps/api/core';
+import { getSettings as nativeGetSettings, saveSetting as nativeSaveSetting, saveSettings as nativeSaveSettings } from '@/runtime/native';
 import { cn } from '@/lib/utils';
 import { debugLog } from '@/debug-panel/debugMasterSwitch';
 
@@ -145,15 +145,19 @@ export const OcrSettingsSection: React.FC = () => {
   const loadConfig = useCallback(async () => {
     try {
       setLoading(true);
-      const getSetting = (key: string) => invoke<string | null>('get_setting', { key }).catch(() => null);
+      const values = await nativeGetSettings([
+        'ocr.enabled',
+        'ocr.skip_for_multimodal',
+        'ocr.pdf_text_threshold',
+        'ocr.images',
+        'ocr.scanned_pdf',
+      ]).catch(() => ({}));
 
-      const [enabled, skipForMultimodal, threshold, ocrImages, ocrScannedPdf] = await Promise.all([
-        getSetting('ocr.enabled'),
-        getSetting('ocr.skip_for_multimodal'),
-        getSetting('ocr.pdf_text_threshold'),
-        getSetting('ocr.images'),
-        getSetting('ocr.scanned_pdf'),
-      ]);
+      const enabled = values['ocr.enabled'] ?? null;
+      const skipForMultimodal = values['ocr.skip_for_multimodal'] ?? null;
+      const threshold = values['ocr.pdf_text_threshold'] ?? null;
+      const ocrImages = values['ocr.images'] ?? null;
+      const ocrScannedPdf = values['ocr.scanned_pdf'] ?? null;
 
       const parseBool = (v: string | null, fallback: boolean) =>
         v !== null ? v.toLowerCase() === 'true' : fallback;
@@ -182,7 +186,7 @@ export const OcrSettingsSection: React.FC = () => {
   const saveSetting = useCallback(async (key: string, value: string) => {
     try {
       setSaving(true);
-      await invoke('save_setting', { key, value });
+      await nativeSaveSetting(key, value);
       showGlobalNotification('success', t('common:config_saved', '配置已保存'));
     } finally {
       setSaving(false);
@@ -226,14 +230,13 @@ export const OcrSettingsSection: React.FC = () => {
   const handleReset = useCallback(async () => {
     try {
       setSaving(true);
-      const save = (key: string, value: string) => invoke('save_setting', { key, value });
-      await Promise.all([
-        save('ocr.enabled', 'true'),
-        save('ocr.skip_for_multimodal', 'false'),
-        save('ocr.pdf_text_threshold', '100'),
-        save('ocr.images', 'true'),
-        save('ocr.scanned_pdf', 'true'),
-      ]);
+      await nativeSaveSettings({
+        'ocr.enabled': 'true',
+        'ocr.skip_for_multimodal': 'false',
+        'ocr.pdf_text_threshold': '100',
+        'ocr.images': 'true',
+        'ocr.scanned_pdf': 'true',
+      });
       setConfig(DEFAULT_CONFIG);
       showGlobalNotification('success', t('settings:ocr.reset_success', '设置已重置为默认值'));
     } catch (error: unknown) {

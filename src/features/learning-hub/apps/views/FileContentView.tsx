@@ -20,7 +20,7 @@ import { useTranslation } from 'react-i18next';
 import { File as FileIcon, FileText, FileZip, FileXls, CircleNotch, ArrowClockwise, Download } from '@phosphor-icons/react';
 import { NotionButton } from '@/components/ui/NotionButton';
 import type { ContentViewProps } from '../UnifiedAppPanel';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/runtime/native';
 import { PreviewProvider, usePreviewContext, type PreviewType } from './PreviewContext';
 import type { ToolbarPreviewType } from './UnifiedPreviewToolbar';
 import { usePdfLoader } from '@/hooks/usePdfLoader';
@@ -29,6 +29,7 @@ import { base64ToBlob, base64ToUint8Array, estimateBase64Size, LARGE_FILE_THRESH
 import { getErrorMessage } from '@/utils/errorUtils';
 import { fileManager } from '@/utils/fileManager';
 import { showGlobalNotification } from '@/components/UnifiedNotification';
+import { vfsFileApi } from '@/api/vfsFileApi';
 
 // PDF 预览组件
 import { TextbookPdfViewer } from '@/features/pdf/components/TextbookPdfViewer';
@@ -213,9 +214,7 @@ const FileContentViewInner: React.FC<ContentViewProps> = ({
   const handleSaveFile = useCallback(async () => {
     setIsSaving(true);
     try {
-      const result = await invoke<{ content: string | null; found: boolean }>('vfs_get_attachment_content', {
-        attachmentId: node.id,
-      });
+      const result = await vfsFileApi.getFileLikeContent(node.id);
 
       if (!result?.found || !result?.content) {
         showGlobalNotification('error', t('learningHub:file.loadFailed', '加载文件失败'));
@@ -282,9 +281,7 @@ const FileContentViewInner: React.FC<ContentViewProps> = ({
     };
 
     const loadBinaryContent = async () => {
-      const result = await invoke<{ content: string | null; found: boolean }>('vfs_get_attachment_content', {
-        attachmentId: node.id,
-      });
+      const result = await vfsFileApi.getFileLikeContent(node.id);
 
       if (!isMounted) return;
 
