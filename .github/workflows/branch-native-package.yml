@@ -1,0 +1,59 @@
+name: Branch Native Package
+
+on:
+  push:
+    branches:
+      - codex/integrate-v0.9.40
+  workflow_dispatch:
+
+concurrency:
+  group: branch-native-package-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows-go-package:
+    name: Windows Go Package
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: desktop-go/go.mod
+          cache-dependency-path: desktop-go/go.sum
+
+      - name: Install frontend dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Prepare Go-owned PDFium DLL
+        shell: pwsh
+        run: |
+          $source = "src-tauri/resources/pdfium/pdfium.dll"
+          if (!(Test-Path -LiteralPath $source)) {
+            throw "Tracked PDFium DLL was not found at $source"
+          }
+          Copy-Item -LiteralPath $source -Destination "pdfium.dll" -Force
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Package Windows Go app
+        run: npm run go:package:windows
+
+      - name: Upload Windows package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deep-student-go-windows-${{ github.sha }}
+          path: dist/desktop-go/windows/**
+          if-no-files-found: error
+          retention-days: 14
