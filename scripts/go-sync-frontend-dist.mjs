@@ -122,6 +122,7 @@ if (path.resolve(sourceDir) === path.resolve(targetDir)) {
 }
 assertDirectory(sourceDir, 'source dist');
 assertNoReparsePoint(sourceDir, 'source dist');
+fs.mkdirSync(embedRoot, { recursive: true });
 assertNoReparsePoint(embedRoot, 'Go frontend embed root');
 
 for (const entry of requiredTopLevelEntries) {
