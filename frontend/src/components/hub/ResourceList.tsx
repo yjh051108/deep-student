@@ -21,9 +21,10 @@ import { useMemo, useState } from "react";
 
 interface ResourceListProps {
   onOpenImport: () => void;
+  typeFilter?: string;
 }
 
-export function ResourceList({ onOpenImport }: ResourceListProps) {
+export function ResourceList({ onOpenImport, typeFilter = "" }: ResourceListProps) {
   const entries = useHubStore((s) => s.entries);
   const activeUri = useHubStore((s) => s.activeUri);
   const activeType = useHubStore((s) => s.activeType);
@@ -36,18 +37,24 @@ export function ResourceList({ onOpenImport }: ResourceListProps) {
   const selectResource = useHubStore((s) => s.selectResource);
   const removeResource = useHubStore((s) => s.removeResource);
   const refresh = useHubStore((s) => s.refresh);
+
+  // typeFilter：按类型过滤（Hub 1:1 视图用）
+  const visibleEntries = typeFilter && typeFilter !== "all" && typeFilter !== "desktop" && typeFilter !== "recent" && typeFilter !== "favorites"
+    ? entries.filter((e) => e.type === typeFilter)
+    : entries;
   const [confirmingUri, setConfirmingUri] = useState<string | null>(null);
 
   // 本地关键字过滤（后端 HubSearch 走 tag，关键字过滤在前端做）
   const filtered = useMemo(() => {
-    if (!keyword.trim()) return entries;
+    const base = visibleEntries;
+    if (!keyword.trim()) return base;
     const kw = keyword.toLowerCase();
-    return entries.filter(
+    return base.filter(
       (e) =>
         e.title?.toLowerCase().includes(kw) ||
         e.tags?.some((t) => t.toLowerCase().includes(kw))
     );
-  }, [entries, keyword]);
+  }, [visibleEntries, keyword]);
 
   return (
     <div className="flex h-full w-full min-w-0 flex-col">
@@ -140,7 +147,7 @@ export function ResourceList({ onOpenImport }: ResourceListProps) {
 
       {/* 底部统计 */}
       <div className="shrink-0 border-t border-border bg-card px-4 py-1.5 text-[10px] text-muted-foreground/70">
-        共 {filtered.length} 条 / 总计 {entries.length} 条
+        共 {filtered.length} 条 / 总计 {visibleEntries.length} 条
       </div>
     </div>
   );
