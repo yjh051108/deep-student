@@ -8,7 +8,7 @@
 
 import { useEffect } from "react";
 import { useChatStore } from "@/state/chat";
-import { SessionList } from "@/components/chat/SessionList";
+import { SessionSidebar } from "@/components/chat/SessionList";
 import { MessageList } from "@/components/chat/MessageList";
 import { InputBar } from "@/components/chat/InputBar";
 import { RefsPanel } from "@/components/chat/RefsPanel";
@@ -47,7 +47,7 @@ export function ChatPage() {
   return (
     <div className="flex h-full w-full min-h-0 bg-background">
       {/* —— 左：会话列表 —— */}
-      <SessionList />
+      <SessionSidebar />
 
       {/* —— 中：对话区 —— */}
       <div className="flex min-w-0 flex-1 flex-col">
