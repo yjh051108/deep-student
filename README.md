@@ -1,242 +1,137 @@
-# DeepStudent (Go) — Local-First AI Learning Workbench
+# 🎓 DeepStudent — Go 复刻版
 
-[![Release v1.0.0](https://img.shields.io/github/v/release/helixnow/deep-student-go?label=Release&style=flat-square)](https://github.com/helixnow/deep-student-go/releases/tag/v1.0.0)
-[![License: AGPL-3.0](https://img.shields.io/github/license/helixnow/deep-student-go?style=flat-square)](./LICENSE)
-[![Go Report Card](https://goreportcard.com/badge/github.com/helixnow/deep-student-go?style=flat-square)](https://goreportcard.com/report/github.com/helixnow/deep-student-go)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/helixnow/deep-student-go?style=flat-square)](./go.mod)
-[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4?style=flat-square)](https://github.com/helixnow/deep-student-go/releases)
+> **`flow/go-replica` 分支**：用 **Go + Wails v2** 全面重建的开源、本地优先 AI 学习工作台。
+> 从 Rust (Tauri) 原版 [helixnow/deep-student](https://github.com/helixnow/deep-student) 完全复刻，
+> 单一二进制、**25+ 项核心能力**、Obsidian 式知识库、记录级增量同步。
 
-> A full Go rewrite of [helixnow/deep-student](https://github.com/helixnow/deep-student).
-> Single binary · 13 core capabilities · 9 LLM providers · local-first data governance.
+<p align="center">
+  <img src="https://img.shields.io/badge/Go-1.25-00ADD8?style=for-the-badge&logo=go" alt="Go"/>
+  <img src="https://img.shields.io/badge/Wails-v2-DF4D8E?style=for-the-badge&logo=wails" alt="Wails"/>
+  <img src="https://img.shields.io/badge/UI-React%2018-61DAFB?style=for-the-badge&logo=react" alt="React"/>
+  <img src="https://img.shields.io/badge/DB-SQLite%20(pure%20Go)-003B57?style=for-the-badge&logo=sqlite" alt="SQLite"/>
+  <img src="https://img.shields.io/badge/License-AGPL--3.0-red?style=for-the-badge" alt="License"/>
+</p>
+
+<p align="center">
+  <b>本地优先</b> · <b>Obsidian 式知识库</b> · <b>9+ LLM 供应商</b> · <b>端到端加密</b> · <b>多设备增量同步</b>
+</p>
 
 ---
 
-## Downloads (v1.0.0)
+## ✨ 功能总览
 
-Grab the latest build from the [GitHub Releases](https://github.com/helixnow/deep-student-go/releases) page:
+### 🧠 学习能力
 
-| File | Description | Link |
-|---|---|---|
-| `DeepStudent-Setup-1.0.0.exe` | NSIS single-file installer (Windows 10/11 x64) — **recommended** | [Download](https://github.com/helixnow/deep-student-go/releases/download/v1.0.0/DeepStudent-Setup-1.0.0.exe) |
-| `deepstudent.exe`           | Portable single binary (no installer)                          | [Download](https://github.com/helixnow/deep-student-go/releases/download/v1.0.0/deepstudent.exe) |
-| `SHA256SUMS.txt`            | SHA-256 checksums for all release artifacts                    | [Download](https://github.com/helixnow/deep-student-go/releases/download/v1.0.0/SHA256SUMS.txt) |
+| 能力 | 说明 |
+|---|---|
+| 💬 **Chat v2 智能对话** | 会话持久化 / 工具循环 / 多变体并行 / 回收站 / 标签 / 全文搜索 / 子 Agent |
+| 📚 **Hub 学习中心** | 任意资源导入（PDF/DOCX/MD/TXT）、AI 续写笔记、统一 `vfs://` 寻址 |
+| 🧭 **Mindmap 思维导图** | LLM 生成 / 大纲↔导图互转 / 节点背书遮罩 |
+| 🃏 **Anki 制卡 + FSRS** | 批量制卡、模板管理（CRUD/导入导出）、**FSRS-6 间隔重复**、复习日志 |
+| 📝 **Notes 笔记** | CRUD / 回收站 / 文件夹树 / 附件 / 导入导出，**内容落盘 vault 文件** |
+| 📖 **Reader 阅读器** | PDF / DOCX / Markdown 分页解析、AI 摘要、引用注入聊天 |
+| 📊 **QBank 题库** | LLM 抽题 / 练习会话 / 自动阅卷 / 知识点掌握度 |
+| 🍅 **Pomodoro 番茄钟** | 专注计时 / 记录 / 统计图表 / 白噪音入口 |
+| ✅ **Todo 待办** | 多列表 / 子任务 / 优先级 / 截止 / 回收站 / **AI 任务拆解** |
 
-> Installer size is ~115 MB; portable binary ~95 MB.
+### 🤖 AI 与智能
 
-### Verify the Download
+| 能力 | 说明 |
+|---|---|
+| 🌐 **9+ LLM 供应商** | OpenAI / Claude / Gemini / DeepSeek / Qwen / Kimi / GLM / Ollama / 任意兼容端点，**统一路由与用量统计** |
+| 🧠 **Memory 记忆库** | 对话事实抽取、**记忆即文件夹**（可嵌套）、双向关系、审计日志、画像聚合、衰减 |
+| 🔍 **Multimodal 多模态** | 资源切块 + 向量嵌入 + 关键词/向量混合检索 |
+| 👁️ **OCR 多引擎** | DeepSeek-VL API / 系统 OCR / Paddle 占位，PDF 整卷识别流程 |
+| 🔬 **Research 深度调研** | 计划 → 分步执行 → 综合报告，可取消、可断点续跑 |
+| 📄 **Paper 论文检索** | arXiv / OpenAlex、PDF 下载、BibTeX/APA/GB7714 引用 |
+| 🎙️ **Voice 语音输入** | ASR 转写（SiliconFlow 默认，多 provider 可配） |
+| 🧩 **Skill / MCP / 插件** | 内置技能、MCP stdio+SSE、**受管插件生态**（安装/启用/卸载） |
+| ⚡ **Quick Assistant** | 轻量快速问答助手 |
 
-```powershell
-Get-FileHash .\DeepStudent-Setup-1.0.0.exe -Algorithm SHA256
-# Compare with the value listed in SHA256SUMS.txt
+### 🔐 数据与工程
+
+| 能力 | 说明 |
+|---|---|
+| 📁 **Obsidian 式 Vault** | 笔记/导图/题库以**真实 `.md` 文件**落盘（YAML frontmatter + `[[双链]]` + 图谱），可直接用 Obsidian 打开 |
+| ☁️ **Cloud Storage** | WebDAV / S3 统一存储 + **加密 ZIP 版本同步**（断点续传、版本管理） |
+| 🔄 **记录级增量同步** | `__change_log` 触发器、LWW 冲突合并、tombstone 删除传播、隔离区 |
+| 🔒 **AES-256-GCM 加密** | 双槽 A/B 密钥、Argon2id 派生、加密备份/恢复、审计日志 |
+| ⚙️ **LLM 用量统计** | 调用日志 + 按日聚合 + 成本估算 |
+| 📦 **单一二进制** | 纯 Go SQLite（无 CGo）+ 嵌入式前端，无运行时依赖 |
+
+---
+
+## 🏗️ 架构
+
+```mermaid
+graph TB
+    subgraph Frontend["前端 (React 18 + TS + zustand)"]
+        UI[16+ 页面] --> WAILS[Wails v2 Bridge]
+    end
+    subgraph Backend["后端 (Go 1.25)"]
+        WAILS --> APP[App RPC 层 · 130+ 方法]
+        APP --> DOMAIN["领域服务<br/>chat · hub · notes · mindmap · qbank · anki<br/>todo · pomodoro · memory · research · paper<br/>essay · translate · reader · skills · fsrs"]
+        APP --> INFRA["基础设施<br/>llm · mcp · vector · eventbus · ocr · multimodal"]
+    end
+    subgraph Storage["存储层"]
+        DOMAIN --> SQLITE[(SQLite<br/>纯 Go · WAL · FTS5)]
+        DOMAIN --> VAULT[("Obsidian 式 Vault<br/>真实 .md 文件 + frontmatter")]
+        DOMAIN --> BLOB[(Blob 内容寻址<br/>SHA-256)]
+    end
+    APP --> SYNC["增量同步引擎<br/>__change_log + 冲突合并"]
+    SYNC --> CLOUD[(WebDAV / S3)]
+    INFRA --> LLMS[OpenAI · Claude · Gemini<br/>DeepSeek · Qwen · Kimi · GLM · Ollama]
 ```
 
-On macOS / Linux:
-
-```bash
-shasum -a 256 DeepStudent-Setup-1.0.0.exe
-# or
-sha256sum DeepStudent-Setup-1.0.0.exe
-```
-
-See [`CHANGELOG.md`](./CHANGELOG.md) for the full list of changes shipped in v1.0.0.
-
 ---
 
-## Screenshots
-
-| Chat | Mindmap | QBank |
-|:---:|:---:|:---:|
-| ![Chat](docs/screenshots/chat.png) | ![Mindmap](docs/screenshots/mindmap.png) | ![QBank](docs/screenshots/qbank.png) |
-
-| Reader | Settings | Installer |
-|:---:|:---:|:---:|
-| ![Reader](docs/screenshots/reader.png) | ![Settings](docs/screenshots/settings.png) | ![Install](docs/screenshots/install.png) |
-
-> Image placeholders are committed under [`docs/screenshots/`](docs/screenshots/README.md)
-> (6 `.gitkeep` files). Drop the real PNGs in (same filename, no extension change) once
-> the screenshots are ready — README references do not need to be updated.
-
----
-
-## Quick Start
-
-### Option 1 — Installer (recommended for most users)
-
-1. Download `DeepStudent-Setup-1.0.0.exe` from the link above.
-2. Double-click the installer. Default install location:
-   `%LOCALAPPDATA%\Programs\DeepStudent`
-3. Choose whether to create a Desktop shortcut and/or Start Menu entry.
-4. Click **Install** and then **Launch DeepStudent**.
-5. On first launch, follow the in-app onboarding wizard to:
-   - Set a master password (used for the AES-256-GCM encrypted data slot).
-   - Add at least one LLM provider API key in **Settings → LLM Providers**.
-
-### Option 2 — Portable binary
-
-1. Download `deepstudent.exe` and place it anywhere (e.g. `D:\Apps\DeepStudent\`).
-2. (Optional) Create a shortcut.
-3. Double-click to run. The data directory defaults to `%APPDATA%\DeepStudent`.
-
-### Option 3 — Build from source
+## 🚀 快速开始
 
 ```bash
-# 1. Install Wails CLI (v2.9.2+)
-go install github.com/wailsapp/wails/v2/cmd/wails@v2.9.2
+# 1. 安装 Wails CLI
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
 
-# 2. Prepare environment
+# 2. 准备环境变量（至少一个 LLM 供应商 API Key）
 cp .env.example .env
-# Fill in at least one LLM provider's API key
 
-# 3. Dev mode (hot-reload)
+# 3. 开发模式（前端热重载，弹出桌面窗口）
 wails dev
 
-# 4. Production build (current platform)
+# 4. 生产构建
 wails build -clean -o build/bin/deepstudent
 ```
 
----
+**首次启动**：数据自动写入 vault（默认 `~/Documents/DeepStudent`，可用 `DEEPSTUDENT_VAULT` 覆盖），
+存量 blob 数据自动迁移为真实文件。
 
-## 13 Core Capabilities
-
-| # | Capability | Package | Key Methods |
-|---|---|---|---|
-| 1  | **Chat / Sessions / Sub-Agents**            | `internal/chat`       | `ChatCreateSession`, `ChatSend`, `ChatCompare` |
-| 2  | **Hub / Notes / VFS**                       | `internal/hub`        | `HubImportResource`, `HubContinueNote` |
-| 3  | **Mindmap**                                 | `internal/mindmap`    | `MindmapGenerate`, `MindmapToOutline` |
-| 4  | **QBank / Practice / Grading**              | `internal/qbank`      | `QBankExtract`, `QBankSubmit`, `QBankAnalyze` |
-| 5  | **Anki Card Generation**                    | `internal/anki`       | `AnkiGenerate`, `AnkiSave` |
-| 6  | **Reader** (PDF / EPUB / Markdown)          | `internal/reader`     | `ReaderOpen`, `ReaderSummarize` |
-| 7  | **Translate** (with glossary support)       | `internal/translate`  | `TranslateText`, `TranslateDocument` |
-| 8  | **Essay Grading**                           | `internal/essay`      | `EssayGrade` |
-| 9  | **Research** (long-running, cancellable)    | `internal/research`   | `ResearchPlan`, `ResearchRun` |
-| 10 | **Paper Search** (arXiv + citations)        | `internal/paper`      | `PaperSearchArXiv`, `PaperDownload`, `PaperCite` |
-| 11 | **Memory** (vector-indexed user profile)    | `internal/memory`     | `MemoryIngest`, `MemoryProfile` |
-| 12 | **Skills / MCP** (external tool bridge)     | `internal/skills`     | `SkillsList`, `SkillsSpawnMCP`, `SkillsCall` |
-| 13 | **Governance** (encrypted dual-slot backup)  | `internal/governance` | `GovBackup`, `GovRestore`, `GovSwitchSlot` |
-
----
-
-## Shared Foundations (`pkg/`)
-
-- `pkg/config`     — Config loader (Viper + env vars)
-- `pkg/logger`     — Structured logging (`log/slog` + daily rotation)
-- `pkg/crypto`     — AES-256-GCM, dual-slot A/B, Argon2id
-- `pkg/rpc`        — Unified RPC abstraction
-- `pkg/eventbus`   — In-process pub/sub event bus
-- `pkg/vfs`        — Unified virtual filesystem (`vfs://` URI)
-- `pkg/store`      — Relational SQLite store (pure-Go `modernc.org/sqlite`)
-- `pkg/store/blob` — Local blob storage (SHA-256 content addressing)
-- `pkg/vector`     — Embedded vector index (cosine / L2)
-- `pkg/llm`        — LLM adapters (9 providers)
-- `pkg/mcp`        — MCP protocol (stdio + http+sse)
-- `pkg/aferoext`   — afero helpers
-
----
-
-## LLM Provider Support (`pkg/llm`)
-
-All 9 providers are unit-tested against an `httptest` mock server — no network
-calls in CI:
-
-- **OpenAI** (gpt-4o / gpt-4.1 family)
-- **Anthropic Claude** (claude-3.5 / claude-3.7)
-- **Google Gemini** (incl. Vertex AI mode)
-- **DeepSeek** (OpenAI-compatible)
-- **Qwen / Tongyi** (DashScope & OpenAI-compatible base URLs)
-- **Moonshot Kimi**
-- **Zhipu GLM** (OpenAI-compatible)
-- **Ollama** (local models, OpenAI-compatible)
-- **Custom OpenAI-compatible** endpoint (free-form `base_url`)
-
----
-
-## MCP — Model Context Protocol (`pkg/mcp`)
-
-- **stdio subprocess mode**: spawn an external MCP server, JSON-RPC over
-  stdin/stdout (handshake, `tools/list`, `tools/call`).
-- **http + sse remote mode**: persistent connection, auto-reconnect.
-- Unified `Client` API: `ListTools` / `CallTool` / `ListResources`.
-- Concurrency-safe; honours context cancellation and timeouts.
-- Integration test suite uses a loopback mock process — covers handshake and
-  tool registration end-to-end.
-
----
-
-## Data Migration (Tauri → Go)
-
-If you previously used the Rust (Tauri) version `helixnow/deep-student`, the
-migrator can import your old data into the new Go layout:
+### 测试
 
 ```bash
-# Linux / macOS
-go run ./cmd/migrate --from ~/.deepstudent --to ~/Documents/deepstudent-go
-
-# Windows (PowerShell)
-go run .\cmd/migrate --from $env:USERPROFILE\.deepstudent --to "$env:USERPROFILE\Documents\deepstudent-go"
+go test ./... -count=1 -race   # 41 个包全部通过
+go run ./scripts/smoke         # 25 组端到端能力冒烟
 ```
-
-The migrator writes `migrate-report.json` to the target directory with
-per-type counts (resources, sessions, notes, cards, papers), failures, and
-skipped rows. After migration, the new app will auto-detect the data
-directory under `%APPDATA%\DeepStudent`.
 
 ---
 
-## Uninstall
+## 📁 本分支说明
 
-The NSIS installer ships its own uninstaller, available from:
+本分支 `flow/go-replica` 承载 **Go 复刻工程本身**（分支树 = Go 项目，非 Rust 原版）：
 
-- **Start Menu** → `DeepStudent` → `Uninstall DeepStudent`
-- **Settings** → Apps → Installed apps → DeepStudent → Uninstall
-- **Silent uninstall**:
-  ```powershell
-  "$env:LOCALAPPDATA\Programs\DeepStudent\Uninstall.exe" /S
-  ```
+- 复刻基准：上游 `main`（v0.9.43 + 2026-08-04 增量）
+- 复刻口径：**功能等价**（数据模型对齐 + 命令齐全 + 页面可用 + 测试通过）
+- 详细差距分析与路线图：`docs/replica-gap-analysis.md` · `docs/replica-roadmap.md`
+- 分支定位：**不合并回上游**，独立演进，每批次完成即推送
 
-### Data retention
-
-The uninstaller pops up an **"Uninstall options"** page (BUG-006 fix). The
-following directories are **kept by default**:
-
-- `%APPDATA%\DeepStudent` — notes, cards, chats, settings
-- `%LOCALAPPDATA%\DeepStudent` — caches, temp files
-
-To wipe everything (**irreversible**), uncheck the box, or pass `/PURGEDATA`:
-
-```powershell
-"$env:LOCALAPPDATA\Programs\DeepStudent\Uninstall.exe" /PURGEDATA
-```
-
-See [`cmd/installer/installer.nsi`](cmd/installer/installer.nsi) for the
-exact NSIS script that implements this behaviour.
+| 批次 | 内容 | 状态 |
+|---|---|---|
+| 批次 1 | Obsidian 式 VFS + Todo / Pomodoro / LLM 用量 | ✅ |
+| 批次 2 | Cloud Storage / 增量同步 / 模板管理 / 语音输入 | ✅ |
+| 批次 3 | Memory-as-VFS / OCR / Multimodal | ✅ |
+| 批次 4 | chat_v2 完整流水线 | ✅ |
+| 批次 5 | FSRS / 插件 / 快速助手 / 沙盒 / i18n | ✅ |
 
 ---
 
-## Development
+## 📄 许可
 
-```bash
-# Run all tests (with race detector)
-go test ./... -count=1 -race
-
-# Lint
-golangci-lint run
-
-# Vulnerability scan
-govulncheck ./...
-
-# End-to-end smoke (13 capabilities, in-process)
-go run ./scripts/smoke
-```
-
-CI pipelines (`.github/workflows/`):
-
-- `test.yml`         — `go test`, `go vet`, `govulncheck` on every push / PR
-- `build.yml`        — multi-platform Wails build smoke test
-- `govulncheck.yml`  — scheduled vulnerability scan
-- `release.yml`      — tag-triggered installer + checksum + GitHub Release
-
----
-
-## License
-
-[AGPL-3.0](./LICENSE) — same as the upstream project.
+[AGPL-3.0](./LICENSE) — 与上游一致。本分支为个人复刻学习项目。
