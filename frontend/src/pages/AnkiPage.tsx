@@ -33,6 +33,8 @@ import {
 export function AnkiPage() {
   const loadTemplates = useAnkiStore((s) => s.loadTemplates);
   const setAddTemplateOpen = useAnkiStore((s) => s.setAddTemplateOpen);
+  const templates = useAnkiStore((s) => s.templates);
+  const job = useAnkiStore((s) => s.job);
 
   // 挂载时拉取模板
   useEffect(() => {
@@ -40,7 +42,18 @@ export function AnkiPage() {
   }, [loadTemplates]);
 
   return (
-    <div className="flex h-full w-full min-h-0 bg-background">
+    <div className="flex h-full w-full min-h-0 flex-col bg-background">
+      {/* —— 顶部统计卡（对齐原版 TaskDashboard） —— */}
+      <div className="shrink-0 border-b border-[var(--shell-seam)] bg-[var(--shell-workspace-panel)] px-4 py-3">
+        <div className="grid grid-cols-4 gap-3">
+          <StatCard label="模板数" value={String(templates.length ?? 0)} icon="▦" />
+          <StatCard label="当前任务" value={job ? job.deck || "进行中" : "无"} icon="🃏" />
+          <StatCard label="已生成卡片" value={String(job?.cards?.length ?? 0)} icon="📇" />
+          <StatCard label="任务状态" value={job ? jobStatusCN(job.status) : "空闲"} icon={job?.status === "failed" ? "⚠" : "●"} danger={job?.status === "failed"} />
+        </div>
+      </div>
+
+      <div className="flex min-h-0 flex-1">
       {/* —— 左：模板列表 —— */}
       <aside className="w-56 shrink-0 border-r border-border bg-card">
         <TemplateList />
@@ -51,10 +64,36 @@ export function AnkiPage() {
         <CardFactory />
       </section>
 
+      </div>
+
       {/* 添加模板弹窗 */}
       <AddTemplateDialog />
     </div>
   );
+}
+
+// —— 统计卡 ——
+function StatCard({ label, value, icon, danger = false }: { label: string; value: string; icon: string; danger?: boolean }) {
+  return (
+    <div className="rounded-lg border border-[var(--border-default)] bg-[var(--shell-inspector-panel)] px-3.5 py-2.5">
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+        <span className={danger ? "text-destructive" : "text-primary"}>{icon}</span>
+        {label}
+      </div>
+      <div className={cn("mt-1 truncate text-[15px] font-semibold", danger ? "text-destructive" : "text-foreground")}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function jobStatusCN(s: string): string {
+  switch (s) {
+    case "running": return "生成中";
+    case "done": return "已完成";
+    case "failed": return "失败";
+    default: return "待开始";
+  }
 }
 
 // —— 模板列表 ——
