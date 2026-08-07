@@ -1,5 +1,11 @@
 # Go 复刻差距分析 — deep-student-go vs 云端最新（v0.9.43 + main）
 
+> **更新（2026-08-07）**：本分析为初始基准。自分析以来，以下模块已按功能等价复刻完成：
+> A1 chat_v2 会话管理/持久化/工具循环 · A2 增量同步 · A3 Memory-as-VFS · A4 OCR ·
+> A5 Multimodal · A6 Todo · A7 Pomodoro · A8 Cloud storage · A9 模板管理 · A10 语音输入 ·
+> A11 LLM 用量 · A13(部分) FSRS/插件/快速助手 · B1 i18n · B3 沙盒 · B5 前端导航。
+> 详见 [replica-roadmap.md](replica-roadmap.md)。
+
 > 基准：`helixnow/deep-student` v0.9.43 + main（HEAD `cabb8afe`，2026-08-04）
 > 对照对象：`deep-student-go`（Wails v2，Go 1.25，纯 Go SQLite `modernc.org/sqlite`）
 > 复刻口径：**功能等价**（数据模型对齐 + 后端命令齐全 + 前端页面可用 + 测试通过）
