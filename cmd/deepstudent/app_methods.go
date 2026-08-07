@@ -14,7 +14,9 @@ import (
 	"github.com/helixnow/deep-student-go/internal/llmusage"
 	"github.com/helixnow/deep-student-go/internal/memory"
 	"github.com/helixnow/deep-student-go/internal/mindmap"
+	"github.com/helixnow/deep-student-go/internal/multimodal"
 	"github.com/helixnow/deep-student-go/internal/notes"
+	"github.com/helixnow/deep-student-go/internal/ocr"
 	"github.com/helixnow/deep-student-go/internal/paper"
 	"github.com/helixnow/deep-student-go/internal/pomodoro"
 	"github.com/helixnow/deep-student-go/internal/qbank"
@@ -1049,3 +1051,118 @@ func (a *App) SyncDiscardQuarantine(id int64) error { return a.Sync.DiscardQuara
 
 // SyncDiscardAllQuarantine 清空隔离区。
 func (a *App) SyncDiscardAllQuarantine() (int64, error) { return a.Sync.DiscardAllQuarantine() }
+
+// ===== Memory-as-VFS 扩展 =====
+
+// MemoryWrite 写入一条记忆（显式分类/文件夹）。
+func (a *App) MemoryWrite(fact, category, folderID, source string, tags []string) (*memory.Item, error) {
+	return a.Mem.Write(fact, category, folderID, source, tags)
+}
+
+// MemoryWriteBatch 批量写入记忆。
+func (a *App) MemoryWriteBatch(entries []memory.WriteEntry) ([]*memory.Item, error) {
+	return a.Mem.WriteBatch(entries)
+}
+
+// MemoryList 列出全部记忆。
+func (a *App) MemoryList() []*memory.Item { return a.Mem.List() }
+
+// MemoryUpdateContent 更新记忆内容/分类/权重。
+func (a *App) MemoryUpdateContent(id string, content, category *string, weight *int) (*memory.Item, error) {
+	return a.Mem.UpdateContent(id, content, category, weight)
+}
+
+// MemoryDelete 删除记忆。
+func (a *App) MemoryDelete(id string) error { return a.Mem.Delete(id) }
+
+// MemoryUpdateTags 更新记忆标签。
+func (a *App) MemoryUpdateTags(id string, tags []string) (*memory.Item, error) {
+	return a.Mem.UpdateTags(id, tags)
+}
+
+// MemoryCreateFolder 创建记忆文件夹。
+func (a *App) MemoryCreateFolder(name string, parentID *string) (*memory.Folder, error) {
+	return a.Mem.CreateFolder(name, parentID)
+}
+
+// MemoryListFolders 列出记忆文件夹。
+func (a *App) MemoryListFolders() ([]*memory.Folder, error) { return a.Mem.ListFolders() }
+
+// MemoryGetTree 返回记忆文件夹树。
+func (a *App) MemoryGetTree() ([]memory.FolderNode, error) { return a.Mem.GetTree() }
+
+// MemoryDeleteFolder 删除记忆文件夹。
+func (a *App) MemoryDeleteFolder(id string) error { return a.Mem.DeleteFolder(id) }
+
+// MemoryMoveToFolder 移动记忆到文件夹。
+func (a *App) MemoryMoveToFolder(id, folderID string) (*memory.Item, error) {
+	return a.Mem.MoveToFolder(id, folderID)
+}
+
+// MemoryAddRelation 建立记忆关联。
+func (a *App) MemoryAddRelation(sourceID, targetID, relType string) error {
+	return a.Mem.AddRelation(sourceID, targetID, relType)
+}
+
+// MemoryGetRelated 返回关联记忆。
+func (a *App) MemoryGetRelated(id string) ([]*memory.Item, error) { return a.Mem.GetRelated(id) }
+
+// MemoryGetAuditLogs 读取记忆审计日志。
+func (a *App) MemoryGetAuditLogs(limit int) ([]memory.AuditEntry, error) {
+	return a.Mem.GetAuditLogs(limit)
+}
+
+// ===== OCR 多引擎 =====
+
+// OCRRecognize 识别图片文字。
+func (a *App) OCRRecognize(imageData []byte, mime string) (*ocr.OcrResult, error) {
+	return a.OCR.Recognize(a.Ctx, imageData, mime)
+}
+
+// OCRListEngines 列出 OCR 引擎。
+func (a *App) OCRListEngines() []ocr.EngineInfo { return a.OCR.ListEngines() }
+
+// OCRSetEngineType 切换 OCR 引擎。
+func (a *App) OCRSetEngineType(t string) error { return a.OCR.SetEngineType(ocr.EngineType(t)) }
+
+// OCRGetEngineType 当前引擎。
+func (a *App) OCRGetEngineType() string { return string(a.OCR.EngineType()) }
+
+// OCRSetThinking 开关 VL 推理。
+func (a *App) OCRSetThinking(on bool) { a.OCR.SetThinking(on) }
+
+// OCRStartPDFSession 启动 PDF OCR 会话。
+func (a *App) OCRStartPDFSession(pdfName string, pageCount int) (string, error) {
+	return a.OCR.StartPDFSession(pdfName, pageCount)
+}
+
+// OCRUploadPage 上传一页识别。
+func (a *App) OCRUploadPage(sessionID string, pageIndex int, imageData []byte, mime string) (string, error) {
+	return a.OCR.UploadPage(a.Ctx, sessionID, pageIndex, imageData, mime)
+}
+
+// OCRCancelPDFSession 取消会话。
+func (a *App) OCRCancelPDFSession(sessionID string) { a.OCR.CancelPDFSession(sessionID) }
+
+// OCRExtractTextFromPDF 提取 PDF 文本层。
+func (a *App) OCRExtractTextFromPDF(data []byte) (string, error) {
+	return a.OCR.ExtractTextFromPDFBytes(data)
+}
+
+// ===== Multimodal 多模态索引 =====
+
+// MultiIndexResource 为资源建立多模态索引。
+func (a *App) MultiIndexResource(uri, content string) (int, error) {
+	return a.Multi.IndexResource(a.Ctx, uri, content)
+}
+
+// MultiSearch 混合检索。
+func (a *App) MultiSearch(query string, topK int) ([]multimodal.Result, error) {
+	return a.Multi.Search(a.Ctx, query, topK)
+}
+
+// MultiDelete 删除资源索引。
+func (a *App) MultiDelete(uri string) error { return a.Multi.Delete(uri) }
+
+// MultiStats 索引统计。
+func (a *App) MultiStats() (*multimodal.Stats, error) { return a.Multi.Stats() }

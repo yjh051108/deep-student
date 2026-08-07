@@ -28,6 +28,8 @@ import (
 	"github.com/helixnow/deep-student-go/internal/hub"
 	"github.com/helixnow/deep-student-go/internal/llmusage"
 	"github.com/helixnow/deep-student-go/internal/memory"
+	"github.com/helixnow/deep-student-go/internal/multimodal"
+	"github.com/helixnow/deep-student-go/internal/ocr"
 	"github.com/helixnow/deep-student-go/internal/mindmap"
 	"github.com/helixnow/deep-student-go/internal/paper"
 	"github.com/helixnow/deep-student-go/internal/pomodoro"
@@ -222,6 +224,8 @@ type app struct {
 	LLMUsage *llmusage.Service
 	Templates *templatemgr.Service
 	Sync     *sync.Service
+	OCR      *ocr.Service
+	Multi    *multimodal.Service
 	vfs     *vfs.FS
 }
 
@@ -331,6 +335,8 @@ func (r *runner) boot() error {
 		LLMUsage: llmusage.New(fs, st, reg),
 		Templates: templatemgr.New(fs, st, reg),
 		Sync:     sync.New(st),
+		OCR:      ocr.New("smoke-key"),
+		Multi:    multimodal.New(st, reg, fs),
 		vfs:     fs,
 	}
 	if err := r.app.Sync.EnsureTriggers(); err != nil {
@@ -583,6 +589,24 @@ func (r *runner) walk() {
 	qc, err := r.app.Sync.QuarantineList(10)
 	must("sync.quarantine", err)
 	mustOK("sync.quarantine.empty", len(qc) == 0, fmt.Sprintf("quarantine=%d", len(qc)))
+
+	// 20. OCR: 引擎列表 + 无 key 时 VL 识别报错（不走网络）
+	engines := r.app.OCR.ListEngines()
+	mustOK("ocr.engines", len(engines) == 3, fmt.Sprintf("engines=%d", len(engines)))
+	r.app.OCR.APIKey = ""
+	_, oerr := r.app.OCR.Recognize(ctx, []byte("img"), "image/png")
+	mustOK("ocr.nokey", oerr != nil, "expected error without key")
+
+	// 21. Multimodal: 索引 + 关键词检索 + 统计
+	mmN, err := r.app.Multi.IndexResource(ctx, "vfs://note/mm-1", "多模态索引测试内容：机器学习与深度学习。")
+	must("multimodal.index", err)
+	mustOK("multimodal.chunks", mmN >= 1, fmt.Sprintf("chunks=%d", mmN))
+	mmResults, err := r.app.Multi.Search(ctx, "机器学习", 5)
+	must("multimodal.search", err)
+	mustOK("multimodal.results", len(mmResults) >= 1, fmt.Sprintf("results=%d", len(mmResults)))
+	mmStats, err := r.app.Multi.Stats()
+	must("multimodal.stats", err)
+	mustOK("multimodal.units", mmStats.TotalUnits >= 1, fmt.Sprintf("units=%d", mmStats.TotalUnits))
 }
 
 // fileExists 判断文件是否存在。

@@ -26,7 +26,9 @@ import (
 	"github.com/helixnow/deep-student-go/internal/llmusage"
 	"github.com/helixnow/deep-student-go/internal/memory"
 	"github.com/helixnow/deep-student-go/internal/mindmap"
+	"github.com/helixnow/deep-student-go/internal/multimodal"
 	"github.com/helixnow/deep-student-go/internal/notes"
+	"github.com/helixnow/deep-student-go/internal/ocr"
 	"github.com/helixnow/deep-student-go/internal/paper"
 	"github.com/helixnow/deep-student-go/internal/pomodoro"
 	"github.com/helixnow/deep-student-go/internal/qbank"
@@ -89,6 +91,8 @@ type App struct {
 	Voice    *voiceinput.Service
 	Cloud    *cloudstorage.Manager
 	Sync     *sync.Service
+	OCR      *ocr.Service
+	Multi    *multimodal.Service
 }
 
 // startup Wails 启动钩子。
@@ -222,6 +226,8 @@ func (a *App) init() error {
 	a.Templates = templatemgr.New(a.vfs, a.store, a.llmReg)
 	a.Voice = voiceinput.New(cfg.LLM.SiliconKey)
 	a.Cloud = cloudstorage.NewManager(a.store, a.crypto)
+	a.OCR = ocr.New(cfg.LLM.SiliconKey)
+	a.Multi = multimodal.New(a.store, a.llmReg, a.vfs)
 	// 增量同步：业务服务全部建表后安装变更触发器
 	a.Sync = sync.New(a.store)
 	if err := a.Sync.EnsureTriggers(); err != nil {
