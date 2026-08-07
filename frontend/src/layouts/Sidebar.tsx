@@ -31,6 +31,10 @@ import {
   Gauge,
   CheckSquare,
   Code2,
+  Layers,
+  ScanLine,
+  RefreshCw,
+  LayoutTemplate,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
@@ -80,6 +84,10 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     items: [
       { to: "/llm-usage", label: "LLM Usage · 用量", icon: Gauge },
       { to: "/sandbox", label: "Sandbox · 沙盒", icon: Code2 },
+      { to: "/fsrs", label: "FSRS · 复习", icon: Layers },
+      { to: "/ocr", label: "OCR · 识别", icon: ScanLine },
+      { to: "/sync", label: "Sync · 同步", icon: RefreshCw },
+      { to: "/template-manager", label: "Templates · 模板", icon: LayoutTemplate },
       { to: "/skills", label: "Skills · 技能", icon: Wrench },
       { to: "/governance", label: "Governance · 治理", icon: ShieldCheck },
       { to: "/settings", label: "Settings · 设置", icon: SettingsIcon },

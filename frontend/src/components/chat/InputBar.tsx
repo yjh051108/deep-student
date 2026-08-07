@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Send, Brain, Paperclip } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { VoiceInputButton } from "./VoiceInputButton";
 
 export function InputBar() {
   const sendMessage = useChatStore((s) => s.sendMessage);
@@ -99,6 +100,13 @@ export function InputBar() {
             rows={1}
             className="flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
             style={{ minHeight: "32px", maxHeight: "200px" }}
+          />
+          <VoiceInputButton
+            disabled={loading}
+            onText={(t) => {
+              setText((prev) => (prev ? prev + " " : "") + t);
+              taRef.current?.focus();
+            }}
           />
           <Button
             onClick={handleSend}

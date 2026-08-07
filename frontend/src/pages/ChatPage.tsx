@@ -20,17 +20,18 @@ import { Button } from "@/components/ui/Button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
 
 export function ChatPage() {
-  const initDefault = useChatStore((s) => s.initDefault);
+  const init = useChatStore((s) => s.init);
+  const setView = useChatStore((s) => s.setView);
   const createSession = useChatStore((s) => s.createSession);
   const sessions = useChatStore((s) => s.sessions);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
   const [searchParams, setSearchParams] = useSearchParams();
   const [refsPanelOpen, setRefsPanelOpen] = useState(true);
 
-  // 初始化默认分组
+  // 初始化（加载分组 + 会话）
   useEffect(() => {
-    initDefault();
-  }, [initDefault]);
+    void init();
+  }, [init]);
 
   // 处理 ?new=1 自动创建会话
   useEffect(() => {
@@ -50,7 +51,12 @@ export function ChatPage() {
 
       {/* —— 中：对话区 —— */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <MessageList session={activeSession ?? null} />
+        <MessageList
+          session={activeSession ?? null}
+          onDeleteMessage={(msgId) => {
+            if (activeSession) void deleteOneMessage(activeSession.id, msgId);
+          }}
+        />
         <InputBar />
       </div>
 
@@ -94,4 +100,19 @@ export function ChatPage() {
       </div>
     </div>
   );
+}
+
+// 删除单条消息（后端 + 本地状态同步）
+async function deleteOneMessage(sessionId: string, messageId: string) {
+  const { chatV2Api } = await import("@/lib/chat");
+  await chatV2Api.deleteMessage(sessionId, messageId);
+  const store = useChatStore.getState();
+  // 本地移除
+  useChatStore.setState({
+    sessions: store.sessions.map((sess) =>
+      sess.id === sessionId
+        ? { ...sess, messages: sess.messages.filter((m) => m.id !== messageId) }
+        : sess
+    ),
+  });
 }

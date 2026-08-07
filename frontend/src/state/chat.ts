@@ -1,161 +1,199 @@
-// Chat Store —— 会话与消息状态管理
+// Chat Store v2 —— 接入 ChatV2 后端（持久化/分组/回收站/工具循环）
 // ------------------------------------------------------------
-// 对接后端 Wails 绑定：
-// - ChatCreateGroup / ChatCreateSession / ChatSend
-// - 维护客户端会话列表与当前激活会话
-// - 模拟流式渲染（后端返回完整字符串后逐字推送）
+// 数据以 SQLite 为准（重启不丢）；store 维护 UI 状态 + 本地乐观更新。
+// 发送走 ChatV2Send（工具循环），工具调用记录折叠展示。
 
 import { create } from "zustand";
-import { callWails } from "@/lib/wails";
+import {
+  chatV2Api,
+  chatLegacyApi,
+  type ChatV2Session,
+  type ChatV2Group,
+  type ChatV2Message,
+  type ToolCallRecord,
+} from "@/lib/chat";
 import { uid } from "@/lib/utils";
 
-export interface ChatMessage {
-  id: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-  reasoning?: string;
-  refs?: string[];
-  createdAt: number;
-  /** 是否正在流式输出 */
+/** 前端消息（扩展后端模型：流式/错误/工具记录） */
+export interface UIMessage extends ChatV2Message {
   streaming?: boolean;
-  /** 错误信息 */
   error?: string;
+  toolRecords?: ToolCallRecord[];
 }
 
-export interface ChatSession {
+export interface UISession {
   id: string;
   groupId: string;
   title: string;
   model: string;
   provider: string;
-  messages: ChatMessage[];
-  createdAt: number;
-  updatedAt: number;
+  messages: UIMessage[];
+  tags: string[];
+  pinned: boolean;
+  isDeleted: boolean;
+  createdAt: string;
+  updatedAt: string;
   systemHint?: string;
 }
 
-export interface ChatGroup {
+export interface UIGroup {
   id: string;
   name: string;
   systemHint: string;
   defaultSkill: string;
   tags: string[];
+  isDeleted: boolean;
 }
 
+type View = "normal" | "trash";
+
 interface ChatState {
-  groups: ChatGroup[];
-  sessions: ChatSession[];
+  groups: UIGroup[];
+  sessions: UISession[];
   activeSessionId: string | null;
+  view: View;
   loading: boolean;
   error: string | null;
   deepThink: boolean;
   refs: string[];
 
-  // —— Actions ——
-  initDefault: () => Promise<void>;
-  createSession: (title?: string, provider?: string) => Promise<string | null>;
+  init: () => Promise<void>;
+  reloadAll: () => Promise<void>;
+  createSession: (title?: string) => Promise<string | null>;
+  createGroup: (name: string) => Promise<UIGroup | null>;
   selectSession: (id: string) => void;
-  removeSession: (id: string) => void;
+  setView: (v: View) => void;
   sendMessage: (content: string) => Promise<void>;
+  renameSession: (id: string, title: string) => Promise<void>;
+  togglePin: (id: string) => Promise<void>;
+  softDeleteSession: (id: string) => Promise<void>;
+  restoreSession: (id: string) => Promise<void>;
+  purgeSession: (id: string) => Promise<void>;
+  deleteGroup: (id: string) => Promise<void>;
+  restoreGroup: (id: string) => Promise<void>;
   toggleDeepThink: () => void;
   addRef: (uri: string) => void;
   removeRef: (uri: string) => void;
   clearRefs: () => void;
-  renameSession: (id: string, title: string) => void;
 }
 
-const DEFAULT_GROUP_NAME = "默认分组";
-const DEFAULT_PROVIDER = "openai";
-const DEFAULT_MODEL = "gpt-4o-mini";
+const DEFAULT_GROUP = "默认分组";
 
 export const useChatStore = create<ChatState>((set, get) => ({
   groups: [],
   sessions: [],
   activeSessionId: null,
+  view: "normal",
   loading: false,
   error: null,
   deepThink: false,
   refs: [],
 
-  // —— 初始化：确保默认分组存在 ——
-  initDefault: async () => {
-    if (get().groups.length > 0) return;
-    const group = await callWails<ChatGroup>("ChatCreateGroup", DEFAULT_GROUP_NAME, "", "", []);
-    if (!group) {
-      // 后端不可用时，创建本地占位分组
-      const localGroup: ChatGroup = {
-        id: uid("group"),
-        name: DEFAULT_GROUP_NAME,
-        systemHint: "",
-        defaultSkill: "",
-        tags: [],
-      };
-      set({ groups: [localGroup] });
+  init: async () => {
+    const { groups } = get();
+    if (groups.length > 0) return;
+    // 从后端加载分组
+    const remote = await chatV2Api.listGroups(false);
+    if (remote && remote.length > 0) {
+      set({
+        groups: remote.map(toUIGroup),
+      });
+      await get().reloadAll();
       return;
     }
-    set({ groups: [group] });
+    // 无分组 → 创建默认
+    const created = await chatLegacyApi.createGroup(DEFAULT_GROUP);
+    if (created) {
+      set({ groups: [toUIGroup(created)] });
+    } else {
+      set({
+        groups: [
+          { id: uid("group"), name: DEFAULT_GROUP, systemHint: "", defaultSkill: "", tags: [], isDeleted: false },
+        ],
+      });
+    }
+    await get().reloadAll();
   },
 
-  // —— 创建会话 ——
-  createSession: async (title, provider) => {
+  reloadAll: async () => {
+    const [sessions, groups] = await Promise.all([
+      chatV2Api.listSessions({ includeDeleted: true, limit: 500 }),
+      chatV2Api.listGroups(true),
+    ]);
+    if (sessions) {
+      set({
+        sessions: sessions.map(toUISession),
+      });
+    }
+    if (groups && groups.length > 0) {
+      set({ groups: groups.map(toUIGroup) });
+    }
+  },
+
+  createSession: async (title) => {
     const state = get();
     const groupId = state.groups[0]?.id ?? "";
     if (!groupId) {
       set({ error: "无可用分组" });
       return null;
     }
-    const prov = provider ?? DEFAULT_PROVIDER;
-    const session = await callWails<ChatSession>(
-      "ChatCreateSession",
-      groupId,
-      title ?? "新会话",
-      DEFAULT_MODEL,
-      prov
-    );
-    let newSession: ChatSession;
-    if (session) {
-      newSession = {
-        id: session.id,
-        groupId: session.groupId,
-        title: session.title,
-        model: session.model,
-        provider: session.provider,
-        messages: [],
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        systemHint: session.systemHint,
-      };
-    } else {
-      // 后端不可用时的本地占位会话
-      newSession = {
-        id: uid("sess"),
-        groupId,
-        title: title ?? "新会话",
-        model: DEFAULT_MODEL,
-        provider: prov,
-        messages: [],
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-    }
+    // 优先后端（持久化）
+    const remote = await chatLegacyApi.createSession(groupId, title ?? "新会话");
+    const session: UISession = remote
+      ? toUISession(remote)
+      : {
+          id: uid("sess"),
+          groupId,
+          title: title ?? "新会话",
+          model: "gpt-4o-mini",
+          provider: "openai",
+          messages: [],
+          tags: [],
+          pinned: false,
+          isDeleted: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
     set((s) => ({
-      sessions: [newSession, ...s.sessions],
-      activeSessionId: newSession.id,
+      sessions: [session, ...s.sessions],
+      activeSessionId: session.id,
       error: null,
+      view: "normal",
     }));
-    return newSession.id;
+    return session.id;
+  },
+
+  createGroup: async (name) => {
+    if (!name.trim()) return null;
+    const remote = await chatV2Api.updateGroup({
+      id: uid("group"),
+      name: name.trim(),
+      system_hint: "",
+      default_skill: "",
+      tags: [],
+      is_deleted: false,
+      sort_order: 0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    } as never as ChatV2Group);
+    const g: UIGroup = {
+      id: uid("group"),
+      name: name.trim(),
+      systemHint: "",
+      defaultSkill: "",
+      tags: [],
+      isDeleted: false,
+    };
+    // 后端不可用则本地创建
+    set((s) => ({ groups: [...s.groups, g] }));
+    void remote;
+    return g;
   },
 
   selectSession: (id) => set({ activeSessionId: id, error: null }),
 
-  removeSession: (id) =>
-    set((s) => ({
-      sessions: s.sessions.filter((x) => x.id !== id),
-      activeSessionId:
-        s.activeSessionId === id ? null : s.activeSessionId,
-    })),
+  setView: (v) => set({ view: v }),
 
-  // —— 发送消息 ——
   sendMessage: async (content) => {
     const state = get();
     let sessionId = state.activeSessionId;
@@ -166,20 +204,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const session = get().sessions.find((s) => s.id === sessionId);
     if (!session) return;
 
-    // 构造 user 消息
-    const userMsg: ChatMessage = {
+    const userMsg: UIMessage = {
       id: uid("msg"),
       role: "user",
       content,
       refs: state.refs.slice(),
-      createdAt: Date.now(),
+      created_at: new Date().toISOString(),
     };
-    // 构造 assistant 占位消息（流式）
-    const asstMsg: ChatMessage = {
+    const asstMsg: UIMessage = {
       id: uid("msg"),
       role: "assistant",
       content: "",
-      createdAt: Date.now(),
+      created_at: new Date().toISOString(),
       streaming: true,
     };
 
@@ -189,7 +225,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ? {
               ...sess,
               messages: [...sess.messages, userMsg, asstMsg],
-              updatedAt: Date.now(),
+              updatedAt: new Date().toISOString(),
             }
           : sess
       ),
@@ -197,27 +233,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       error: null,
     }));
 
-    // 调用后端 ChatSend（返回完整字符串）
     try {
-      const reply = await callWails<string>(
-        "ChatSend",
-        sessionId,
-        content,
-        state.refs.slice(),
-        state.deepThink
-      );
-      const finalContent =
-        reply ?? "[后端未连接] 这条消息来自本地占位 —— Wails 绑定不可用时只做 UI 演示。";
-
-      // 模拟流式渲染：逐字推送
-      await streamIntoMessage(
-        sessionId,
-        asstMsg.id,
-        finalContent,
-        set
-      );
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
+      // ChatV2Send：工具循环 + 记录
+      const result = await chatV2Api.send(sessionId, content, state.refs.slice());
+      let finalContent = "";
+      let toolRecords: ToolCallRecord[] = [];
+      if (result) {
+        finalContent = result[0];
+        toolRecords = result[1] ?? [];
+      }
+      if (!finalContent) {
+        finalContent = "[后端未返回内容]";
+      }
       set((s) => ({
         sessions: s.sessions.map((sess) =>
           sess.id === sessionId
@@ -225,73 +252,124 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 ...sess,
                 messages: sess.messages.map((m) =>
                   m.id === asstMsg.id
-                    ? { ...m, streaming: false, error: errorMsg }
+                    ? {
+                        ...m,
+                        content: finalContent,
+                        streaming: false,
+                        toolRecords: toolRecords.length > 0 ? toolRecords : undefined,
+                      }
                     : m
                 ),
+                updatedAt: new Date().toISOString(),
               }
             : sess
         ),
-        error: errorMsg,
       }));
-    } finally {
-      set({ loading: false });
-    }
-  },
-
-  toggleDeepThink: () => set((s) => ({ deepThink: !s.deepThink })),
-
-  addRef: (uri) =>
-    set((s) => (s.refs.includes(uri) ? s : { refs: [...s.refs, uri] })),
-
-  removeRef: (uri) =>
-    set((s) => ({ refs: s.refs.filter((r) => r !== uri) })),
-
-  clearRefs: () => set({ refs: [] }),
-
-  renameSession: (id, title) =>
-    set((s) => ({
-      sessions: s.sessions.map((sess) =>
-        sess.id === id ? { ...sess, title } : sess
-      ),
-    })),
-}));
-
-// —— 模拟流式渲染：把完整字符串按 chunk 推送到指定消息 ——
-async function streamIntoMessage(
-  sessionId: string,
-  messageId: string,
-  fullContent: string,
-  set: (fn: (s: ChatState) => Partial<ChatState>) => void
-) {
-  // 字符块大小（每帧 3-6 字符，模拟真实流式体验）
-  const chunkSize = 4;
-  const intervalMs = 16;
-  let pos = 0;
-
-  return new Promise<void>((resolve) => {
-    const tick = () => {
-      pos += chunkSize;
-      const slice = fullContent.slice(0, pos);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       set((s) => ({
         sessions: s.sessions.map((sess) =>
           sess.id === sessionId
             ? {
                 ...sess,
                 messages: sess.messages.map((m) =>
-                  m.id === messageId
-                    ? { ...m, content: slice, streaming: pos < fullContent.length }
+                  m.id === asstMsg.id
+                    ? { ...m, streaming: false, error: msg }
                     : m
                 ),
               }
             : sess
         ),
+        error: msg,
       }));
-      if (pos < fullContent.length) {
-        setTimeout(tick, intervalMs);
-      } else {
-        resolve();
-      }
-    };
-    tick();
-  });
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  renameSession: async (id, title) => {
+    set((s) => ({
+      sessions: s.sessions.map((x) => (x.id === id ? { ...x, title } : x)),
+    }));
+    await chatV2Api.updateTitle(id, title);
+  },
+
+  togglePin: async (id) => {
+    const s = get().sessions.find((x) => x.id === id);
+    if (!s) return;
+    const pinned = !s.pinned;
+    set((st) => ({
+      sessions: st.sessions.map((x) => (x.id === id ? { ...x, pinned } : x)),
+    }));
+    await chatV2Api.pin(id, pinned);
+  },
+
+  softDeleteSession: async (id) => {
+    set((s) => ({
+      sessions: s.sessions.map((x) => (x.id === id ? { ...x, isDeleted: true } : x)),
+    }));
+    await chatV2Api.softDelete(id);
+  },
+
+  restoreSession: async (id) => {
+    set((s) => ({
+      sessions: s.sessions.map((x) => (x.id === id ? { ...x, isDeleted: false } : x)),
+    }));
+    await chatV2Api.restore(id);
+  },
+
+  purgeSession: async (id) => {
+    set((s) => ({ sessions: s.sessions.filter((x) => x.id !== id) }));
+    await chatV2Api.purge(id);
+  },
+
+  deleteGroup: async (id) => {
+    set((s) => ({
+      groups: s.groups.map((g) => (g.id === id ? { ...g, isDeleted: true } : g)),
+    }));
+    await chatV2Api.deleteGroup(id);
+  },
+
+  restoreGroup: async (id) => {
+    set((s) => ({
+      groups: s.groups.map((g) => (g.id === id ? { ...g, isDeleted: false } : g)),
+    }));
+    await chatV2Api.restoreGroup(id);
+  },
+
+  toggleDeepThink: () => set((s) => ({ deepThink: !s.deepThink })),
+
+  addRef: (uri) =>
+    set((s) => (s.refs.includes(uri) ? s : { refs: [...s.refs, uri] })),
+  removeRef: (uri) => set((s) => ({ refs: s.refs.filter((r) => r !== uri) })),
+  clearRefs: () => set({ refs: [] }),
+}));
+
+// —— 类型转换 ——
+function toUIGroup(g: ChatV2Group): UIGroup {
+  return {
+    id: g.id,
+    name: g.name,
+    systemHint: g.system_hint,
+    defaultSkill: g.default_skill,
+    tags: g.tags,
+    isDeleted: g.is_deleted,
+  };
+}
+
+function toUISession(s: ChatV2Session): UISession {
+  return {
+    id: s.id,
+    groupId: s.group_id,
+    title: s.title,
+    model: s.model,
+    provider: s.provider,
+    messages: (s.messages ?? []).map((m) => ({ ...m })),
+    tags: s.tags ?? [],
+    pinned: s.pinned,
+    isDeleted: s.is_deleted,
+    createdAt: s.created_at,
+    updatedAt: s.updated_at,
+    systemHint: s.system_hint,
+  };
 }

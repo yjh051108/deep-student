@@ -20,6 +20,10 @@ import { TodoPage } from "./pages/TodoPage";
 import { PomodoroPage } from "./pages/PomodoroPage";
 import { LLMUsagePage } from "./pages/LLMUsagePage";
 import { SandboxPage } from "./pages/SandboxPage";
+import { FSRSReviewPage } from "./pages/FSRSReviewPage";
+import { OCRPage } from "./pages/OCRPage";
+import { SyncPage } from "./pages/SyncPage";
+import { TemplateManagerPage } from "./pages/TemplateManagerPage";
 
 export default function App() {
   return (
@@ -44,6 +48,10 @@ export default function App() {
           <Route path="/skills" element={<SkillsPage />} />
           <Route path="/llm-usage" element={<LLMUsagePage />} />
           <Route path="/sandbox" element={<SandboxPage />} />
+          <Route path="/fsrs" element={<FSRSReviewPage />} />
+          <Route path="/ocr" element={<OCRPage />} />
+          <Route path="/sync" element={<SyncPage />} />
+          <Route path="/template-manager" element={<TemplateManagerPage />} />
           <Route path="/governance" element={<GovernancePage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/hub" replace />} />
