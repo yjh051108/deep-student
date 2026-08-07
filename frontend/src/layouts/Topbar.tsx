@@ -1,199 +1,161 @@
-// 顶部栏 —— 对照原版 Topbar
+// Topbar —— 1:1 对齐原版 desktop-shell-titlebar（40px 固定顶栏）
 // ------------------------------------------------------------
-// 设计要点：
-// - 暗色背景 (--card) + 底部 border 分隔
-// - 左侧：当前页面标题（由路由推导）+ 后退/前进按钮
-// - 中间：全局搜索/命令面板触发器（Ctrl+K）
-// - 右侧：Provider 切换 + A/B 槽位 + 用户头像
+// - 左侧：侧栏折叠钮（CaretLeft/CaretRight）+ 后退/前进
+// - 中间：视图标题（按路由映射）
+// - 右侧：命令面板钮（Terminal + ⌘K）+ Windows 窗口控制
 
 import { useLocation, useNavigate } from "react-router-dom";
 import {
-  Search,
-  ArrowLeft,
-  ArrowRight,
-  ChevronDown,
-  Bot,
-} from "lucide-react";
-import { useMemo, useState } from "react";
-import { useSessionStore, PROVIDERS, SlotKey, ProviderKey } from "@/state/session";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/Button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/DropdownMenu";
+  CaretLeft,
+  CaretRight,
+  Terminal,
+  Minus,
+  Square,
+  X,
+} from "@phosphor-icons/react";
+import { useSessionStore } from "@/state/session";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
 
-// 路由 → 页面标题映射
-const ROUTE_TITLES: Record<string, { title: string; subtitle: string }> = {
-  "/hub": { title: "Hub", subtitle: "资源中枢" },
-  "/chat": { title: "Chat", subtitle: "多模型对话" },
-  "/mindmap": { title: "Mindmap", subtitle: "思维导图" },
-  "/qbank": { title: "QBank", subtitle: "题库练习" },
-  "/anki": { title: "Anki", subtitle: "卡片记忆" },
-  "/reader": { title: "Reader", subtitle: "文档阅读" },
-  "/translate": { title: "Translate", subtitle: "翻译工作台" },
-  "/essay": { title: "Essay", subtitle: "作文批改" },
-  "/research": { title: "Research", subtitle: "研究助手" },
-  "/paper": { title: "Paper", subtitle: "论文检索" },
-  "/memory": { title: "Memory", subtitle: "记忆中枢" },
-  "/skills": { title: "Skills", subtitle: "技能与 MCP" },
-  "/governance": { title: "Governance", subtitle: "数据治理" },
-  "/settings": { title: "Settings", subtitle: "应用设置" },
+const VIEW_TITLES: Record<string, string> = {
+  "/chat": "新会话",
+  "/hub": "学习资源",
+  "/notes": "笔记",
+  "/mindmap": "思维导图",
+  "/todo": "待办",
+  "/pomodoro": "番茄钟",
+  "/qbank": "题库",
+  "/anki": "制卡任务",
+  "/fsrs": "间隔复习",
+  "/reader": "阅读器",
+  "/ocr": "OCR 识别",
+  "/translate": "翻译",
+  "/essay": "作文批改",
+  "/memory": "记忆库",
+  "/research": "深度调研",
+  "/paper": "论文检索",
+  "/skills": "技能管理",
+  "/template-manager": "模板管理",
+  "/sync": "云同步",
+  "/sandbox": "代码沙盒",
+  "/llm-usage": "LLM 用量",
+  "/governance": "数据治理",
+  "/settings": "设置",
 };
 
 export function Topbar() {
-  const navigate = useNavigate();
   const location = useLocation();
-  const provider = useSessionStore((s) => s.provider);
-  const slot = useSessionStore((s) => s.slot);
-  const user = useSessionStore((s) => s.user);
-  const setProvider = useSessionStore((s) => s.setProvider);
-  const setSlot = useSessionStore((s) => s.setSlot);
+  const navigate = useNavigate();
+  const sidebarCollapsed = useSessionStore((s) => s.sidebarCollapsed);
+  const toggleSidebar = useSessionStore((s) => s.toggleSidebar);
   const setPaletteOpen = useSessionStore((s) => s.setCommandPaletteOpen);
-  const setUser = useSessionStore((s) => s.setUser);
 
-  const [editingUser, setEditingUser] = useState(false);
-
-  // 由路由推导当前页面标题
-  const current = useMemo(() => {
-    return ROUTE_TITLES[location.pathname] ?? { title: "DeepStudent", subtitle: "" };
-  }, [location.pathname]);
+  const title = VIEW_TITLES[location.pathname] ?? "DeepStudent";
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-4">
-      {/* —— 左侧：页面标题 + 历史导航 —— */}
-      <div className="flex min-w-0 items-center gap-2">
-        <div className="flex items-center gap-0.5">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate(-1)}
-            aria-label="后退"
-            className="h-8 w-8"
-          >
-            <ArrowLeft size={14} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate(1)}
-            aria-label="前进"
-            className="h-8 w-8"
-          >
-            <ArrowRight size={14} />
-          </Button>
-        </div>
-
-        <div className="min-w-0">
-          <div className="flex items-baseline gap-2">
-            <h1 className="truncate text-sm font-semibold tracking-tight text-foreground">
-              {current.title}
-            </h1>
-            {current.subtitle && (
-              <span className="truncate text-xs text-muted-foreground">
-                · {current.subtitle}
-              </span>
-            )}
-          </div>
-        </div>
+    <header
+      className="flex shrink-0 items-center border-b border-[var(--shell-seam)] bg-[var(--titlebar-background)] px-3"
+      style={{ height: 40 }}
+    >
+      {/* —— 左侧：折叠 + 导航 —— */}
+      <div className="flex items-center gap-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={toggleSidebar}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-[var(--interactive-hover)] hover:text-foreground"
+            >
+              {sidebarCollapsed ? <CaretRight size={16} /> : <CaretLeft size={16} />}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{sidebarCollapsed ? "展开侧栏" : "折叠侧栏"}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => navigate(-1)}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-[var(--interactive-hover)] hover:text-foreground"
+            >
+              <CaretLeft size={14} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">后退</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => navigate(1)}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-[var(--interactive-hover)] hover:text-foreground"
+            >
+              <CaretRight size={14} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">前进</TooltipContent>
+        </Tooltip>
       </div>
 
-      {/* —— 中间：命令面板触发器 —— */}
-      <button
-        type="button"
-        onClick={() => setPaletteOpen(true)}
-        className="hidden md:flex w-80 items-center gap-2 rounded-md border border-input bg-transparent px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-      >
-        <Search size={14} />
-        <span className="flex-1 text-left">搜索 / 命令</span>
-        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-          Ctrl+K
-        </kbd>
-      </button>
+      {/* —— 中间：视图标题 —— */}
+      <div className="flex min-w-0 flex-1 items-center justify-center px-2">
+        <span className="truncate text-[13px] font-medium text-foreground/90">{title}</span>
+      </div>
 
-      {/* —— 右侧：Provider + 槽位 + 用户 —— */}
-      <div className="flex items-center gap-3">
-        {/* Provider 下拉 */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-1.5">
-              <Bot size={14} />
-              <span className="hidden sm:inline">
-                {PROVIDERS.find((p) => p.key === provider)?.label ?? provider}
-              </span>
-              <ChevronDown size={12} className="text-muted-foreground" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuLabel>LLM Provider</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {PROVIDERS.map((p) => (
-              <DropdownMenuItem
-                key={p.key}
-                onClick={() => setProvider(p.key as ProviderKey)}
-                className={cn(
-                  "justify-between",
-                  provider === p.key && "bg-accent text-accent-foreground"
-                )}
-              >
-                {p.label}
-                {provider === p.key && <span className="text-primary">●</span>}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* A/B 槽位切换 */}
-        <div className="flex items-center gap-0.5 rounded-md border border-border bg-muted/30 p-0.5">
-          {(["A", "B"] as SlotKey[]).map((s) => (
+      {/* —— 右侧：命令面板 + 窗口控制 —— */}
+      <div className="flex items-center gap-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
             <button
-              key={s}
-              type="button"
-              onClick={() => setSlot(s)}
-              className={cn(
-                "rounded px-2 py-0.5 text-[11px] font-medium transition-colors",
-                slot === s
-                  ? "bg-primary text-primary-foreground shadow-soft"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
-              )}
-              aria-label={`切换到槽 ${s}`}
+              onClick={() => setPaletteOpen(true)}
+              className="flex h-7 items-center gap-1.5 rounded-md px-2 text-muted-foreground hover:bg-[var(--interactive-hover)] hover:text-foreground"
             >
-              槽 {s}
+              <Terminal size={14} />
+              <kbd className="rounded border border-[var(--border-default)] px-1 text-[9px]">⌘K</kbd>
             </button>
-          ))}
-        </div>
-
-        {/* 用户标识 */}
-        <div className="flex items-center gap-2 border-l border-border pl-3">
-          {editingUser ? (
-            <input
-              autoFocus
-              value={user}
-              onChange={(e) => setUser(e.target.value)}
-              onBlur={() => setEditingUser(false)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === "Escape") {
-                  setEditingUser(false);
-                }
-              }}
-              className="w-24 rounded-md border border-input bg-transparent px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={() => setEditingUser(true)}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-brand-primary-dark text-xs font-semibold text-primary-foreground transition-transform hover:scale-105"
-              aria-label="切换用户名"
-            >
-              {user.slice(0, 1).toUpperCase()}
-            </button>
-          )}
-        </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">命令面板</TooltipContent>
+        </Tooltip>
+        <WindowControls />
       </div>
     </header>
+  );
+}
+
+// —— Windows 窗口控制 ——
+function WindowControls() {
+  const isWindows = navigator.userAgent.includes("Windows");
+  if (!isWindows) return null;
+
+  const send = (action: string) => {
+    try {
+      const w = window as unknown as Record<string, unknown>;
+      const wails = w.wails as Record<string, unknown> | undefined;
+      const runtime = wails?.Window as Record<string, (...a: unknown[]) => unknown> | undefined;
+      if (action === "minimize") runtime?.Minimise?.();
+      else if (action === "maximize") runtime?.Maximise?.();
+      else if (action === "close") runtime?.Close?.();
+    } catch {
+      // 忽略（浏览器预览时无窗口控制）
+    }
+  };
+
+  return (
+    <div className="ml-1 flex items-center gap-0.5">
+      <button
+        onClick={() => send("minimize")}
+        className="flex h-6 w-8 items-center justify-center rounded text-muted-foreground/70 hover:bg-[var(--interactive-hover)] hover:text-foreground"
+      >
+        <Minus size={12} />
+      </button>
+      <button
+        onClick={() => send("maximize")}
+        className="flex h-6 w-8 items-center justify-center rounded text-muted-foreground/70 hover:bg-[var(--interactive-hover)] hover:text-foreground"
+      >
+        <Square size={10} />
+      </button>
+      <button
+        onClick={() => send("close")}
+        className="flex h-6 w-8 items-center justify-center rounded text-muted-foreground/70 hover:bg-destructive hover:text-white"
+      >
+        <X size={13} />
+      </button>
+    </div>
   );
 }

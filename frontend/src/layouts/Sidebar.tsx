@@ -1,256 +1,195 @@
-// 现代侧边栏 —— 对照原版 ModernSidebar
+// Sidebar —— 1:1 对齐原版 ModernSidebar
 // ------------------------------------------------------------
-// 设计要点：
-// - 暗色背景 (--card) + 精致 hover/active 状态
-// - 分组导航：核心 / 工具 / 系统
-// - 折叠模式：宽度从 240px 收缩到 64px，仅显示图标
-// - 顶部品牌区 + 底部用户/版本区
-// - 使用 lucide-react 图标（对照原版 phosphor-icons 视觉）
+// - 宽度 272px（可折叠为 0，由顶栏悬浮钮控制）
+// - 主导航 7 项（新会话/学习资源/待办/技能管理/制卡任务/模板管理/设置）
+// - 会话滚动区（置顶/最近，对齐原版 pinned/conversations 分组）
+// - 浅灰激活态（interactive-selected），非品牌色填充
+// - Phosphor 图标（与原版同库）
 
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
-  LayoutGrid,
-  MessagesSquare,
-  Network,
-  ListChecks,
-  CreditCard,
-  BookOpen,
-  Languages,
-  PenSquare,
-  Search,
-  FileText,
-  Brain,
-  Wrench,
-  ShieldCheck,
-  Settings as SettingsIcon,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Sparkles,
-  NotebookPen,
-  Timer,
-  Gauge,
-  CheckSquare,
-  Code2,
-  Layers,
-  ScanLine,
-  RefreshCw,
-  LayoutTemplate,
-} from "lucide-react";
+  ChatCenteredText,
+  Books,
+  ClipboardText,
+  MagicWand,
+  Stack,
+  SquaresFour,
+  Gear,
+  PushPin,
+  DotsThree,
+  Plus,
+  CaretRight,
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
+import { useEffect, useState } from "react";
 import { useSessionStore } from "@/state/session";
 
 interface NavItem {
   to: string;
   label: string;
-  icon: typeof LayoutGrid;
-  /** 可选的角标（如未读数） */
-  badge?: number;
+  icon: typeof ChatCenteredText;
+  /** 新建会话等快捷动作 */
+  action?: () => void;
+  /** mac 快捷键提示 */
+  kbd?: string;
 }
 
-// 分组定义：核心 / 工具 / 系统
-const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
-  {
-    title: "核心",
-    items: [
-      { to: "/hub", label: "Hub · 资源中枢", icon: LayoutGrid },
-      { to: "/chat", label: "Chat · 多模型对话", icon: MessagesSquare },
-      { to: "/mindmap", label: "Mindmap · 思维导图", icon: Network },
-      { to: "/reader", label: "Reader · 文档阅读", icon: BookOpen },
-      { to: "/notes", label: "Notes · 笔记", icon: NotebookPen },
-    ],
-  },
-  {
-    title: "学习工具",
-    items: [
-      { to: "/todo", label: "Todo · 待办", icon: CheckSquare },
-      { to: "/pomodoro", label: "Pomodoro · 番茄钟", icon: Timer },
-      { to: "/qbank", label: "QBank · 题库", icon: ListChecks },
-      { to: "/anki", label: "Anki · 卡片", icon: CreditCard },
-      { to: "/translate", label: "Translate · 翻译", icon: Languages },
-      { to: "/essay", label: "Essay · 作文批改", icon: PenSquare },
-      { to: "/memory", label: "Memory · 记忆", icon: Brain },
-    ],
-  },
-  {
-    title: "研究",
-    items: [
-      { to: "/research", label: "Research · 研究", icon: Search },
-      { to: "/paper", label: "Paper · 论文", icon: FileText },
-    ],
-  },
-  {
-    title: "系统",
-    items: [
-      { to: "/llm-usage", label: "LLM Usage · 用量", icon: Gauge },
-      { to: "/sandbox", label: "Sandbox · 沙盒", icon: Code2 },
-      { to: "/fsrs", label: "FSRS · 复习", icon: Layers },
-      { to: "/ocr", label: "OCR · 识别", icon: ScanLine },
-      { to: "/sync", label: "Sync · 同步", icon: RefreshCw },
-      { to: "/template-manager", label: "Templates · 模板", icon: LayoutTemplate },
-      { to: "/skills", label: "Skills · 技能", icon: Wrench },
-      { to: "/governance", label: "Governance · 治理", icon: ShieldCheck },
-      { to: "/settings", label: "Settings · 设置", icon: SettingsIcon },
-    ],
-  },
+const NAV_ITEMS: NavItem[] = [
+  { to: "/chat", label: "新会话", icon: ChatCenteredText, kbd: "⌘N" },
+  { to: "/hub", label: "学习资源", icon: Books },
+  { to: "/todo", label: "待办", icon: ClipboardText },
+  { to: "/skills", label: "技能管理", icon: MagicWand },
+  { to: "/anki", label: "制卡任务", icon: Stack },
+  { to: "/template-manager", label: "模板管理", icon: SquaresFour },
 ];
 
-interface SidebarProps {
+export function Sidebar({
+  collapsed,
+  onToggleCollapsed,
+}: {
   collapsed: boolean;
   onToggleCollapsed: () => void;
-}
-
-export function Sidebar({ collapsed, onToggleCollapsed }: SidebarProps) {
+}) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [pinnedOpen, setPinnedOpen] = useState(true);
+  const [recentOpen, setRecentOpen] = useState(true);
   const user = useSessionStore((s) => s.user);
   const version = useSessionStore((s) => s.version);
-  const location = useLocation();
+
+  useEffect(() => {
+    if (location.pathname !== "/chat") return;
+    // 到达 /chat 时若带 ?new=1 触发新会话（由 ChatPage 处理）
+  }, [location]);
+
+  if (collapsed) {
+    return (
+      <aside className="shrink-0 overflow-hidden" style={{ width: 0 }}>
+        <div className="w-[272px] border-r border-[var(--shell-seam)] bg-[var(--shell-navigation-surface)]" />
+      </aside>
+    );
+  }
 
   return (
     <aside
-      className={cn(
-        "flex shrink-0 flex-col border-r border-border bg-card text-foreground transition-[width] duration-200 ease-out",
-        collapsed ? "w-16" : "w-60"
-      )}
-      data-collapsed={collapsed}
+      className="flex shrink-0 flex-col border-r border-[var(--shell-seam)] bg-[var(--shell-navigation-surface)]"
+      style={{ width: 272 }}
     >
-      {/* —— 品牌区 —— */}
-      <div
-        className={cn(
-          "flex h-14 shrink-0 items-center gap-2 border-b border-border px-3",
-          collapsed && "justify-center px-0"
-        )}
-      >
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-brand-primary-dark text-primary-foreground shadow-soft">
-          <Sparkles size={16} />
-        </div>
-        {!collapsed && (
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold tracking-tight">
-              DeepStudent
-            </div>
-            <div className="truncate text-[10px] text-muted-foreground">
-              本地优先 · AI 学习工作台
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* —— 导航区 —— */}
-      <nav className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto py-3 scrollbar-dark">
-        {NAV_GROUPS.map((group) => (
-          <div key={group.title} className="px-2">
-            {!collapsed && (
-              <div className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                {group.title}
-              </div>
-            )}
-            <div className="space-y-0.5">
-              {group.items.map((item) => {
-                const isActive = location.pathname === item.to;
-                const linkInner = (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    className={cn(
-                      "group relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
-                      collapsed && "justify-center px-0",
-                      isActive
-                        ? "bg-primary/12 text-primary font-medium"
-                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                    )}
-                  >
-                    {/* 激活态左侧指示条 */}
-                    {isActive && (
-                      <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-r-full bg-primary" />
-                    )}
-                    <item.icon
-                      size={16}
-                      className={cn(
-                        "shrink-0 transition-colors",
-                        isActive
-                          ? "text-primary"
-                          : "text-muted-foreground group-hover:text-foreground"
-                      )}
-                    />
-                    {!collapsed && (
-                      <span className="truncate">{item.label}</span>
-                    )}
-                    {!collapsed && item.badge !== undefined && item.badge > 0 && (
-                      <span className="ml-auto rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                        {item.badge}
-                      </span>
-                    )}
-                  </NavLink>
-                );
-                // 折叠态：包装 Tooltip 显示完整标签
-                if (collapsed) {
-                  return (
-                    <Tooltip key={item.to}>
-                      <TooltipTrigger asChild>
-                        <div>{linkInner}</div>
-                      </TooltipTrigger>
-                      <TooltipContent side="right">{item.label}</TooltipContent>
-                    </Tooltip>
-                  );
-                }
-                return linkInner;
-              })}
-            </div>
-          </div>
-        ))}
+      {/* —— 主导航区 —— */}
+      <nav className="shrink-0 space-y-0.5 p-2">
+        {NAV_ITEMS.map((item) => {
+          const isActive = location.pathname === item.to;
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={cn("sidebar-row flex items-center gap-2.5 px-2.5")}
+              data-active={isActive}
+            >
+              <item.icon size={18} weight={isActive ? "fill" : "regular"} className="shrink-0 opacity-80" />
+              <span className="min-w-0 flex-1 truncate text-[13px]">{item.label}</span>
+              {item.kbd && (
+                <kbd className="rounded border border-[var(--border-default)] bg-transparent px-1 text-[9px] text-muted-foreground/60">
+                  {item.kbd}
+                </kbd>
+              )}
+            </NavLink>
+          );
+        })}
       </nav>
 
-      {/* —— 底部用户/版本区 —— */}
-      <div className="shrink-0 border-t border-border p-2">
-        {!collapsed ? (
-          <div className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent transition-colors">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-brand-primary-dark text-xs font-semibold text-primary-foreground">
-              {user.slice(0, 1).toUpperCase()}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-xs font-medium text-foreground">
-                {user}
-              </div>
-              <div className="truncate text-[10px] text-muted-foreground">
-                {version}
-              </div>
-            </div>
+      {/* —— 会话区 —— */}
+      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-dark px-2 pb-2">
+        {/* 置顶 */}
+        <SectionHeader
+          title="置顶"
+          open={pinnedOpen}
+          onToggle={() => setPinnedOpen((v) => !v)}
+          onNew={() => navigate("/chat?new=1")}
+        />
+        {pinnedOpen && (
+          <div className="mb-1 space-y-0.5">
+            <SidebarEmptyRow text="没有置顶会话" />
           </div>
-        ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex justify-center py-1.5">
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-primary to-brand-primary-dark text-xs font-semibold text-primary-foreground">
-                  {user.slice(0, 1).toUpperCase()}
-                </div>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              {user} · {version}
-            </TooltipContent>
-          </Tooltip>
+        )}
+
+        {/* 最近 */}
+        <SectionHeader
+          title="最近"
+          open={recentOpen}
+          onToggle={() => setRecentOpen((v) => !v)}
+          onNew={() => navigate("/chat?new=1")}
+        />
+        {recentOpen && (
+          <div className="space-y-0.5">
+            <SidebarEmptyRow text="还没有会话，点击「新会话」开始" />
+          </div>
         )}
       </div>
 
-      {/* —— 折叠按钮 —— */}
-      <button
-        type="button"
-        onClick={onToggleCollapsed}
-        className={cn(
-          "flex h-9 shrink-0 items-center gap-2 border-t border-border px-3 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-          collapsed && "justify-center px-0"
-        )}
-        aria-label={collapsed ? "展开侧边栏" : "折叠侧边栏"}
-      >
-        {collapsed ? (
-          <PanelLeftOpen size={14} />
-        ) : (
-          <>
-            <PanelLeftClose size={14} />
-            <span>折叠</span>
-          </>
-        )}
-      </button>
+      {/* —— 底部：设置 —— */}
+      <div className="shrink-0 border-t border-[var(--shell-seam)] p-2">
+        <NavLink
+          to="/settings"
+          className={cn("sidebar-row flex items-center gap-2.5 px-2.5")}
+          data-active={location.pathname === "/settings"}
+        >
+          <Gear size={18} className="shrink-0 opacity-80" />
+          <span className="min-w-0 flex-1 truncate text-[13px]">设置</span>
+          <span className="text-[9px] text-muted-foreground/50">{version}</span>
+        </NavLink>
+        <div className="mt-1 flex items-center gap-1.5 px-2.5 text-[10px] text-muted-foreground/50">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          {user}
+        </div>
+      </div>
+
+      {/* 折叠按钮由顶栏悬浮控制（保留 prop 引用） */}
+      <span className="hidden">{void onToggleCollapsed}</span>
     </aside>
   );
 }
+
+// —— 分组标题（对齐原版 renderSidebarSectionHeader）——
+function SectionHeader({
+  title,
+  open,
+  onToggle,
+  onNew,
+}: {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  onNew: () => void;
+}) {
+  return (
+    <div className="group flex items-center px-1 pt-2">
+      <button
+        onClick={onToggle}
+        className="flex flex-1 items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 hover:text-foreground"
+      >
+        <CaretRight size={10} className={cn("transition-transform", !open && "rotate-90")} weight="bold" />
+        {title}
+      </button>
+      <button
+        onClick={onNew}
+        className="hidden rounded p-0.5 text-muted-foreground/60 hover:text-foreground group-hover:block"
+        title={`新建${title}`}
+      >
+        <Plus size={11} weight="bold" />
+      </button>
+    </div>
+  );
+}
+
+function SidebarEmptyRow({ text }: { text: string }) {
+  return (
+    <div className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-muted-foreground/50">
+      <DotsThree size={12} className="opacity-40" />
+      {text}
+    </div>
+  );
+}
+
+// 图标引用保留
+void PushPin;

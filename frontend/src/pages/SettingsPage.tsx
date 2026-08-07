@@ -9,6 +9,21 @@
 // 复用 session.ts 状态管理；设置变更时显示 toast/横幅提示。
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Robot as PRobot,
+  Flask as PFlask,
+  SlidersHorizontal as PSliders,
+  Palette as PPalette,
+  Plug as PPlug,
+  Globe as PGlobe,
+  ChartBar as PChartBar,
+  ShieldCheck as PShield,
+  Wrench as PWrench,
+  Keyboard as PKeyboard,
+  BookOpen as PBook,
+  CaretRight as PCaret,
+  GearSix as PGear,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
@@ -97,12 +112,59 @@ import {
   Activity,
 } from "lucide-react";
 
+export type SettingsTab =
+  | "apis" | "models" | "general" | "appearance"
+  | "mcp" | "search" | "statistics" | "data-governance"
+  | "params" | "shortcuts" | "about";
+
+const SETTINGS_NAV: { group: string; items: { key: SettingsTab; label: string; icon: typeof PRobot }[] }[] = [
+  {
+    group: "模型服务",
+    items: [
+      { key: "apis", label: "模型服务", icon: PRobot },
+      { key: "models", label: "模型分配", icon: PFlask },
+    ],
+  },
+  {
+    group: "通用",
+    items: [
+      { key: "general", label: "通用", icon: PSliders },
+      { key: "appearance", label: "外观", icon: PPalette },
+    ],
+  },
+  {
+    group: "扩展",
+    items: [
+      { key: "mcp", label: "MCP 工具", icon: PPlug },
+      { key: "search", label: "外部搜索", icon: PGlobe },
+    ],
+  },
+  {
+    group: "数据",
+    items: [
+      { key: "statistics", label: "统计", icon: PChartBar },
+      { key: "data-governance", label: "数据治理", icon: PShield },
+    ],
+  },
+  {
+    group: "系统",
+    items: [
+      { key: "params", label: "生成参数", icon: PWrench },
+      { key: "shortcuts", label: "快捷键", icon: PKeyboard },
+      { key: "about", label: "关于", icon: PBook },
+    ],
+  },
+];
+
 export function SettingsPage() {
   const [toast, setToast] = useState<{
     kind: "success" | "error";
     text: string;
   } | null>(null);
   const toastTimer = useRef<number | null>(null);
+  const [activeTab, setActiveTab] = useState<SettingsTab>(
+    () => (localStorage.getItem("ds.settingsTab") as SettingsTab) || "apis"
+  );
 
   const showToast = (kind: "success" | "error", text: string) => {
     setToast({ kind, text });
@@ -111,55 +173,96 @@ export function SettingsPage() {
   };
 
   useEffect(() => {
+    localStorage.setItem("ds.settingsTab", activeTab);
+  }, [activeTab]);
+
+  useEffect(() => {
     return () => {
       if (toastTimer.current) window.clearTimeout(toastTimer.current);
     };
   }, []);
 
-  // i18n：语言切换（zh-CN / en-US）
-  const lang = useI18n((s) => s.lang);
-  const setLang = useI18n((s) => s.setLang);
-
   return (
-    <div className="flex h-full w-full min-h-0 flex-col bg-background">
-      {/* —— 顶部标题栏 —— */}
-      <header className="shrink-0 flex items-center gap-2 border-b border-border bg-card px-4 py-3 text-sm">
-        <Settings size={16} className="text-primary" />
-        <h1 className="font-semibold text-foreground">设置</h1>
-        <span className="text-[11px] text-muted-foreground/60">
-          通用 / LLM 提供商 / 外观 / 索引 / 关于
-        </span>
-      </header>
-
-      {/* —— Toast 横幅 —— */}
-      {toast && (
-        <div
-          className={cn(
-            "shrink-0 flex items-center gap-2 border-b px-4 py-2 text-xs",
-            toast.kind === "success"
-              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
-              : "border-destructive/30 bg-destructive/10 text-destructive"
-          )}
-        >
-          {toast.kind === "success" ? (
-            <CheckCircle2 size={12} />
-          ) : (
-            <AlertCircle size={12} />
-          )}
-          <span className="truncate">{toast.text}</span>
+    <div className="flex h-full w-full min-h-0 bg-background">
+      {/* —— 左：设置导航侧栏（对齐原版 UnifiedSidebar） —— */}
+      <aside
+        className="flex w-[240px] shrink-0 flex-col border-r border-[var(--shell-seam)] bg-[var(--shell-navigation-surface)]"
+      >
+        <div className="shrink-0 border-b border-[var(--shell-seam)] px-4 py-3">
+          <div className="flex items-center gap-2">
+            <PGear size={16} className="text-primary" />
+            <span className="text-[13px] font-semibold text-foreground">设置</span>
+          </div>
         </div>
-      )}
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-dark p-2">
+          {SETTINGS_NAV.map((group) => (
+            <div key={group.group} className="mb-3">
+              <div className="px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                {group.group}
+              </div>
+              <div className="space-y-0.5">
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const active = activeTab === item.key;
+                  return (
+                    <button
+                      key={item.key}
+                      onClick={() => setActiveTab(item.key)}
+                      className={"sidebar-row flex w-full items-center gap-2.5 px-2.5"}
+                      data-active={active}
+                    >
+                      <Icon size={17} className="shrink-0 opacity-80" weight={active ? "fill" : "regular"} />
+                      <span className="min-w-0 flex-1 truncate text-[13px]">{item.label}</span>
+                      {active && <PCaret size={11} className="shrink-0 text-primary" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </aside>
 
-      {/* —— 主体滚动区 —— */}
+      {/* —— 右：内容区 —— */}
       <div className="min-h-0 flex-1 overflow-y-auto scrollbar-dark">
-        <div className="mx-auto max-w-4xl space-y-4 p-4">
-          <GeneralSection showToast={showToast} />
-          <ProviderSection showToast={showToast} />
-          <AppearanceSection showToast={showToast} />
-          <IndexSection showToast={showToast} />
-          <AboutSection />
+        <div className="mx-auto max-w-[72rem] space-y-4 p-6">
+          {toast && (
+            <div
+              className={cn(
+                "flex items-center gap-2 rounded-md border px-4 py-2 text-xs",
+                toast.kind === "success"
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
+                  : "border-destructive/30 bg-destructive/10 text-destructive"
+              )}
+            >
+              {toast.kind === "success" ? "✓" : "✗"}
+              <span className="truncate">{toast.text}</span>
+            </div>
+          )}
+
+          {activeTab === "apis" && <ProviderSection showToast={showToast} />}
+          {activeTab === "models" && <ProviderSection showToast={showToast} initialModels />}
+          {activeTab === "general" && <GeneralSection showToast={showToast} />}
+          {activeTab === "appearance" && <AppearanceSection showToast={showToast} />}
+          {activeTab === "mcp" && <PlaceholderSection title="MCP 工具" desc="管理 MCP 服务器接入（stdio / SSE）" />}
+          {activeTab === "search" && <PlaceholderSection title="外部搜索" desc="配置外部搜索供应商（学术 / 网络）" />}
+          {activeTab === "statistics" && <PlaceholderSection title="统计" desc="LLM 用量与学习数据统计（见 LLM Usage 页）" />}
+          {activeTab === "data-governance" && <PlaceholderSection title="数据治理" desc="备份 / 恢复 / 云同步（见 Sync 页）" />}
+          {activeTab === "params" && <PlaceholderSection title="生成参数" desc="默认温度 / TopP / 上下文窗口等" />}
+          {activeTab === "shortcuts" && <PlaceholderSection title="快捷键" desc="全局快捷键配置" />}
+          {activeTab === "about" && <AboutSection />}
         </div>
       </div>
+    </div>
+  );
+}
+
+// —— 占位区块（导航对齐原版，内容后续填充） ——
+function PlaceholderSection({ title, desc }: { title: string; desc: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-8 text-center">
+      <div className="text-[14px] font-semibold text-foreground">{title}</div>
+      <div className="mt-1 text-[12px] text-muted-foreground">{desc}</div>
     </div>
   );
 }
@@ -345,8 +448,10 @@ function GeneralSection({
 // ============================================================
 function ProviderSection({
   showToast,
+  initialModels = false,
 }: {
   showToast: (kind: "success" | "error", text: string) => void;
+  initialModels?: boolean;
 }) {
   const provider = useSessionStore((s) => s.provider);
   const setProvider = useSessionStore((s) => s.setProvider);

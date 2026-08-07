@@ -442,3 +442,98 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
+
+/* ============================================================
+   Shell 语义变量（对齐原版 theme-colors.css 派生体系）
+   ------------------------------------------------------------
+   - --shell-workspace-panel    页面/工作区底
+   - --shell-navigation-surface 侧栏底（独立浅灰区）
+   - --shell-inspector-panel    浮层/右侧面板
+   - --border-default / --shell-seam  分隔线
+   - --interactive-selected / --interactive-hover  选中/悬停
+   - --shell-navigation-row-foreground  侧栏行前景
+   ============================================================ */
+:root {
+  --shell-workspace-panel: hsl(var(--background));
+  --shell-navigation-surface: hsl(var(--nav-background));
+  --shell-inspector-panel: hsl(var(--card));
+  --border-default: hsl(var(--border));
+  --shell-seam: hsl(var(--border) / 0.6);
+  --interactive-hover: hsl(var(--accent));
+  --interactive-selected: hsl(var(--accent) / 0.8);
+  --shell-navigation-row-foreground: hsl(var(--muted-foreground));
+  --shell-navigation-foreground: hsl(var(--foreground));
+  --sidebar-width: 272px;
+  --shell-titlebar-height: 40px;
+  --shell-navigation-width: 272px;
+  --shell-toolbar-height: 44px;
+  --shell-section-gap: 18px;
+}
+
+/* ============================================================
+   study-shell 通用类（原版页面外壳体系）
+   ============================================================ */
+.study-shell-page {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  min-height: 0;
+  background: var(--shell-workspace-panel);
+  color: hsl(var(--foreground));
+}
+.study-shell-panel {
+  background: var(--shell-inspector-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-shell-panel);
+}
+.study-shell-pane {
+  background: var(--shell-workspace-panel);
+  border-radius: var(--radius-shell-panel);
+}
+.study-shell-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--shell-seam);
+  padding: 8px 16px;
+  min-height: var(--shell-toolbar-height);
+  background: var(--shell-workspace-panel);
+}
+.study-shell-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px;
+  color: hsl(var(--muted-foreground));
+}
+/* 侧栏行（对齐原版 buttonPrimitiveContract nav 变体） */
+.sidebar-row {
+  min-height: 32px;
+  border-radius: var(--radius-shell-row);
+  color: var(--shell-navigation-row-foreground);
+  font-size: 13px;
+  font-weight: 400;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.sidebar-row:hover {
+  background: var(--interactive-hover);
+}
+.sidebar-row[data-active="true"] {
+  background: var(--interactive-selected);
+  color: var(--shell-navigation-foreground);
+}
+/* 面板分隔条 */
+.panel-resize-handle {
+  width: 1.5px;
+  background: var(--shell-seam);
+  transition: background 120ms ease;
+}
+.panel-resize-handle:hover {
+  background: hsl(var(--primary) / 0.3);
+}
+/* 毛玻璃（macOS vibrancy 风格，侧栏半透明） */
+.sidebar-translucent {
+  backdrop-filter: blur(28px) saturate(1.8);
+}
