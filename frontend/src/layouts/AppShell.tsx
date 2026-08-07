@@ -30,6 +30,7 @@ import {
   Wrench,
   ShieldCheck,
   Settings as SettingsIcon,
+  Code2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -56,6 +57,10 @@ const ROUTE_COMMANDS: { id: string; label: string; to: string; icon: typeof Layo
   { id: "memory", label: "前往 Memory · 记忆", to: "/memory", icon: Brain },
   { id: "skills", label: "前往 Skills · 技能", to: "/skills", icon: Wrench },
   { id: "governance", label: "前往 Governance · 治理", to: "/governance", icon: ShieldCheck },
+  { id: "todo", label: "前往 Todo · 待办", to: "/todo", icon: ListChecks },
+  { id: "pomodoro", label: "前往 Pomodoro · 番茄钟", to: "/pomodoro", icon: ListChecks },
+  { id: "llm-usage", label: "前往 LLM Usage · 用量", to: "/llm-usage", icon: Search },
+  { id: "sandbox", label: "前往 Sandbox · 沙盒", to: "/sandbox", icon: Code2 },
   { id: "settings", label: "前往 Settings · 设置", to: "/settings", icon: SettingsIcon },
 ];
 

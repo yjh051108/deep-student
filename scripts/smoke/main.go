@@ -24,6 +24,9 @@ import (
 	"github.com/helixnow/deep-student-go/internal/anki"
 	"github.com/helixnow/deep-student-go/internal/chat"
 	"github.com/helixnow/deep-student-go/internal/essay"
+	"github.com/helixnow/deep-student-go/internal/fsrs"
+	"github.com/helixnow/deep-student-go/internal/plugins"
+	"github.com/helixnow/deep-student-go/internal/quickassist"
 	"github.com/helixnow/deep-student-go/internal/governance"
 	"github.com/helixnow/deep-student-go/internal/hub"
 	"github.com/helixnow/deep-student-go/internal/llmusage"
@@ -226,6 +229,9 @@ type app struct {
 	Sync     *sync.Service
 	OCR      *ocr.Service
 	Multi    *multimodal.Service
+	FSRS     *fsrs.Service
+	Plugins  *plugins.Manager
+	Quick    *quickassist.Service
 	vfs     *vfs.FS
 }
 
@@ -337,6 +343,9 @@ func (r *runner) boot() error {
 		Sync:     sync.New(st),
 		OCR:      ocr.New("smoke-key"),
 		Multi:    multimodal.New(st, reg, fs),
+		FSRS:     fsrs.New(st),
+		Plugins:  plugins.New(st, cfg.VaultDir),
+		Quick:    quickassist.New(reg, st),
 		vfs:     fs,
 	}
 	if err := r.app.Sync.EnsureTriggers(); err != nil {
@@ -629,6 +638,33 @@ func (r *runner) walk() {
 	v2count, err := r.app.Chat.CountSessions()
 	must("chatv2.count", err)
 	mustOK("chatv2.count.n", v2count >= 1, fmt.Sprintf("count=%d", v2count))
+
+	// 23. FSRS: 加卡 + 复习 + 统计
+	fcards, err := r.app.FSRS.AddCards("冒烟牌组", []fsrs.CardInput{{Front: "apple", Back: "苹果"}})
+	must("fsrs.add", err)
+	mustOK("fsrs.cards", len(fcards) == 1, fmt.Sprintf("cards=%d", len(fcards)))
+	_, _ = r.app.FSRS.Review(fcards[0].CardID, fsrs.Good)
+	fdue, _ := r.app.FSRS.DueCount()
+	mustOK("fsrs.duecount", fdue == 0, fmt.Sprintf("due=%d", fdue))
+	fstats, err := r.app.FSRS.DeckStats()
+	must("fsrs.stats", err)
+	mustOK("fsrs.decks", len(fstats) == 1, fmt.Sprintf("decks=%d", len(fstats)))
+
+	// 24. Plugins: 安装 + 列表 + 启用
+	pl, err := r.app.Plugins.Install("demo-plugin", []byte(`{"name":"Demo","version":"0.1.0"}`), map[string][]byte{"index.js": []byte("hi")})
+	must("plugins.install", err)
+	mustOK("plugins.id", pl.ID == "demo-plugin", fmt.Sprintf("id=%s", pl.ID))
+	if err := r.app.Plugins.SetEnabled("demo-plugin", true); err != nil {
+		must("plugins.enable", err)
+	}
+	plist, _ := r.app.Plugins.List()
+	mustOK("plugins.list", len(plist) == 1 && plist[0].Enabled, fmt.Sprintf("list=%d", len(plist)))
+
+	// 25. Quick Assistant: 提问
+	qans, err := r.app.Quick.Ask(ctx, "快速提问")
+	must("quick.ask", err)
+	mustOK("quick.reply", qans != "", "empty reply")
+	r.app.Quick.Clear()
 }
 
 // fileExists 判断文件是否存在。

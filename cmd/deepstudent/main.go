@@ -20,6 +20,7 @@ import (
 	"github.com/helixnow/deep-student-go/internal/chat"
 	"github.com/helixnow/deep-student-go/internal/cloudstorage"
 	"github.com/helixnow/deep-student-go/internal/essay"
+	"github.com/helixnow/deep-student-go/internal/fsrs"
 	"github.com/helixnow/deep-student-go/internal/governance"
 	"github.com/helixnow/deep-student-go/internal/hub"
 	"github.com/helixnow/deep-student-go/internal/llmcfg"
@@ -30,8 +31,10 @@ import (
 	"github.com/helixnow/deep-student-go/internal/notes"
 	"github.com/helixnow/deep-student-go/internal/ocr"
 	"github.com/helixnow/deep-student-go/internal/paper"
+	"github.com/helixnow/deep-student-go/internal/plugins"
 	"github.com/helixnow/deep-student-go/internal/pomodoro"
 	"github.com/helixnow/deep-student-go/internal/qbank"
+	"github.com/helixnow/deep-student-go/internal/quickassist"
 	"github.com/helixnow/deep-student-go/internal/reader"
 	"github.com/helixnow/deep-student-go/internal/research"
 	"github.com/helixnow/deep-student-go/internal/skills"
@@ -93,6 +96,9 @@ type App struct {
 	Sync     *sync.Service
 	OCR      *ocr.Service
 	Multi    *multimodal.Service
+	FSRS     *fsrs.Service
+	Plugins  *plugins.Manager
+	Quick    *quickassist.Service
 }
 
 // startup Wails 启动钩子。
@@ -228,6 +234,9 @@ func (a *App) init() error {
 	a.Cloud = cloudstorage.NewManager(a.store, a.crypto)
 	a.OCR = ocr.New(cfg.LLM.SiliconKey)
 	a.Multi = multimodal.New(a.store, a.llmReg, a.vfs)
+	a.FSRS = fsrs.New(a.store)
+	a.Plugins = plugins.New(a.store, cfg.VaultDir)
+	a.Quick = quickassist.New(a.llmReg, a.store)
 	// 增量同步：业务服务全部建表后安装变更触发器
 	a.Sync = sync.New(a.store)
 	if err := a.Sync.EnsureTriggers(); err != nil {

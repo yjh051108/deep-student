@@ -10,6 +10,9 @@ import (
 	"github.com/helixnow/deep-student-go/internal/chat"
 	"github.com/helixnow/deep-student-go/internal/cloudstorage"
 	"github.com/helixnow/deep-student-go/internal/essay"
+	"github.com/helixnow/deep-student-go/internal/fsrs"
+	"github.com/helixnow/deep-student-go/internal/plugins"
+	"github.com/helixnow/deep-student-go/internal/quickassist"
 	"github.com/helixnow/deep-student-go/internal/llmcfg"
 	"github.com/helixnow/deep-student-go/internal/llmusage"
 	"github.com/helixnow/deep-student-go/internal/memory"
@@ -1236,3 +1239,75 @@ func (a *App) ChatV2Send(sessionID, content string, refs []string) (string, []ch
 
 // ChatV2Export 导出全部会话 JSON。
 func (a *App) ChatV2Export() ([]byte, error) { return a.Chat.ExportJSON() }
+
+// ===== FSRS 间隔复习 =====
+
+// FSRSAddCards 批量添加闪卡。
+func (a *App) FSRSAddCards(deck string, cards []fsrs.CardInput) ([]*fsrs.CardState, error) {
+	return a.FSRS.AddCards(deck, cards)
+}
+
+// FSRSDue 到期卡片。
+func (a *App) FSRSDue(deck string, limit int) ([]*fsrs.CardState, error) {
+	return a.FSRS.DueCards(deck, limit)
+}
+
+// FSRSAll 列出卡片。
+func (a *App) FSRSAll(deck string, limit int) ([]*fsrs.CardState, error) {
+	return a.FSRS.AllCards(deck, limit)
+}
+
+// FSRSReview 复习评分。
+func (a *App) FSRSReview(cardID string, rating int) (*fsrs.CardState, error) {
+	return a.FSRS.Review(cardID, fsrs.Rating(rating))
+}
+
+// FSRSGet 读取卡片。
+func (a *App) FSRSGet(cardID string) (*fsrs.CardState, error) { return a.FSRS.Get(cardID) }
+
+// FSRSReviewLogs 复习记录。
+func (a *App) FSRSReviewLogs(cardID string, limit int) ([]fsrs.ReviewLog, error) {
+	return a.FSRS.ReviewLogs(cardID, limit)
+}
+
+// FSRSDelete 删除卡片。
+func (a *App) FSRSDelete(cardID string) error { return a.FSRS.Delete(cardID) }
+
+// FSRSDueCount 到期数量。
+func (a *App) FSRSDueCount() (int64, error) { return a.FSRS.DueCount() }
+
+// FSRSDeckStats 牌组统计。
+func (a *App) FSRSDeckStats() ([]fsrs.DeckStat, error) { return a.FSRS.DeckStats() }
+
+// ===== 插件生态 =====
+
+// PluginsInstall 安装插件。
+func (a *App) PluginsInstall(name string, manifestJSON []byte, files map[string][]byte) (*plugins.Plugin, error) {
+	return a.Plugins.Install(name, manifestJSON, files)
+}
+
+// PluginsList 列出插件。
+func (a *App) PluginsList() ([]*plugins.Plugin, error) { return a.Plugins.List() }
+
+// PluginsSetEnabled 启用/禁用。
+func (a *App) PluginsSetEnabled(id string, enabled bool) error { return a.Plugins.SetEnabled(id, enabled) }
+
+// PluginsUninstall 卸载。
+func (a *App) PluginsUninstall(id string) error { return a.Plugins.Uninstall(id) }
+
+// PluginsScanVault 扫描外部安装插件。
+func (a *App) PluginsScanVault() ([]string, error) { return a.Plugins.ScanVault() }
+
+// ===== 快速助手 =====
+
+// QuickAsk 快速提问。
+func (a *App) QuickAsk(question string) (string, error) { return a.Quick.Ask(a.Ctx, question) }
+
+// QuickHistory 历史。
+func (a *App) QuickHistory(limit int) []quickassist.Message { return a.Quick.History(limit) }
+
+// QuickClear 清空。
+func (a *App) QuickClear() { a.Quick.Clear() }
+
+// QuickSummary 摘要。
+func (a *App) QuickSummary() map[string]any { return a.Quick.Summary() }

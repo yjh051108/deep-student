@@ -19,6 +19,7 @@ import { NotesPage } from "./pages/NotesPage";
 import { TodoPage } from "./pages/TodoPage";
 import { PomodoroPage } from "./pages/PomodoroPage";
 import { LLMUsagePage } from "./pages/LLMUsagePage";
+import { SandboxPage } from "./pages/SandboxPage";
 
 export default function App() {
   return (
@@ -42,6 +43,7 @@ export default function App() {
           <Route path="/memory" element={<MemoryPage />} />
           <Route path="/skills" element={<SkillsPage />} />
           <Route path="/llm-usage" element={<LLMUsagePage />} />
+          <Route path="/sandbox" element={<SandboxPage />} />
           <Route path="/governance" element={<GovernancePage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/hub" replace />} />

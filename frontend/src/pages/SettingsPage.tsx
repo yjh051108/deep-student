@@ -35,6 +35,7 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 import { callWails } from "@/lib/wails";
 import {
   fetchVendors,
@@ -115,6 +116,10 @@ export function SettingsPage() {
     };
   }, []);
 
+  // i18n：语言切换（zh-CN / en-US）
+  const lang = useI18n((s) => s.lang);
+  const setLang = useI18n((s) => s.setLang);
+
   return (
     <div className="flex h-full w-full min-h-0 flex-col bg-background">
       {/* —— 顶部标题栏 —— */}
@@ -167,6 +172,8 @@ function GeneralSection({
 }: {
   showToast: (kind: "success" | "error", text: string) => void;
 }) {
+  const lang = useI18n((s) => s.lang);
+  const setLang = useI18n((s) => s.setLang);
   const dataDir = useSessionStore((s) => s.dataDir);
   const setDataDir = useSessionStore((s) => s.setDataDir);
   const version = useSessionStore((s) => s.version);
@@ -244,6 +251,30 @@ function GeneralSection({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 pt-0">
+        {/* 语言切换（i18n） */}
+        <div>
+          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            语言 / Language
+          </label>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant={lang === "zh-CN" ? "default" : "outline"}
+              className="h-7"
+              onClick={() => setLang("zh-CN")}
+            >
+              简体中文
+            </Button>
+            <Button
+              size="sm"
+              variant={lang === "en-US" ? "default" : "outline"}
+              className="h-7"
+              onClick={() => setLang("en-US")}
+            >
+              English
+            </Button>
+          </div>
+        </div>
         {/* 数据目录 */}
         <div>
           <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
