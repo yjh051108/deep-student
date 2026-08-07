@@ -18,6 +18,7 @@ import (
 
 	"github.com/helixnow/deep-student-go/internal/anki"
 	"github.com/helixnow/deep-student-go/internal/chat"
+	"github.com/helixnow/deep-student-go/internal/cloudstorage"
 	"github.com/helixnow/deep-student-go/internal/essay"
 	"github.com/helixnow/deep-student-go/internal/governance"
 	"github.com/helixnow/deep-student-go/internal/hub"
@@ -32,8 +33,11 @@ import (
 	"github.com/helixnow/deep-student-go/internal/reader"
 	"github.com/helixnow/deep-student-go/internal/research"
 	"github.com/helixnow/deep-student-go/internal/skills"
+	"github.com/helixnow/deep-student-go/internal/sync"
+	"github.com/helixnow/deep-student-go/internal/templatemgr"
 	"github.com/helixnow/deep-student-go/internal/todo"
 	"github.com/helixnow/deep-student-go/internal/translate"
+	"github.com/helixnow/deep-student-go/internal/voiceinput"
 	"github.com/helixnow/deep-student-go/pkg/config"
 	"github.com/helixnow/deep-student-go/pkg/crypto"
 	"github.com/helixnow/deep-student-go/pkg/eventbus"
@@ -81,6 +85,10 @@ type App struct {
 	Todo    *todo.Service
 	Pomodoro *pomodoro.Service
 	LLMUsage *llmusage.Service
+	Templates *templatemgr.Service
+	Voice    *voiceinput.Service
+	Cloud    *cloudstorage.Manager
+	Sync     *sync.Service
 }
 
 // startup Wails 启动钩子。
@@ -211,6 +219,14 @@ func (a *App) init() error {
 	a.Todo = todo.New(a.vfs, a.store, a.llmReg)
 	a.Pomodoro = pomodoro.New(a.vfs, a.store, a.llmReg)
 	a.LLMUsage = llmusage.New(a.vfs, a.store, a.llmReg)
+	a.Templates = templatemgr.New(a.vfs, a.store, a.llmReg)
+	a.Voice = voiceinput.New(cfg.LLM.SiliconKey)
+	a.Cloud = cloudstorage.NewManager(a.store, a.crypto)
+	// 增量同步：业务服务全部建表后安装变更触发器
+	a.Sync = sync.New(a.store)
+	if err := a.Sync.EnsureTriggers(); err != nil {
+		logger.Warn("sync triggers partial", "err", err)
+	}
 
 	// P0-A，模型厂商配置系统 —— 加载磁盘配置并 seed 内置厂商/模型
 	a.LLMCfg = llmcfg.NewManager(cfg.DataDir)

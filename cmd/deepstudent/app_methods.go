@@ -8,6 +8,7 @@ import (
 
 	"github.com/helixnow/deep-student-go/internal/anki"
 	"github.com/helixnow/deep-student-go/internal/chat"
+	"github.com/helixnow/deep-student-go/internal/cloudstorage"
 	"github.com/helixnow/deep-student-go/internal/essay"
 	"github.com/helixnow/deep-student-go/internal/llmcfg"
 	"github.com/helixnow/deep-student-go/internal/llmusage"
@@ -20,8 +21,11 @@ import (
 	"github.com/helixnow/deep-student-go/internal/reader"
 	"github.com/helixnow/deep-student-go/internal/research"
 	"github.com/helixnow/deep-student-go/internal/skills"
+	"github.com/helixnow/deep-student-go/internal/sync"
+	"github.com/helixnow/deep-student-go/internal/templatemgr"
 	"github.com/helixnow/deep-student-go/internal/todo"
 	"github.com/helixnow/deep-student-go/internal/translate"
+	"github.com/helixnow/deep-student-go/internal/voiceinput"
 	"github.com/helixnow/deep-student-go/pkg/config"
 	"github.com/helixnow/deep-student-go/pkg/index"
 	"github.com/helixnow/deep-student-go/pkg/llm"
@@ -876,3 +880,172 @@ func (a *App) VFSGraph() []vfs.LinkEntry { return a.vfs.Graph() }
 
 // VFSReload 重新扫描 vault（Obsidian 外部编辑后同步）。
 func (a *App) VFSReload() error { return a.vfs.Reload() }
+
+// ===== Template-management 模板管理 =====
+
+// TemplateList 列出全部模板。
+func (a *App) TemplateList() ([]templatemgr.Template, error) { return a.Templates.List() }
+
+// TemplateGet 按 ID 读取模板。
+func (a *App) TemplateGet(id string) (*templatemgr.Template, error) { return a.Templates.Get(id) }
+
+// TemplateCreate 创建模板。
+func (a *App) TemplateCreate(p templatemgr.CreateParams) (*templatemgr.Template, error) {
+	return a.Templates.Create(p)
+}
+
+// TemplateUpdate 更新模板。
+func (a *App) TemplateUpdate(p templatemgr.UpdateParams) (*templatemgr.Template, error) {
+	return a.Templates.Update(p)
+}
+
+// TemplateDelete 删除模板。
+func (a *App) TemplateDelete(id string) error { return a.Templates.Delete(id) }
+
+// TemplateExport 导出模板 JSON。
+func (a *App) TemplateExport(id string) ([]byte, error) { return a.Templates.Export(id) }
+
+// TemplateImport 导入单个模板 JSON。
+func (a *App) TemplateImport(data []byte) (*templatemgr.Template, error) {
+	return a.Templates.Import(data)
+}
+
+// TemplateImportBulk 批量导入模板 JSON 数组。
+func (a *App) TemplateImportBulk(data []byte) (imported, failed int, err error) {
+	return a.Templates.ImportBulk(data)
+}
+
+// TemplateImportBuiltins 强制导入内置模板。
+func (a *App) TemplateImportBuiltins() (int, error) { return a.Templates.ImportBuiltins() }
+
+// TemplateSetDefault 设置默认模板。
+func (a *App) TemplateSetDefault(id string) error { return a.Templates.SetDefault(id) }
+
+// TemplateGetDefaultID 获取默认模板 ID。
+func (a *App) TemplateGetDefaultID() (string, error) { return a.Templates.DefaultID() }
+
+// TemplateValidate 校验模板字段。
+func (a *App) TemplateValidate(name, front, back string) error {
+	return a.Templates.Validate(name, front, back)
+}
+
+// ===== Voice-input 语音输入 =====
+
+// VoiceTranscribe 转写音频（audioData 为原始音频字节，mime 如 audio/wav）。
+func (a *App) VoiceTranscribe(audioData []byte, mime string) (*voiceinput.TranscribeResult, error) {
+	return a.Voice.Transcribe(a.Ctx, audioData, mime)
+}
+
+// VoiceSetProvider 配置 ASR provider。
+func (a *App) VoiceSetProvider(p voiceinput.Provider) { a.Voice.SetProvider(p) }
+
+// VoiceProvider 返回当前 provider 配置。
+func (a *App) VoiceProvider() voiceinput.Provider { return a.Voice.Provider() }
+
+// ===== Cloud storage 云存储 =====
+
+// CloudSaveConfig 保存云存储配置（凭据加密入库）。
+func (a *App) CloudSaveConfig(cfg cloudstorage.Config) error { return a.Cloud.SaveConfig(cfg) }
+
+// CloudLoadConfig 读取云存储配置。
+func (a *App) CloudLoadConfig() (cloudstorage.Config, bool, error) { return a.Cloud.LoadConfig() }
+
+// CloudClearConfig 清除配置。
+func (a *App) CloudClearConfig() error { return a.Cloud.ClearConfig() }
+
+// CloudCheckConnection 测试连接。
+func (a *App) CloudCheckConnection() error { return a.Cloud.CheckConnection(a.Ctx) }
+
+// CloudUploadBackup 上传本地备份到云端。
+func (a *App) CloudUploadBackup(localPath, note string) (*cloudstorage.Version, error) {
+	return a.Cloud.UploadBackup(a.Ctx, localPath, note)
+}
+
+// CloudDownloadLatest 下载最新备份到数据目录，返回本地路径。
+func (a *App) CloudDownloadLatest() (string, error) {
+	_, dest, err := a.Cloud.DownloadLatest(a.Ctx, cloudstorage.RestoreDir(a.cfg.DataDir))
+	return dest, err
+}
+
+// CloudDownloadVersion 下载指定版本。
+func (a *App) CloudDownloadVersion(key string) (string, error) {
+	_, dest, err := a.Cloud.DownloadVersion(a.Ctx, key, cloudstorage.RestoreDir(a.cfg.DataDir))
+	return dest, err
+}
+
+// CloudListVersions 列出云端版本。
+func (a *App) CloudListVersions() ([]cloudstorage.Version, error) { return a.Cloud.ListVersions(a.Ctx) }
+
+// CloudGetStatus 同步状态。
+func (a *App) CloudGetStatus() (map[string]any, error) { return a.Cloud.GetStatus(a.Ctx) }
+
+// CloudDeleteVersion 删除远端版本。
+func (a *App) CloudDeleteVersion(key string) error { return a.Cloud.DeleteVersion(a.Ctx, key) }
+
+// ===== 增量同步（data_governance sync）=====
+
+// SyncRun 与云端执行一次增量同步（需先配置 CloudSaveConfig）。
+func (a *App) SyncRun() (*sync.SyncOutcome, error) {
+	cfg, ok, err := a.Cloud.LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, errors.New("cloud not configured")
+	}
+	be, err := cloudstorage.NewBackend(cfg)
+	if err != nil {
+		return nil, err
+	}
+	deviceID, err := a.Cloud.DeviceID()
+	if err != nil {
+		return nil, err
+	}
+	remoteDir := cfg.RemoteDir
+	if remoteDir == "" {
+		remoteDir = "deepstudent-backups"
+	}
+	return a.Sync.SyncToCloud(a.Ctx, be, remoteDir, deviceID)
+}
+
+// SyncPending 返回待同步变更数。
+func (a *App) SyncPending() (int64, error) {
+	cur, err := a.Sync.Cursor()
+	if err != nil {
+		return 0, err
+	}
+	max, err := a.Sync.MaxSeq()
+	if err != nil {
+		return 0, err
+	}
+	return max - cur, nil
+}
+
+// SyncGetStatus 返回同步状态（游标/待同步/隔离区）。
+func (a *App) SyncGetStatus() (map[string]any, error) {
+	cur, _ := a.Sync.Cursor()
+	max, _ := a.Sync.MaxSeq()
+	qc, _ := a.Sync.QuarantineCount()
+	cloudStatus, _ := a.Cloud.GetStatus(a.Ctx)
+	return map[string]any{
+		"cursor":     cur,
+		"maxSeq":     max,
+		"pending":    max - cur,
+		"quarantine": qc,
+		"cloud":      cloudStatus,
+	}, nil
+}
+
+// SyncListQuarantine 列出隔离区。
+func (a *App) SyncListQuarantine(limit int) ([]sync.QuarantineEntry, error) {
+	return a.Sync.QuarantineList(limit)
+}
+
+// SyncRetryQuarantine 重试隔离记录。
+func (a *App) SyncRetryQuarantine(id int64) error { return a.Sync.RetryQuarantine(id) }
+
+// SyncDiscardQuarantine 丢弃隔离记录。
+func (a *App) SyncDiscardQuarantine(id int64) error { return a.Sync.DiscardQuarantine(id) }
+
+// SyncDiscardAllQuarantine 清空隔离区。
+func (a *App) SyncDiscardAllQuarantine() (int64, error) { return a.Sync.DiscardAllQuarantine() }

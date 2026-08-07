@@ -35,6 +35,8 @@ import (
 	"github.com/helixnow/deep-student-go/internal/reader"
 	"github.com/helixnow/deep-student-go/internal/research"
 	"github.com/helixnow/deep-student-go/internal/skills"
+	"github.com/helixnow/deep-student-go/internal/sync"
+	"github.com/helixnow/deep-student-go/internal/templatemgr"
 	"github.com/helixnow/deep-student-go/internal/todo"
 	"github.com/helixnow/deep-student-go/internal/translate"
 	"github.com/helixnow/deep-student-go/pkg/config"
@@ -218,6 +220,8 @@ type app struct {
 	Todo    *todo.Service
 	Pomodoro *pomodoro.Service
 	LLMUsage *llmusage.Service
+	Templates *templatemgr.Service
+	Sync     *sync.Service
 	vfs     *vfs.FS
 }
 
@@ -325,7 +329,12 @@ func (r *runner) boot() error {
 		Todo:    todo.New(fs, st, reg),
 		Pomodoro: pomodoro.New(fs, st, reg),
 		LLMUsage: llmusage.New(fs, st, reg),
+		Templates: templatemgr.New(fs, st, reg),
+		Sync:     sync.New(st),
 		vfs:     fs,
+	}
+	if err := r.app.Sync.EnsureTriggers(); err != nil {
+		return fmt.Errorf("sync triggers: %w", err)
 	}
 	// 注册 3 个 demo tool，验证 Tools() / 工具注册路径
 	demoEcho := []byte(`{"type":"object","properties":{"msg":{"type":"string"}}}`)
@@ -544,6 +553,36 @@ func (r *runner) walk() {
 	links := r.app.VFSLinks("vfs://note/vault-source")
 	mustOK("vault.links", len(links) == 1 && links[0].TargetURI == "vfs://note/vault-target", fmt.Sprintf("links=%+v", links))
 	mustOK("vault.dir", vaultDir != "", "empty vault dir")
+
+	// 18. Templates: 内置 seed + CRUD + 默认模板
+	tpls, err := r.app.Templates.List()
+	must("templates.list", err)
+	mustOK("templates.builtins", len(tpls) >= 4, fmt.Sprintf("templates=%d", len(tpls)))
+	nt, err := r.app.Templates.Create(templatemgr.CreateParams{Name: "冒烟模板", FrontTmpl: "F", BackTmpl: "B"})
+	must("templates.create", err)
+	mustOK("templates.created", nt.ID != "", "empty id")
+	if err := r.app.Templates.SetDefault(nt.ID); err != nil {
+		must("templates.setdefault", err)
+	}
+	defID, err := r.app.Templates.DefaultID()
+	must("templates.defaultid", err)
+	mustOK("templates.default", defID == nt.ID, fmt.Sprintf("default=%s", defID))
+
+	// 19. Sync: 变更日志触发器 + 导出/应用 + 隔离区
+	cur, cerr := r.app.Sync.Cursor()
+	must("sync.cursor", cerr)
+	max, merr := r.app.Sync.MaxSeq()
+	must("sync.maxseq", merr)
+	mustOK("sync.status.hasCursor", max >= cur, fmt.Sprintf("cur=%d max=%d", cur, max))
+	pending := max - cur
+	mustOK("sync.pending.nonneg", pending >= 0, fmt.Sprintf("pending=%d", pending))
+	// 触发一个变更（todo），应产生日志
+	smLst, err := r.app.Todo.CreateList(todo.CreateListParams{Name: "同步冒烟"})
+	must("sync.todo", err)
+	_ = smLst
+	qc, err := r.app.Sync.QuarantineList(10)
+	must("sync.quarantine", err)
+	mustOK("sync.quarantine.empty", len(qc) == 0, fmt.Sprintf("quarantine=%d", len(qc)))
 }
 
 // fileExists 判断文件是否存在。

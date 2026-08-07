@@ -83,6 +83,10 @@ func (s *Store) migrate() error {
 			detail TEXT,
 			ts INTEGER NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS app_settings (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		)`,
 	}
 	for _, s2 := range stmts {
 		if _, err := s.DB.Exec(s2); err != nil {
