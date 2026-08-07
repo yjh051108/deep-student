@@ -1,6 +1,0 @@
-# 本地 WebDAV + S3 (MinIO) + FTP 同步测试环境（兼容入口）
-# 启动: docker compose -f dstu-test/docker/docker-compose.sync-test.yml up -d
-# 停止: docker compose -f dstu-test/docker/docker-compose.sync-test.yml down -v
-# 服务、固定镜像和 healthcheck 的唯一事实源在 scripts/dev。
-include:
-  - path: ../../scripts/dev/docker-compose.sync-test.yml

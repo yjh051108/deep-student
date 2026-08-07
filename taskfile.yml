@@ -1,0 +1,56 @@
+version: "3"
+
+vars:
+  GO_VERSION: "1.22"
+  WAILS_VERSION: "v2.9.2"
+  APP_VERSION: "1.0.0"
+
+env:
+  GO111MODULE: "on"
+  CGO_ENABLED: "0"
+
+tasks:
+  default:
+    cmds:
+      - task --list
+  tidy:
+    desc: "go mod tidy"
+    cmds:
+      - go mod tidy
+  dev:
+    desc: "wails dev"
+    cmds:
+      - wails dev
+  build:
+    desc: "wails build (Windows)"
+    cmds:
+      - wails build -clean -o build/bin/deepstudent.exe
+  test:
+    desc: "go test"
+    cmds:
+      - go test ./... -count=1
+  lint:
+    desc: "golangci-lint"
+    cmds:
+      - golangci-lint run
+  run:
+    desc: "go run cmd/deepstudent"
+    cmds:
+      - go run ./cmd/deepstudent
+  migrate:
+    desc: "migrate legacy data"
+    cmds:
+      - go run ./cmd/migrate --from {{.FROM}} --to {{.TO}}
+  nsis-check:
+    desc: "syntax-check installer.nsi"
+    cmds:
+      - cmd /c "if exist makensis ( makensis /NOUNLOAD /DVERSION={{.APP_VERSION}} cmd\installer\installer.nsi ) else ( echo [nsis] makensis not found, skipping )"
+  installer:
+    desc: "build Windows installer (NSIS)"
+    deps: [build]
+    cmds:
+      - cmd /c "if exist makensis ( makensis /DVERSION={{.APP_VERSION}} /V2 cmd\installer\installer.nsi ) else ( echo [nsis] makensis not found, please install NSIS and re-run )"
+  clean:
+    desc: "remove build artifacts"
+    cmds:
+      - rm -rf build

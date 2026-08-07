@@ -1,0 +1,8 @@
+node_modules
+dist
+.wails
+build/bin
+*.log
+*.tsbuildinfo
+.DS_Store
+.env.local

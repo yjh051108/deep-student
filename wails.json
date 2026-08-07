@@ -1,0 +1,20 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "DeepStudent",
+  "outputfilename": "deepstudent",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "DeepStudent Contributors",
+    "email": "hello@deepstudent.local"
+  },
+  "info": {
+    "companyName": "DeepStudent",
+    "productName": "DeepStudent",
+    "productVersion": "1.0.0",
+    "copyright": "(c) 2024-2026 DeepStudent Contributors",
+    "comments": "本地优先的 AI 学习工作台"
+  }
+}

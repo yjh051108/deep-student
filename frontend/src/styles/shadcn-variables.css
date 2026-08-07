@@ -1,0 +1,444 @@
+/* ============================================================
+   shadcn 设计令牌变量
+   对照原版 src/styles/shadcn-variables.css
+   ------------------------------------------------------------
+   设计原则：
+   - 基础灰度（--background / --foreground / --card / --muted /
+     --border / --input 等）保持中性灰（hue 0 / saturation 0），
+     不引入色相，与原版保持一致。
+   - Accent 调色板（--primary / --ring）独立分组，切换 palette
+     时不影响中性灰。
+   - 暗色模式为默认（用户偏好），通过 .dark 类切换。
+   ============================================================ */
+
+:root {
+  /* —— 圆角系统 —— */
+  --radius: 0.5rem;
+  --radius-shell-panel: 18px;
+  --radius-shell-toolbar: 16px;
+  --radius-shell-row: 14px;
+  --radius-shell-control: 12px;
+  --radius-shell-window-control: 10px;
+  --radius-shell-dialog: 22px;
+
+  /* —— 聊天线程内容区最大宽度 —— */
+  --chat-thread-max-w: 44rem;
+
+  /* —— 聊天内容表面 token —— */
+  --chat-block-radius: 12px;
+  --chat-block-surface: hsl(var(--card));
+  --chat-block-surface-muted: hsl(var(--muted) / 0.55);
+  --chat-code-inline-bg: hsl(var(--muted) / 0.72);
+  --chat-code-block-surface: hsl(var(--muted) / 0.34);
+  --chat-block-border: hsl(var(--border));
+  --chat-table-header-surface: hsl(var(--muted));
+
+  /* —— 尺寸 token —— */
+  --size-shell-control: 32px;
+  --size-shell-window-control: 34px;
+  --size-shell-touch-target: 36px;
+  --size-shell-touch-target-lg: 40px;
+  --control-height-compact: 32px;
+  --control-height-touch: 44px;
+  --touch-target-size: var(--control-height-touch);
+
+  /* —— 间距 token —— */
+  --space-shell-layout-gap: 14px;
+  --space-shell-section-gap: 18px;
+  --space-shell-control-gap: 2px;
+
+  /* —— 按钮 token —— */
+  --button-height: 2rem;
+  --button-height-sm: 1.875rem;
+  --button-height-lg: 2.25rem;
+  --button-icon-size: 2rem;
+  --button-padding-x: 0.875rem;
+  --button-padding-x-sm: 0.75rem;
+  --button-padding-x-lg: 1rem;
+  --button-radius: 9px;
+  --button-plain-border: transparent;
+  --button-plain-bg: transparent;
+  --button-plain-hover-bg: hsl(var(--accent));
+  --button-plain-active-bg: hsl(var(--accent) / 0.7);
+  --button-tonal-border: transparent;
+  --button-tonal-bg: hsl(var(--accent));
+  --button-tonal-hover-bg: hsl(var(--accent) / 0.7);
+  --button-tonal-active-bg: hsl(var(--accent) / 0.5);
+  --button-outline-border: hsl(var(--border));
+  --button-outline-bg: transparent;
+  --button-outline-hover-bg: hsl(var(--accent));
+  --button-outline-active-bg: hsl(var(--accent) / 0.7);
+  --button-prominent-border: transparent;
+  --button-prominent-bg: hsl(var(--primary));
+  --button-prominent-hover-bg: hsl(var(--primary) / 0.9);
+  --button-prominent-active-bg: hsl(var(--primary) / 0.8);
+  --button-destructive-border: transparent;
+  --button-destructive-bg: hsl(var(--destructive));
+  --button-destructive-hover-bg: hsl(var(--destructive) / 0.9);
+  --button-destructive-active-bg: hsl(var(--destructive) / 0.8);
+
+  /* —— 文字色 token —— */
+  --text-primary: hsl(var(--foreground));
+  --text-secondary: hsl(var(--muted-foreground));
+  --text-tertiary: hsl(var(--muted-foreground) / 0.7);
+
+  /* —— 表面 token —— */
+  --surface-panel: hsl(var(--card));
+  --surface-panel-strong: hsl(var(--card) / 0.9);
+  --surface-raised: hsl(var(--card) / 0.7);
+  --surface-sunken: hsl(var(--muted) / 0.4);
+
+  /* —— 侧边栏导航 token —— */
+  --sidebar-quiet-hover: hsl(var(--accent));
+  --sidebar-quiet-active: hsl(var(--accent) / 0.7);
+  --shell-navigation-foreground: hsl(var(--foreground));
+  --shell-navigation-muted: hsl(var(--muted-foreground));
+
+  /* —— 阴影 token —— */
+  --shadow-shell-panel: 0 1px 2px hsl(0 0% 0% / 0.06), 0 4px 12px hsl(0 0% 0% / 0.08);
+  --shadow-shell-floating: 0 8px 24px hsl(0 0% 0% / 0.18), 0 2px 6px hsl(0 0% 0% / 0.1);
+  --shadow-shell-pressed: inset 0 1px 2px hsl(0 0% 0% / 0.1);
+  --shadow-shell-soft: 0 1px 2px hsl(0 0% 0% / 0.04);
+
+  /* —— 字体系统（Notion-inspired） —— */
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-family-cn: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --app-font-family: "PingFang SC", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* —— 语义化字号 —— */
+  --font-size-scale: 1;
+  --font-size-xs: calc(11px * var(--font-size-scale));
+  --font-size-sm: calc(12px * var(--font-size-scale));
+  --font-size-base: calc(14px * var(--font-size-scale));
+  --font-size-md: calc(15px * var(--font-size-scale));
+  --font-size-lg: calc(16px * var(--font-size-scale));
+  --font-size-xl: calc(18px * var(--font-size-scale));
+  --font-size-2xl: calc(20px * var(--font-size-scale));
+  --font-size-3xl: calc(24px * var(--font-size-scale));
+
+  --chat-thinking-font-size: var(--font-size-sm);
+
+  /* —— 字重 —— */
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* —— 行高 —— */
+  --line-height-tight: 1.25;
+  --line-height-snug: 1.375;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.625;
+
+  /* —— 字间距 —— */
+  --letter-spacing-tight: -0.01em;
+  --letter-spacing-normal: 0;
+  --letter-spacing-wide: 0.01em;
+}
+
+/* ============================================================
+   基础灰度系统
+   ------------------------------------------------------------
+   亮色模式：纯中性灰，不带色相（hue 0 / saturation 0）
+   ============================================================ */
+:root {
+  --titlebar-background: 0 0% 96%;
+  --nav-background: 0 0% 95%;
+  --background: 0 0% 100%;
+  --foreground: 220 9% 18%;
+  --card: 0 0% 99%;
+  --card-foreground: 220 9% 18%;
+  --popover: 0 0% 99%;
+  --popover-foreground: 220 9% 18%;
+  --secondary: 0 0% 98%;
+  --secondary-foreground: 220 9% 18%;
+  --muted: 0 0% 94%;
+  --muted-foreground: 220 6% 42%;
+  --accent: 0 0% 93%;
+  --accent-foreground: 220 9% 18%;
+  --destructive: 0 65% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 88%;
+  --input: 0 0% 95%;
+
+  /* 语义状态色 */
+  --success: 152 60% 36%;
+  --success-foreground: 0 0% 100%;
+  --warning: 38 70% 45%;
+  --warning-foreground: 0 0% 100%;
+  --info: 217 70% 50%;
+  --info-foreground: 0 0% 100%;
+  --danger: 0 55% 50%;
+  --danger-foreground: 0 0% 100%;
+
+  /* 状态指示色 */
+  --status-working: 152 60% 36%;
+  --status-paused: 38 70% 45%;
+  --status-blocked: 0 55% 50%;
+  --status-idle: 220 8% 50%;
+  --status-completed: 217 70% 50%;
+}
+
+/* 暗色模式基础灰度（纯中性灰，不带色相） */
+:root.dark {
+  --titlebar-background: 0 0% 11%;
+  --nav-background: 0 0% 0%;
+  --background: 0 0% 9%;
+  --foreground: 0 0% 96%;
+  --card: 0 0% 12%;
+  --card-foreground: 0 0% 96%;
+  --popover: 0 0% 12%;
+  --popover-foreground: 0 0% 96%;
+  --secondary: 0 0% 14%;
+  --secondary-foreground: 0 0% 96%;
+  --muted: 0 0% 14%;
+  --muted-foreground: 0 0% 60%;
+  --accent: 0 0% 15%;
+  --accent-foreground: 0 0% 96%;
+  --destructive: 0 55% 45%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 18%;
+  --input: 0 0% 14%;
+
+  /* 语义状态色 */
+  --success: 152 55% 42%;
+  --success-foreground: 144 100% 10%;
+  --warning: 38 65% 50%;
+  --warning-foreground: 40 100% 10%;
+  --info: 217 65% 55%;
+  --info-foreground: 210 100% 10%;
+  --danger: 0 50% 48%;
+  --danger-foreground: 0 0% 98%;
+
+  /* 状态指示色 */
+  --status-working: 152 55% 42%;
+  --status-paused: 38 65% 50%;
+  --status-blocked: 0 50% 48%;
+  --status-idle: 220 6% 55%;
+  --status-completed: 217 65% 55%;
+}
+
+/* ============================================================
+   Accent 调色板（Phase 3.1）
+   ------------------------------------------------------------
+   设计原则：
+   - 每个预设只覆写 accent 相关 token（--primary /
+     --primary-foreground / --ring / --brand-primary）。
+   - 中性色 / 背景 / 边框 / 输入框 / 状态色不被 palette 影响。
+   ============================================================ */
+
+/* 1. 静海蓝（default） */
+:root,
+:root[data-theme-palette="default"] {
+  --primary: 215 72% 42%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 214 62% 50%;
+  --brand-primary: var(--primary);
+  --brand-primary-dark: 215 72% 32%;
+  --primary-color: hsl(var(--primary));
+}
+:root.dark,
+:root.dark[data-theme-palette="default"] {
+  --primary: 214 64% 72%;
+  --primary-foreground: 220 30% 10%;
+  --ring: 214 58% 68%;
+  --brand-primary: var(--primary);
+  --brand-primary-dark: 214 64% 82%;
+  --primary-color: hsl(var(--primary));
+}
+
+/* 2. 墨藤紫（purple） */
+:root[data-theme-palette="purple"] {
+  --primary: 262 52% 42%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 262 45% 48%;
+  --brand-primary: var(--primary);
+  --brand-primary-dark: 262 54% 30%;
+  --primary-color: hsl(var(--primary));
+}
+:root.dark[data-theme-palette="purple"] {
+  --primary: 262 52% 74%;
+  --primary-foreground: 262 28% 12%;
+  --ring: 262 44% 66%;
+  --brand-primary: var(--primary);
+  --brand-primary-dark: 262 52% 84%;
+  --primary-color: hsl(var(--primary));
+}
+
+/* 3. 林影绿（green） */
+:root[data-theme-palette="green"] {
+  --primary: 154 45% 31%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 154 42% 38%;
+  --brand-primary: var(--primary);
+  --brand-primary-dark: 154 48% 23%;
+  --primary-color: hsl(var(--primary));
+}
+:root.dark[data-theme-palette="green"] {
+  --primary: 154 42% 68%;
+  --primary-foreground: 154 30% 10%;
+  --ring: 154 38% 62%;
+  --brand-primary: var(--primary);
+  --brand-primary-dark: 154 42% 78%;
+  --primary-color: hsl(var(--primary));
+}
+
+/* 4. 琥珀橙（orange） */
+:root[data-theme-palette="orange"] {
+  --primary: 24 78% 35%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 24 70% 42%;
+  --brand-primary: var(--primary);
+  --brand-primary-dark: 24 76% 25%;
+  --primary-color: hsl(var(--primary));
+}
+:root.dark[data-theme-palette="orange"] {
+  --primary: 32 72% 70%;
+  --primary-foreground: 28 32% 10%;
+  --ring: 32 66% 64%;
+  --brand-primary: var(--primary);
+  --brand-primary-dark: 32 72% 80%;
+  --primary-color: hsl(var(--primary));
+}
+
+/* 5. 胭脂红（pink） */
+:root[data-theme-palette="pink"] {
+  --primary: 342 58% 39%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 342 52% 46%;
+  --brand-primary: var(--primary);
+  --brand-primary-dark: 342 58% 28%;
+  --primary-color: hsl(var(--primary));
+}
+:root.dark[data-theme-palette="pink"] {
+  --primary: 340 58% 72%;
+  --primary-foreground: 340 30% 10%;
+  --ring: 340 48% 66%;
+  --brand-primary: var(--primary);
+  --brand-primary-dark: 340 58% 82%;
+  --primary-color: hsl(var(--primary));
+}
+
+/* 6. 青岩蓝（teal） */
+:root[data-theme-palette="teal"] {
+  --primary: 184 54% 30%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 184 48% 38%;
+  --brand-primary: var(--primary);
+  --brand-primary-dark: 184 56% 22%;
+  --primary-color: hsl(var(--primary));
+}
+:root.dark[data-theme-palette="teal"] {
+  --primary: 184 48% 68%;
+  --primary-foreground: 190 34% 10%;
+  --ring: 184 44% 62%;
+  --brand-primary: var(--primary);
+  --brand-primary-dark: 184 48% 78%;
+  --primary-color: hsl(var(--primary));
+}
+
+/* 7. 雾灰（muted） */
+:root[data-theme-palette="muted"] {
+  --primary: 220 30% 38%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 220 28% 44%;
+  --brand-primary: var(--primary);
+  --brand-primary-dark: 220 30% 28%;
+  --primary-color: hsl(var(--primary));
+}
+:root.dark[data-theme-palette="muted"] {
+  --primary: 220 24% 70%;
+  --primary-foreground: 220 28% 10%;
+  --ring: 220 24% 64%;
+  --brand-primary: var(--primary);
+  --brand-primary-dark: 220 24% 80%;
+  --primary-color: hsl(var(--primary));
+}
+
+/* 8. 米纸（paper） */
+:root[data-theme-palette="paper"] {
+  --primary: 24 35% 32%;
+  --primary-foreground: 36 29% 94%;
+  --ring: 24 30% 40%;
+  --brand-primary: var(--primary);
+  --brand-primary-dark: 24 38% 22%;
+  --primary-color: hsl(var(--primary));
+}
+:root.dark[data-theme-palette="paper"] {
+  --primary: 36 40% 70%;
+  --primary-foreground: 20 20% 12%;
+  --ring: 36 40% 62%;
+  --brand-primary: var(--primary);
+  --brand-primary-dark: 36 40% 80%;
+  --primary-color: hsl(var(--primary));
+}
+
+/* ============================================================
+   通用样式
+   ============================================================ */
+.app-container {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+/* 侧边栏图标 hover 行为 */
+.sidebar-icon {
+  color: hsl(var(--muted-foreground));
+}
+.sidebar-icon:hover {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--accent));
+  transition: color 150ms ease, background-color 150ms ease;
+}
+
+/* 衬线字体工具类 */
+.font-serif-custom {
+  font-family: "Times New Roman", Times, serif;
+  letter-spacing: -0.02em;
+}
+
+/* 等宽字体高亮代码块 */
+.code-block {
+  background-color: var(--chat-code-block-surface);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-relaxed);
+  overflow-x: auto;
+}
+
+/* 内联代码 */
+.code-inline {
+  background-color: var(--chat-code-inline-bg);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+}
+
+/* 自定义滚动条（暗色主题） */
+.scrollbar-dark::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scrollbar-dark::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-dark::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 4px;
+}
+.scrollbar-dark::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* 平滑过渡 */
+html,
+body {
+  font-family: var(--app-font-family);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
