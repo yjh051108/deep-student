@@ -26,13 +26,16 @@ import (
 	"github.com/helixnow/deep-student-go/internal/essay"
 	"github.com/helixnow/deep-student-go/internal/governance"
 	"github.com/helixnow/deep-student-go/internal/hub"
+	"github.com/helixnow/deep-student-go/internal/llmusage"
 	"github.com/helixnow/deep-student-go/internal/memory"
 	"github.com/helixnow/deep-student-go/internal/mindmap"
 	"github.com/helixnow/deep-student-go/internal/paper"
+	"github.com/helixnow/deep-student-go/internal/pomodoro"
 	"github.com/helixnow/deep-student-go/internal/qbank"
 	"github.com/helixnow/deep-student-go/internal/reader"
 	"github.com/helixnow/deep-student-go/internal/research"
 	"github.com/helixnow/deep-student-go/internal/skills"
+	"github.com/helixnow/deep-student-go/internal/todo"
 	"github.com/helixnow/deep-student-go/internal/translate"
 	"github.com/helixnow/deep-student-go/pkg/config"
 	"github.com/helixnow/deep-student-go/pkg/crypto"
@@ -199,20 +202,45 @@ type runner struct {
 }
 
 type app struct {
-	Hub    *hub.Service
-	Chat   *chat.Service
-	Mind   *mindmap.Service
-	QBank  *qbank.Service
-	Anki   *anki.Service
-	Reader *reader.Service
-	Trans  *translate.Service
-	Essay  *essay.Service
-	Res    *research.Service
-	Paper  *paper.Service
-	Mem    *memory.Service
-	Skills *skills.Service
-	Gov    *governance.Service
+	Hub     *hub.Service
+	Chat    *chat.Service
+	Mind    *mindmap.Service
+	QBank   *qbank.Service
+	Anki    *anki.Service
+	Reader  *reader.Service
+	Trans   *translate.Service
+	Essay   *essay.Service
+	Res     *research.Service
+	Paper   *paper.Service
+	Mem     *memory.Service
+	Skills  *skills.Service
+	Gov     *governance.Service
+	Todo    *todo.Service
+	Pomodoro *pomodoro.Service
+	LLMUsage *llmusage.Service
+	vfs     *vfs.FS
 }
+
+// VaultDir 返回 vault 根目录。
+func (a *app) VaultDir() string {
+	if a.vfs == nil {
+		return ""
+	}
+	return a.vfs.VaultDir()
+}
+
+// vfsPut 通过 vfs 写入资源。
+func (a *app) vfsPut(uri string, data []byte, meta map[string]string) (vfs.Entry, error) {
+	return a.vfs.Put(uri, data, meta)
+}
+
+// StatVFS 查询资源元数据。
+func (a *app) StatVFS(uri string) (vfs.Entry, bool) {
+	return a.vfs.Stat(uri)
+}
+
+// VFSLinks 返回出链。
+func (a *app) VFSLinks(uri string) []vfs.LinkEntry { return a.vfs.Links(uri) }
 
 // RunSmoke 执行一次完整的冒烟：boot + walk。返回 error 表示失败，
 // 退出码 0 表示全部通过。main() 与 smoke_test.go 都通过它跑断言，
@@ -267,7 +295,11 @@ func (r *runner) boot() error {
 	if err != nil {
 		return fmt.Errorf("blob: %w", err)
 	}
-	fs := vfs.NewFS(bs)
+	// Obsidian 式 vault 文件系统：内容落盘真实文件，可验证落盘与双链
+	fs, err := vfs.NewVaultFS(cfg.VaultDir, bs)
+	if err != nil {
+		return fmt.Errorf("vault vfs: %w", err)
+	}
 	cry, err := crypto.NewManager(filepath.Join(cfg.DataDir, "keys"))
 	if err != nil {
 		return fmt.Errorf("crypto: %w", err)
@@ -278,18 +310,22 @@ func (r *runner) boot() error {
 	prov := &mockProv{}
 	reg.Register(prov)
 	r.app = &app{
-		Hub:    hub.New(fs, st, reg),
-		Chat:   chat.New(fs, st, reg, bus),
-		Mind:   mindmap.New(fs, reg),
-		QBank:  qbank.New(fs, st, reg),
-		Anki:   anki.New(fs, reg, bus),
-		Reader: reader.New(fs, reg),
-		Trans:  translate.New(fs, reg),
-		Essay:  essay.New(fs, reg),
-		Res:    research.New(fs, reg, bus),
-		Mem:    memory.New(fs, st, reg),
-		Skills: skills.New(fs, st, reg, bus),
-		Gov:    governance.New(fs, st, cry, cfg, bus),
+		Hub:     hub.New(fs, st, reg),
+		Chat:    chat.New(fs, st, reg, bus),
+		Mind:    mindmap.New(fs, reg),
+		QBank:   qbank.New(fs, st, reg),
+		Anki:    anki.New(fs, reg, bus),
+		Reader:  reader.New(fs, reg),
+		Trans:   translate.New(fs, reg),
+		Essay:   essay.New(fs, reg),
+		Res:     research.New(fs, reg, bus),
+		Mem:     memory.New(fs, st, reg),
+		Skills:  skills.New(fs, st, reg, bus),
+		Gov:     governance.New(fs, st, cry, cfg, bus),
+		Todo:    todo.New(fs, st, reg),
+		Pomodoro: pomodoro.New(fs, st, reg),
+		LLMUsage: llmusage.New(fs, st, reg),
+		vfs:     fs,
 	}
 	// 注册 3 个 demo tool，验证 Tools() / 工具注册路径
 	demoEcho := []byte(`{"type":"object","properties":{"msg":{"type":"string"}}}`)
@@ -449,6 +485,71 @@ func (r *runner) walk() {
 	auditRows, _ := r.app.Gov.AuditLogs(10)
 	mustOK("gov.audit", len(auditRows) >= 1, "no audit rows")
 	_ = r.app.Gov.CheckIntegrity()
+
+	// 14. Todo: ensure inbox + list CRUD + item CRUD + toggle + view
+	inbox, err := r.app.Todo.EnsureInbox()
+	must("todo.inbox", err)
+	mustOK("todo.inbox.flag", inbox.IsInbox, "inbox flag")
+	lst, err := r.app.Todo.CreateList(todo.CreateListParams{Name: "学习"})
+	must("todo.list.create", err)
+	it, err := r.app.Todo.CreateItem(todo.CreateItemParams{ListID: lst.ID, Title: "读论文"})
+	must("todo.item.create", err)
+	_, err = r.app.Todo.CreateItem(todo.CreateItemParams{ListID: lst.ID, Title: "写总结"})
+	must("todo.item.create2", err)
+	toggled, err := r.app.Todo.ToggleItem(it.ID)
+	must("todo.toggle", err)
+	mustOK("todo.toggle.done", toggled.CompletedAt != nil, "not completed")
+	sum, err := r.app.Todo.Summary()
+	must("todo.summary", err)
+	mustOK("todo.summary.pending", sum != nil && sum.TotalPending >= 1, fmt.Sprintf("summary=%+v", sum))
+	_ = r.app.Todo.PurgeList(lst.ID)
+
+	// 15. Pomodoro: create + stats
+	prec, err := r.app.Pomodoro.Create(pomodoro.CreateParams{ActualDuration: 1500})
+	must("pomodoro.create", err)
+	mustOK("pomodoro.duration", prec.Duration == pomodoro.DefaultWorkSeconds, fmt.Sprintf("duration=%d", prec.Duration))
+	pstats, err := r.app.Pomodoro.TodayStats()
+	must("pomodoro.stats", err)
+	mustOK("pomodoro.stats.count", pstats.CompletedCount >= 1, fmt.Sprintf("stats=%+v", pstats))
+	pdaily, err := r.app.Pomodoro.DailyStats(7)
+	must("pomodoro.daily", err)
+	mustOK("pomodoro.daily.count", len(pdaily) >= 1, fmt.Sprintf("daily=%d", len(pdaily)))
+
+	// 16. LLM usage: record + query + summary
+	ulog, err := r.app.LLMUsage.Record(llmusage.LogEntry{
+		Provider: "openai", Model: "gpt-4o-mini",
+		PromptTokens: 100, CompletionTokens: 20,
+		CallerType: "smoke",
+	})
+	must("llmusage.record", err)
+	mustOK("llmusage.total", ulog.TotalTokens == 120, fmt.Sprintf("total=%d", ulog.TotalTokens))
+	ulogs, err := r.app.LLMUsage.Query(llmusage.LogFilter{CallerType: "smoke"})
+	must("llmusage.query", err)
+	mustOK("llmusage.query.count", len(ulogs) >= 1, fmt.Sprintf("logs=%d", len(ulogs)))
+	usum, err := r.app.LLMUsage.Summary()
+	must("llmusage.summary", err)
+	mustOK("llmusage.summary.req", usum.TotalRequests >= 1, fmt.Sprintf("summary=%+v", usum))
+
+	// 17. Vault: 资源真实落盘 + 双链解析
+	vaultDir := r.app.VaultDir()
+	_, err = r.app.vfsPut("vfs://note/vault-source", []byte("参见 [[目标笔记]]"), map[string]string{"title": "源笔记"})
+	must("vault.put", err)
+	_, err = r.app.vfsPut("vfs://note/vault-target", []byte("内容"), map[string]string{"title": "目标笔记"})
+	must("vault.put2", err)
+	fp := ""
+	if e, ok := r.app.StatVFS("vfs://note/vault-source"); ok {
+		fp = e.FilePath
+	}
+	mustOK("vault.file.exists", fp != "" && fileExists(fp), fmt.Sprintf("file=%s", fp))
+	links := r.app.VFSLinks("vfs://note/vault-source")
+	mustOK("vault.links", len(links) == 1 && links[0].TargetURI == "vfs://note/vault-target", fmt.Sprintf("links=%+v", links))
+	mustOK("vault.dir", vaultDir != "", "empty vault dir")
+}
+
+// fileExists 判断文件是否存在。
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }
 
 // ------------------- helpers -------------------

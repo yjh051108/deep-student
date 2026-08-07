@@ -4,19 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/helixnow/deep-student-go/internal/anki"
 	"github.com/helixnow/deep-student-go/internal/chat"
 	"github.com/helixnow/deep-student-go/internal/essay"
 	"github.com/helixnow/deep-student-go/internal/llmcfg"
+	"github.com/helixnow/deep-student-go/internal/llmusage"
 	"github.com/helixnow/deep-student-go/internal/memory"
 	"github.com/helixnow/deep-student-go/internal/mindmap"
 	"github.com/helixnow/deep-student-go/internal/notes"
 	"github.com/helixnow/deep-student-go/internal/paper"
+	"github.com/helixnow/deep-student-go/internal/pomodoro"
 	"github.com/helixnow/deep-student-go/internal/qbank"
 	"github.com/helixnow/deep-student-go/internal/reader"
 	"github.com/helixnow/deep-student-go/internal/research"
 	"github.com/helixnow/deep-student-go/internal/skills"
+	"github.com/helixnow/deep-student-go/internal/todo"
 	"github.com/helixnow/deep-student-go/internal/translate"
 	"github.com/helixnow/deep-student-go/pkg/config"
 	"github.com/helixnow/deep-student-go/pkg/index"
@@ -717,3 +721,158 @@ func (a *App) IndexDefaultOptions() index.IndexOptions { return index.DefaultOpt
 
 // errIndexNotReady 索引服务未初始化。
 var errIndexNotReady = errors.New("deepstudent: index service not ready")
+
+// ===== Todo 待办 =====
+
+// TodoEnsureInbox 确保内置收件箱存在。
+func (a *App) TodoEnsureInbox() (*todo.List, error) { return a.Todo.EnsureInbox() }
+
+// TodoCreateList 创建列表。
+func (a *App) TodoCreateList(p todo.CreateListParams) (*todo.List, error) { return a.Todo.CreateList(p) }
+
+// TodoGetList 读取列表（含统计）。
+func (a *App) TodoGetList(id string) (*todo.List, error) { return a.Todo.GetList(id) }
+
+// TodoListLists 列出列表（含统计）。
+func (a *App) TodoListLists(includeDeleted bool) ([]todo.List, error) { return a.Todo.ListLists(includeDeleted) }
+
+// TodoUpdateList 更新列表。
+func (a *App) TodoUpdateList(p todo.UpdateListParams) (*todo.List, error) { return a.Todo.UpdateList(p) }
+
+// TodoDeleteList 软删除列表（回收站）。
+func (a *App) TodoDeleteList(id string) error { return a.Todo.DeleteList(id) }
+
+// TodoRestoreList 恢复列表。
+func (a *App) TodoRestoreList(id string) error { return a.Todo.RestoreList(id) }
+
+// TodoPurgeList 彻底删除列表。
+func (a *App) TodoPurgeList(id string) error { return a.Todo.PurgeList(id) }
+
+// TodoPurgeDeletedLists 清空回收站列表，返回数量。
+func (a *App) TodoPurgeDeletedLists() (int64, error) { return a.Todo.PurgeDeletedLists() }
+
+// TodoListDeletedLists 列出回收站列表。
+func (a *App) TodoListDeletedLists() ([]todo.List, error) { return a.Todo.ListDeletedLists() }
+
+// TodoCreateItem 创建条目。
+func (a *App) TodoCreateItem(p todo.CreateItemParams) (*todo.Item, error) { return a.Todo.CreateItem(p) }
+
+// TodoGetItem 读取条目。
+func (a *App) TodoGetItem(id string) (*todo.Item, error) { return a.Todo.GetItem(id) }
+
+// TodoListItems 列出条目（listID 为空跨列表；filter 见 todo.ItemFilter）。
+func (a *App) TodoListItems(listID, filter string) ([]todo.Item, error) {
+	return a.Todo.ListItems(listID, todo.ItemFilter(filter))
+}
+
+// TodoUpdateItem 更新条目。
+func (a *App) TodoUpdateItem(p todo.UpdateItemParams) (*todo.Item, error) { return a.Todo.UpdateItem(p) }
+
+// TodoToggleItem 切换完成状态。
+func (a *App) TodoToggleItem(id string) (*todo.Item, error) { return a.Todo.ToggleItem(id) }
+
+// TodoDeleteItem 软删除条目（回收站）。
+func (a *App) TodoDeleteItem(id string) error { return a.Todo.DeleteItem(id) }
+
+// TodoRestoreItem 恢复条目。
+func (a *App) TodoRestoreItem(id string) error { return a.Todo.RestoreItem(id) }
+
+// TodoPurgeItem 彻底删除条目。
+func (a *App) TodoPurgeItem(id string) error { return a.Todo.PurgeItem(id) }
+
+// TodoPurgeDeletedItems 清空回收站条目，返回数量。
+func (a *App) TodoPurgeDeletedItems() (int64, error) { return a.Todo.PurgeDeletedItems() }
+
+// TodoListDeletedItems 列出回收站条目。
+func (a *App) TodoListDeletedItems() ([]todo.Item, error) { return a.Todo.ListDeletedItems() }
+
+// TodoReorderItems 重排条目顺序。
+func (a *App) TodoReorderItems(listID string, ids []string) error { return a.Todo.ReorderItems(listID, ids) }
+
+// TodoListToday 今日到期待办。
+func (a *App) TodoListToday() ([]todo.Item, error) { return a.Todo.ListToday() }
+
+// TodoListOverdue 逾期未办。
+func (a *App) TodoListOverdue() ([]todo.Item, error) { return a.Todo.ListOverdue() }
+
+// TodoListUpcoming 未来 7 天待办。
+func (a *App) TodoListUpcoming() ([]todo.Item, error) { return a.Todo.ListUpcoming() }
+
+// TodoListReminders 最近到提醒时间的条目。
+func (a *App) TodoListReminders(limit int) ([]todo.Item, error) { return a.Todo.ListReminders(limit) }
+
+// TodoSearch 搜索待办。
+func (a *App) TodoSearch(keyword string, limit int) ([]todo.Item, error) { return a.Todo.Search(keyword, limit) }
+
+// TodoSummary 活跃待办总览。
+func (a *App) TodoSummary() (*todo.Summary, error) { return a.Todo.Summary() }
+
+// TodoAIBreakdown 用 LLM 拆解任务为子任务列表（未入库，由前端批量创建）。
+func (a *App) TodoAIBreakdown(title, notes string) ([]todo.Item, error) {
+	return a.Todo.AIBreakdown(a.Ctx, title, notes)
+}
+
+// ===== Pomodoro 番茄钟 =====
+
+// PomodoroCreate 创建一条番茄钟记录。
+func (a *App) PomodoroCreate(p pomodoro.CreateParams) (*pomodoro.Record, error) {
+	return a.Pomodoro.Create(p)
+}
+
+// PomodoroGet 读取记录。
+func (a *App) PomodoroGet(id string) (*pomodoro.Record, error) { return a.Pomodoro.Get(id) }
+
+// PomodoroListByTodo 列出关联某待办的记录。
+func (a *App) PomodoroListByTodo(todoItemID string) ([]pomodoro.Record, error) {
+	return a.Pomodoro.ListByTodo(todoItemID)
+}
+
+// PomodoroListToday 今日记录。
+func (a *App) PomodoroListToday() ([]pomodoro.Record, error) { return a.Pomodoro.ListToday() }
+
+// PomodoroTodayStats 今日统计。
+func (a *App) PomodoroTodayStats() (*pomodoro.Stats, error) { return a.Pomodoro.TodayStats() }
+
+// PomodoroDailyStats 最近 N 天每日专注统计。
+func (a *App) PomodoroDailyStats(days int) ([]pomodoro.DailyStat, error) {
+	return a.Pomodoro.DailyStats(days)
+}
+
+// ===== LLM 用量统计 =====
+
+// LLMUsageRecord 记录一次 LLM 调用。
+func (a *App) LLMUsageRecord(e llmusage.LogEntry) (*llmusage.Log, error) {
+	return a.LLMUsage.Record(e)
+}
+
+// LLMUsageQuery 查询调用日志。
+func (a *App) LLMUsageQuery(filter llmusage.LogFilter) ([]llmusage.Log, error) {
+	return a.LLMUsage.Query(filter)
+}
+
+// LLMUsageQueryDaily 查询按日聚合。
+func (a *App) LLMUsageQueryDaily(filter llmusage.DailyFilter) ([]llmusage.DailyAggregate, error) {
+	return a.LLMUsage.QueryDaily(filter)
+}
+
+// LLMUsageSummary 用量总览。
+func (a *App) LLMUsageSummary() (*llmusage.Summary, error) { return a.LLMUsage.Summary() }
+
+// LLMUsageCleanup 清理指定日期之前的日志，返回删除数量。
+func (a *App) LLMUsageCleanup(before time.Time) (int64, error) {
+	return a.LLMUsage.CleanupOlderThan(before)
+}
+
+// ===== Obsidian 双链 / 图谱 =====
+
+// VFSLinks 返回指定资源的出链（[[wikilink]]）。
+func (a *App) VFSLinks(uri string) []vfs.LinkEntry { return a.vfs.Links(uri) }
+
+// VFSBacklinks 返回指向指定资源的入链。
+func (a *App) VFSBacklinks(uri string) []vfs.LinkEntry { return a.vfs.Backlinks(uri) }
+
+// VFSGraph 返回全库双链图。
+func (a *App) VFSGraph() []vfs.LinkEntry { return a.vfs.Graph() }
+
+// VFSReload 重新扫描 vault（Obsidian 外部编辑后同步）。
+func (a *App) VFSReload() error { return a.vfs.Reload() }

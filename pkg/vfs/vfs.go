@@ -1,15 +1,28 @@
 // Package vfs 提供统一虚拟文件系统抽象，所有资源通过 vfs:// URI 寻址。
+//
+// 自 v2（Obsidian 式混合 VFS）起，FS 底层为真实文件系统（pkg/vault）：
+//   - 内容类资源以真实 .md（YAML frontmatter）或原始格式文件落盘到用户
+//     可见的 vault 目录，可直接用 Obsidian 打开编辑；
+//   - 进程内 entries 索引由扫描 vault 重建（文件为准，重启不丢）；
+//   - blob 存储仅保留给存量迁移与兼容旧调用方。
+//
+// 对外接口（Put/Get/Stat/List/Search/Delete/LockForRead/Snapshot）保持不变，
+// 使用方无需改动。
 package vfs
 
 import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/helixnow/deep-student-go/pkg/store/blob"
+	"github.com/helixnow/deep-student-go/pkg/vault"
 )
 
 // ResourceType 资源类型枚举。
@@ -84,14 +97,6 @@ func Parse(raw string) (*URI, error) {
 // String 返回原始形式。
 func (u *URI) String() string { return u.Raw }
 
-// FS 虚拟文件系统。
-type FS struct {
-	mu      sync.RWMutex
-	blob    *blob.Store
-	entries map[string]Entry // index by vfs://...
-	allowed map[ResourceType]bool
-}
-
 // Entry 资源元数据（不含 payload）。
 type Entry struct {
 	URI       string            `json:"uri"`
@@ -100,23 +105,91 @@ type Entry struct {
 	Title     string            `json:"title"`
 	Tags      []string          `json:"tags"`
 	Metadata  map[string]string `json:"metadata"`
-	BlobRef   string            `json:"blob_ref"` // sha256
+	BlobRef   string            `json:"blob_ref"` // sha256（兼容字段，vault 模式下可为空）
 	Size      int64             `json:"size"`
 	CreatedAt int64             `json:"created_at"`
 	UpdatedAt int64             `json:"updated_at"`
+	// FilePath 资源在 vault 中的绝对路径（Obsidian 式）。
+	FilePath string `json:"file_path,omitempty"`
 }
 
-// NewFS 创建虚拟文件系统。
+// FS 虚拟文件系统（vault 后端）。
+type FS struct {
+	mu      sync.RWMutex
+	blob    *blob.Store
+	vault   *vault.Vault
+	entries map[string]Entry // index by vfs://...
+	allowed map[ResourceType]bool
+}
+
+// NewFS 创建内存/blob 版 VFS（兼容旧调用方与测试；不落盘）。
 func NewFS(blobStore *blob.Store) *FS {
-	allowed := map[ResourceType]bool{
+	return &FS{blob: blobStore, entries: map[string]Entry{}, allowed: allowedTypes()}
+}
+
+// NewVaultFS 创建 Obsidian 式混合 VFS：内容落盘到 vault 目录。
+// 立即扫描 vault 重建索引。
+func NewVaultFS(root string, blobStore *blob.Store) (*FS, error) {
+	vt, err := vault.New(root)
+	if err != nil {
+		return nil, err
+	}
+	if err := vt.EnsureInternal(); err != nil {
+		return nil, err
+	}
+	fs := &FS{blob: blobStore, vault: vt, entries: map[string]Entry{}, allowed: allowedTypes()}
+	if err := fs.Reload(); err != nil {
+		return nil, err
+	}
+	return fs, nil
+}
+
+func allowedTypes() map[ResourceType]bool {
+	return map[ResourceType]bool{
 		TypeNote: true, TypeTextbook: true, TypeQBank: true,
 		TypeMindmap: true, TypeTranslation: true, TypeFlashcard: true,
 		TypePaper: true, TypeChat: true, TypeTodo: true, TypeSkill: true,
 	}
-	return &FS{blob: blobStore, entries: map[string]Entry{}, allowed: allowed}
+}
+
+// VaultDir 返回 vault 根目录（vault 模式下有效）。
+func (fs *FS) VaultDir() string {
+	if fs.vault == nil {
+		return ""
+	}
+	return fs.vault.Root
+}
+
+// Reload 重新扫描 vault，重建索引（外部编辑/Obsidian 修改后调用）。
+func (fs *FS) Reload() error {
+	if fs.vault == nil {
+		return nil
+	}
+	scanned, _ := fs.vault.Scan()
+	next := make(map[string]Entry, len(scanned))
+	for _, se := range scanned {
+		next[se.URI] = Entry{
+			URI:       se.URI,
+			Type:      ResourceType(se.Type),
+			ID:        se.ID,
+			Title:     se.Title,
+			Tags:      se.Tags,
+			Metadata:  se.Metadata,
+			Size:      se.Size,
+			CreatedAt: se.CreatedAt,
+			UpdatedAt: se.UpdatedAt,
+			FilePath:  se.FilePath,
+		}
+	}
+	fs.mu.Lock()
+	fs.entries = next
+	fs.mu.Unlock()
+	return nil
 }
 
 // Put 写入一个资源。
+// vault 模式下：Markdown 类型写入 {type}/{title}.md（带 frontmatter），
+// 原始格式（pdf/docx 等）按 meta["ext"] 落盘；同时写 blob 作兼容备份。
 func (fs *FS) Put(uri string, payload []byte, meta map[string]string) (Entry, error) {
 	u, err := Parse(uri)
 	if err != nil {
@@ -125,25 +198,103 @@ func (fs *FS) Put(uri string, payload []byte, meta map[string]string) (Entry, er
 	if !fs.allowed[u.Type] {
 		return Entry{}, fmt.Errorf("vfs: type %s not allowed", u.Type)
 	}
-	if fs.blob == nil {
-		return Entry{}, errors.New("vfs: blob store not configured")
+	title := meta["title"]
+	if title == "" {
+		title = u.ID
 	}
-	ref, size, err := fs.blob.Put(payload)
-	if err != nil {
-		return Entry{}, err
+	ext := strings.TrimPrefix(meta["ext"], ".")
+	if ext == "" {
+		ext = "md"
 	}
+
 	e := Entry{
 		URI:       uri,
 		Type:      u.Type,
 		ID:        u.ID,
-		Title:     meta["title"],
+		Title:     title,
 		Tags:      splitTags(meta["tags"]),
 		Metadata:  meta,
-		BlobRef:   ref,
-		Size:      size,
 		CreatedAt: nowUnix(),
 		UpdatedAt: nowUnix(),
 	}
+
+	if fs.vault != nil {
+		// 定位已有文件（同 ds_id 重写不换名）
+		var existing string
+		fs.mu.RLock()
+		if cur, ok := fs.entries[uri]; ok && cur.FilePath != "" {
+			existing = cur.FilePath
+		}
+		fs.mu.RUnlock()
+
+		md := vault.IsMarkdownExt("." + ext)
+		dir := filepath.Join(fs.vault.Root, vault.TypeDir(vault.Type(u.Type)))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return Entry{}, err
+		}
+		var data []byte
+		if md {
+			fm := vault.FrontMatter{
+				Title:   title,
+				Tags:    e.Tags,
+				Created: unixTime(e.CreatedAt),
+				Updated: unixTime(e.UpdatedAt),
+				DSID:    u.ID,
+				DSType:  string(u.Type),
+				Extra:   extraMeta(meta),
+			}
+			body := string(payload)
+			data, err = vault.WriteFrontMatter(fm, body)
+			if err != nil {
+				return Entry{}, err
+			}
+		} else {
+			data = payload
+		}
+		path := fs.vault.AllocatePath(vault.Type(u.Type), title, "."+ext, existing)
+		if !md {
+			// 非 Markdown 资源：sidecar 元数据（frontmatter 无法内嵌）
+			fm := vault.FrontMatter{
+				Title:   title,
+				Tags:    e.Tags,
+				Created: unixTime(e.CreatedAt),
+				Updated: unixTime(e.UpdatedAt),
+				DSID:    u.ID,
+				DSType:  string(u.Type),
+				Extra:   extraMeta(meta),
+			}
+			rel, rerr := filepath.Rel(fs.vault.Root, path)
+			if rerr == nil {
+				if err := fs.vault.WriteMeta(filepath.ToSlash(rel), fm); err != nil {
+					return Entry{}, err
+				}
+			}
+		}
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			return Entry{}, err
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return Entry{}, err
+		}
+		e.Size = info.Size()
+		e.FilePath = path
+		if cur, ok := fs.entry(uri); ok && cur.CreatedAt > 0 {
+			e.CreatedAt = cur.CreatedAt // 重写保留创建时间
+		}
+	} else {
+		// 内存版：写 blob
+		if fs.blob == nil {
+			return Entry{}, errors.New("vfs: blob store not configured")
+		}
+		ref, size, err := fs.blob.Put(payload)
+		if err != nil {
+			return Entry{}, err
+		}
+		e.BlobRef = ref
+		e.Size = size
+	}
+
 	fs.mu.Lock()
 	fs.entries[uri] = e
 	fs.mu.Unlock()
@@ -152,25 +303,35 @@ func (fs *FS) Put(uri string, payload []byte, meta map[string]string) (Entry, er
 
 // Get 读取资源。
 func (fs *FS) Get(uri string) ([]byte, Entry, error) {
-	fs.mu.RLock()
-	e, ok := fs.entries[uri]
-	fs.mu.RUnlock()
+	e, ok := fs.entry(uri)
 	if !ok {
 		return nil, Entry{}, fmt.Errorf("vfs: not found: %s", uri)
 	}
-	data, err := fs.blob.Get(e.BlobRef)
-	if err != nil {
-		return nil, e, err
+	if fs.vault != nil && e.FilePath != "" {
+		data, err := os.ReadFile(e.FilePath)
+		if err != nil {
+			return nil, e, err
+		}
+		// Markdown 资源剥离 frontmatter 返回正文
+		if vault.IsMarkdownExt(strings.ToLower(filepath.Ext(e.FilePath))) {
+			_, body, _ := vault.ReadFrontMatter(data)
+			return []byte(body), e, nil
+		}
+		return data, e, nil
 	}
-	return data, e, nil
+	if e.BlobRef != "" && fs.blob != nil {
+		data, err := fs.blob.Get(e.BlobRef)
+		if err != nil {
+			return nil, e, err
+		}
+		return data, e, nil
+	}
+	return nil, e, fmt.Errorf("vfs: payload unavailable: %s", uri)
 }
 
-// Stat 返回元数据（不读 blob）。
+// Stat 返回元数据（不读 payload）。
 func (fs *FS) Stat(uri string) (Entry, bool) {
-	fs.mu.RLock()
-	defer fs.mu.RUnlock()
-	e, ok := fs.entries[uri]
-	return e, ok
+	return fs.entry(uri)
 }
 
 // List 列出某类型的资源。
@@ -205,14 +366,20 @@ func (fs *FS) Search(t ResourceType, tag string) []Entry {
 	return out
 }
 
-// Delete 删除资源（不删除 blob 引用计数）。
+// Delete 删除资源（vault 模式下同时删除文件）。
 func (fs *FS) Delete(uri string) error {
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
-	if _, ok := fs.entries[uri]; !ok {
+	e, ok := fs.entry(uri)
+	if !ok {
 		return fmt.Errorf("vfs: not found: %s", uri)
 	}
+	if fs.vault != nil && e.FilePath != "" {
+		if err := os.Remove(e.FilePath); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	fs.mu.Lock()
 	delete(fs.entries, uri)
+	fs.mu.Unlock()
 	return nil
 }
 
@@ -227,6 +394,29 @@ func (fs *FS) Snapshot() []Entry {
 	out := make([]Entry, 0, len(fs.entries))
 	for _, e := range fs.entries {
 		out = append(out, e)
+	}
+	return out
+}
+
+func (fs *FS) entry(uri string) (Entry, bool) {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	e, ok := fs.entries[uri]
+	return e, ok
+}
+
+func unixTime(unix int64) (t time.Time) {
+	return time.Unix(unix, 0).UTC()
+}
+
+func extraMeta(meta map[string]string) map[string]string {
+	out := map[string]string{}
+	skip := map[string]bool{"title": true, "tags": true}
+	for k, v := range meta {
+		if skip[k] || v == "" {
+			continue
+		}
+		out[k] = v
 	}
 	return out
 }

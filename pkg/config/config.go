@@ -15,6 +15,7 @@ type Config struct {
 	AppName     string
 	Version     string
 	DataDir     string
+	VaultDir    string
 	CacheDir    string
 	LogDir      string
 	BackupDir   string
@@ -63,6 +64,7 @@ func Load() (*Config, error) {
 			AppName:     "DeepStudent",
 			Version:     "0.1.0-go",
 			DataDir:     dataDir,
+			VaultDir:    envOr("DEEPSTUDENT_VAULT", defaultVaultDir()),
 			CacheDir:    envOr("DEEPSTUDENT_CACHE", filepath.Join(dataDir, "cache")),
 			LogDir:      envOr("DEEPSTUDENT_LOG", filepath.Join(dataDir, "logs")),
 			BackupDir:   envOr("DEEPSTUDENT_BACKUP", filepath.Join(dataDir, "backups")),
@@ -85,7 +87,7 @@ func Load() (*Config, error) {
 			},
 		}
 		// 确保关键目录存在
-		for _, d := range []string{cfg.DataDir, cfg.CacheDir, cfg.LogDir, cfg.BackupDir, filepath.Join(cfg.DataDir, "blob"), filepath.Join(cfg.DataDir, "vector")} {
+		for _, d := range []string{cfg.DataDir, cfg.VaultDir, cfg.CacheDir, cfg.LogDir, cfg.BackupDir, filepath.Join(cfg.DataDir, "blob"), filepath.Join(cfg.DataDir, "vector")} {
 			if err := os.MkdirAll(d, 0o755); err != nil {
 				loadEr = fmt.Errorf("create dir %s: %w", d, err)
 				return
@@ -127,4 +129,13 @@ func defaultDataDir() string {
 		return ".deepstudent"
 	}
 	return filepath.Join(home, ".deepstudent-go")
+}
+
+// defaultVaultDir Obsidian 式知识库默认位置：用户文档目录下的 DeepStudent。
+func defaultVaultDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".deepstudent-vault"
+	}
+	return filepath.Join(home, "Documents", "DeepStudent")
 }

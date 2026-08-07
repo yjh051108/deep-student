@@ -22,14 +22,17 @@ import (
 	"github.com/helixnow/deep-student-go/internal/governance"
 	"github.com/helixnow/deep-student-go/internal/hub"
 	"github.com/helixnow/deep-student-go/internal/llmcfg"
+	"github.com/helixnow/deep-student-go/internal/llmusage"
 	"github.com/helixnow/deep-student-go/internal/memory"
 	"github.com/helixnow/deep-student-go/internal/mindmap"
 	"github.com/helixnow/deep-student-go/internal/notes"
 	"github.com/helixnow/deep-student-go/internal/paper"
+	"github.com/helixnow/deep-student-go/internal/pomodoro"
 	"github.com/helixnow/deep-student-go/internal/qbank"
 	"github.com/helixnow/deep-student-go/internal/reader"
 	"github.com/helixnow/deep-student-go/internal/research"
 	"github.com/helixnow/deep-student-go/internal/skills"
+	"github.com/helixnow/deep-student-go/internal/todo"
 	"github.com/helixnow/deep-student-go/internal/translate"
 	"github.com/helixnow/deep-student-go/pkg/config"
 	"github.com/helixnow/deep-student-go/pkg/crypto"
@@ -39,6 +42,7 @@ import (
 	"github.com/helixnow/deep-student-go/pkg/logger"
 	"github.com/helixnow/deep-student-go/pkg/store"
 	"github.com/helixnow/deep-student-go/pkg/store/blob"
+	"github.com/helixnow/deep-student-go/pkg/vault"
 	"github.com/helixnow/deep-student-go/pkg/vfs"
 	"github.com/helixnow/deep-student-go/pkg/webui"
 )
@@ -74,6 +78,9 @@ type App struct {
 	Gov     *governance.Service
 	Notes   *notes.Service
 	Index   *index.Service
+	Todo    *todo.Service
+	Pomodoro *pomodoro.Service
+	LLMUsage *llmusage.Service
 }
 
 // startup Wails 启动钩子。
@@ -97,6 +104,9 @@ func (a *App) Version() string { return a.cfg.Version }
 
 // DataDir returns the user data directory.
 func (a *App) DataDir() string { return a.cfg.DataDir }
+
+// VaultDir returns the Obsidian-style knowledge vault directory.
+func (a *App) VaultDir() string { return a.cfg.VaultDir }
 
 // LLMProviders lists registered LLM providers.
 func (a *App) LLMProviders() []string { return a.llmReg.Names() }
@@ -150,7 +160,23 @@ func (a *App) init() error {
 	}
 	a.blob = bs
 
-	a.vfs = vfs.NewFS(bs)
+	// Obsidian 式混合 VFS：先把存量 blob 资源一次性迁移到 vault 目录，
+	// 再以 vault 文件系统为后端建立 VFS（扫描重建索引）。
+	vt, err := vault.New(cfg.VaultDir)
+	if err != nil {
+		return fmt.Errorf("open vault: %w", err)
+	}
+	if mr, err := vt.MigrateFromBlob(st, bs); err != nil {
+		return fmt.Errorf("vault migrate: %w", err)
+	} else if mr.DidRun {
+		logger.Info("vault migration", "migrated", mr.Migrated, "skipped", mr.Skipped, "failed", mr.Failed)
+	}
+
+	fs, err := vfs.NewVaultFS(cfg.VaultDir, bs)
+	if err != nil {
+		return fmt.Errorf("open vault vfs: %w", err)
+	}
+	a.vfs = fs
 
 	cry, err := crypto.NewManager(filepath.Join(cfg.DataDir, "keys"))
 	if err != nil {
@@ -182,6 +208,9 @@ func (a *App) init() error {
 	a.Skills = skills.New(a.vfs, a.store, a.llmReg, a.bus)
 	a.Gov = governance.New(a.vfs, a.store, a.crypto, cfg, a.bus)
 	a.Notes = notes.New(a.store, a.blob, a.vfs)
+	a.Todo = todo.New(a.vfs, a.store, a.llmReg)
+	a.Pomodoro = pomodoro.New(a.vfs, a.store, a.llmReg)
+	a.LLMUsage = llmusage.New(a.vfs, a.store, a.llmReg)
 
 	// P0-A，模型厂商配置系统 —— 加载磁盘配置并 seed 内置厂商/模型
 	a.LLMCfg = llmcfg.NewManager(cfg.DataDir)

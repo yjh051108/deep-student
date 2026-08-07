@@ -16,6 +16,9 @@ import { SkillsPage } from "./pages/SkillsPage";
 import { GovernancePage } from "./pages/GovernancePage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { NotesPage } from "./pages/NotesPage";
+import { TodoPage } from "./pages/TodoPage";
+import { PomodoroPage } from "./pages/PomodoroPage";
+import { LLMUsagePage } from "./pages/LLMUsagePage";
 
 export default function App() {
   return (
@@ -27,6 +30,8 @@ export default function App() {
           <Route path="/chat" element={<ChatPage />} />
           <Route path="/mindmap" element={<MindmapPage />} />
           <Route path="/notes" element={<NotesPage />} />
+          <Route path="/todo" element={<TodoPage />} />
+          <Route path="/pomodoro" element={<PomodoroPage />} />
           <Route path="/qbank" element={<QBankPage />} />
           <Route path="/anki" element={<AnkiPage />} />
           <Route path="/reader" element={<ReaderPage />} />
@@ -36,6 +41,7 @@ export default function App() {
           <Route path="/paper" element={<PaperPage />} />
           <Route path="/memory" element={<MemoryPage />} />
           <Route path="/skills" element={<SkillsPage />} />
+          <Route path="/llm-usage" element={<LLMUsagePage />} />
           <Route path="/governance" element={<GovernancePage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/hub" replace />} />

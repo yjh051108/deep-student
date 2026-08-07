@@ -27,6 +27,9 @@ import {
   PanelLeftOpen,
   Sparkles,
   NotebookPen,
+  Timer,
+  Gauge,
+  CheckSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
@@ -55,6 +58,8 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
     title: "学习工具",
     items: [
+      { to: "/todo", label: "Todo · 待办", icon: CheckSquare },
+      { to: "/pomodoro", label: "Pomodoro · 番茄钟", icon: Timer },
       { to: "/qbank", label: "QBank · 题库", icon: ListChecks },
       { to: "/anki", label: "Anki · 卡片", icon: CreditCard },
       { to: "/translate", label: "Translate · 翻译", icon: Languages },
@@ -72,6 +77,7 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
     title: "系统",
     items: [
+      { to: "/llm-usage", label: "LLM Usage · 用量", icon: Gauge },
       { to: "/skills", label: "Skills · 技能", icon: Wrench },
       { to: "/governance", label: "Governance · 治理", icon: ShieldCheck },
       { to: "/settings", label: "Settings · 设置", icon: SettingsIcon },

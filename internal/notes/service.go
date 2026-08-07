@@ -74,14 +74,27 @@ func (s *Service) Create(params CreateParams) (*Note, error) {
 	if err := s.db.CreateNote(n); err != nil {
 		return nil, err
 	}
+	// Obsidian 式：正文同步落盘到 vault（frontmatter 含 ds_id）
+	if err := s.syncFile(n); err != nil {
+		fmt.Printf("[notes] vault sync create failed: %v\n", err)
+	}
 	return n, nil
 }
 
-// Get 读取单条笔记。
+// Get 读取单条笔记。正文优先从 vault 文件读取（Obsidian 外部编辑为准）。
 func (s *Service) Get(id string) (*Note, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.db.GetNote(id)
+	n, err := s.db.GetNote(id)
+	if err != nil {
+		return nil, err
+	}
+	if s.vfs != nil {
+		if data, e, gerr := s.vfs.Get("vfs://note/" + id); gerr == nil && e.FilePath != "" {
+			n.ContentMD = string(data)
+		}
+	}
+	return n, nil
 }
 
 // Update 更新笔记（支持部分字段 + 乐观锁）。
@@ -114,7 +127,15 @@ func (s *Service) Update(params UpdateParams) (*Note, error) {
 	); err != nil {
 		return nil, err
 	}
-	return s.db.GetNote(params.ID)
+	updated, err := s.db.GetNote(params.ID)
+	if err != nil {
+		return nil, err
+	}
+	// Obsidian 式：内容/标题/标签变更同步到 vault 文件
+	if err := s.syncFile(updated); err != nil {
+		fmt.Printf("[notes] vault sync update failed: %v\n", err)
+	}
+	return updated, nil
 }
 
 // List 列出笔记（含正文）。
@@ -168,18 +189,34 @@ func derefNotes(items []*Note) []Note {
 
 // ===================== 回收站 =====================
 
-// MoveToTrash 将笔记移入回收站（软删除）。
+// MoveToTrash 将笔记移入回收站（软删除），同步删除 vault 文件。
 func (s *Service) MoveToTrash(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.db.SoftDelete(id, time.Now().UTC())
+	if err := s.db.SoftDelete(id, time.Now().UTC()); err != nil {
+		return err
+	}
+	if s.vfs != nil {
+		if err := s.vfs.Delete("vfs://note/" + id); err != nil {
+			fmt.Printf("[notes] vault delete on trash failed: %v\n", err)
+		}
+	}
+	return nil
 }
 
-// Restore 从回收站恢复笔记。
+// Restore 从回收站恢复笔记，并重新生成 vault 文件。
 func (s *Service) Restore(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.db.Restore(id, time.Now().UTC())
+	if err := s.db.Restore(id, time.Now().UTC()); err != nil {
+		return err
+	}
+	if n, err := s.db.GetNote(id); err == nil {
+		if err := s.syncFile(n); err != nil {
+			fmt.Printf("[notes] vault sync restore failed: %v\n", err)
+		}
+	}
+	return nil
 }
 
 // HardDelete 永久删除笔记及其全部资产。
@@ -844,3 +881,19 @@ var (
 	italicRegex = regexp.MustCompile(`\*([^*]+)\*`)
 	codeRegex   = regexp.MustCompile("`([^`]+)`")
 )
+
+// ===================== Obsidian vault 同步 =====================
+
+// syncFile 把笔记以 Obsidian 兼容格式落盘到 vault（frontmatter 含 ds_id）。
+// 通过 vfs.Put 写入：Markdown 类型自动生成 frontmatter；重命名时 vfs 复用原路径。
+func (s *Service) syncFile(n *Note) error {
+	if s.vfs == nil {
+		return nil
+	}
+	meta := map[string]string{
+		"title": n.Title,
+		"tags":  strings.Join(n.Tags, ","),
+	}
+	_, err := s.vfs.Put("vfs://note/"+n.ID, []byte(n.ContentMD), meta)
+	return err
+}
