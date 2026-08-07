@@ -30,53 +30,95 @@ type Session struct {
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 	SystemHint string    `json:"system_hint,omitempty"`
+	IsDeleted  bool      `json:"is_deleted"`
+	DeletedAt  *time.Time `json:"deleted_at,omitempty"`
+	Pinned     bool      `json:"pinned"`
 }
 
 // Message 单条消息。
 type Message struct {
 	ID        string    `json:"id"`
+	SessionID string    `json:"session_id,omitempty"`
 	Role      string    `json:"role"`
 	Content   string    `json:"content"`
 	Reasoning string    `json:"reasoning,omitempty"`
 	Refs      []string  `json:"refs,omitempty"` // vfs:// 引用
+	Model     string    `json:"model,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 // Group 会话分组。
 type Group struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	SystemHint   string   `json:"system_hint"`
-	DefaultSkill string   `json:"default_skill"`
-	Tags         []string `json:"tags"`
+	ID           string     `json:"id"`
+	Name         string     `json:"name"`
+	SystemHint   string     `json:"system_hint"`
+	DefaultSkill string     `json:"default_skill"`
+	Tags         []string   `json:"tags"`
+	IsDeleted    bool       `json:"is_deleted"`
+	DeletedAt    *time.Time `json:"deleted_at,omitempty"`
+	SortOrder    int        `json:"sort_order"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 // Service 聊天服务。
 type Service struct {
 	vfs      *vfs.FS
 	store    *store.Store
+	db       *Store
 	llm      *llm.Registry
 	bus      *eventbus.Bus
 	mu       sync.RWMutex
 	sessions map[string]*Session
 	groups   map[string]*Group
+	tools    map[string]ToolFunc // chat_v2 工具注册表
 }
 
-// New 创建 Service。
+// ToolFunc 工具执行函数。
+type ToolFunc func(ctx context.Context, args string) (any, error)
+
+// New 创建 Service。chat_v2 持久化：自动建表并从库加载会话/分组。
 func New(fs *vfs.FS, st *store.Store, l *llm.Registry, bus *eventbus.Bus) *Service {
-	return &Service{
-		vfs: fs, store: st, llm: l, bus: bus,
+	cs := NewStore(st)
+	if err := cs.Migrate(); err != nil {
+		fmt.Printf("[chat] migrate failed: %v\n", err)
+	}
+	svc := &Service{
+		vfs: fs, store: st, db: cs, llm: l, bus: bus,
 		sessions: map[string]*Session{},
 		groups:   map[string]*Group{},
+		tools:    map[string]ToolFunc{},
 	}
+	// 启动加载（尽力而为）
+	if groups, err := cs.ListGroups(true); err == nil {
+		for _, g := range groups {
+			svc.groups[g.ID] = g
+		}
+	}
+	if sessions, err := cs.ListSessions(SessionFilter{IncludeDeleted: true, Limit: 5000}); err == nil {
+		for _, se := range sessions {
+			// 完整加载（含消息），避免 GetSession 命中无消息缓存
+			if full, err := cs.GetSession(se.ID); err == nil {
+				svc.sessions[se.ID] = full
+			} else {
+				svc.sessions[se.ID] = se
+			}
+		}
+	}
+	return svc
 }
 
 // CreateGroup 创建分组。
 func (s *Service) CreateGroup(name, systemHint, defaultSkill string, tags []string) *Group {
-	g := &Group{ID: uuid.NewString(), Name: name, SystemHint: systemHint, DefaultSkill: defaultSkill, Tags: tags}
+	now := time.Now()
+	g := &Group{ID: uuid.NewString(), Name: name, SystemHint: systemHint, DefaultSkill: defaultSkill,
+		Tags: tags, CreatedAt: now, UpdatedAt: now}
 	s.mu.Lock()
 	s.groups[g.ID] = g
 	s.mu.Unlock()
+	if s.db != nil {
+		_ = s.db.SaveGroup(g)
+	}
 	return g
 }
 
@@ -96,6 +138,9 @@ func (s *Service) CreateSession(groupID, title, model, provider string) *Session
 	s.mu.Lock()
 	s.sessions[se.ID] = se
 	s.mu.Unlock()
+	if s.db != nil {
+		_ = s.db.SaveSession(se)
+	}
 	return se
 }
 

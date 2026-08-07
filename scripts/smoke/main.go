@@ -607,6 +607,28 @@ func (r *runner) walk() {
 	mmStats, err := r.app.Multi.Stats()
 	must("multimodal.stats", err)
 	mustOK("multimodal.units", mmStats.TotalUnits >= 1, fmt.Sprintf("units=%d", mmStats.TotalUnits))
+
+	// 22. chat_v2: 会话持久化 + 标签 + 工具循环
+	v2g := r.app.Chat.CreateGroup("v2g", "assistant", "", nil)
+	v2se := r.app.Chat.CreateSession(v2g.ID, "v2会话", "gpt-4o-mini", "openai")
+	mustOK("chatv2.session", v2se.ID != "", "empty session")
+	if err := r.app.Chat.UpdateSessionTags(v2se.ID, []string{"标签A"}); err != nil {
+		must("chatv2.tags", err)
+	}
+	r.app.Chat.RegisterTool("smoke_tool", func(_ context.Context, args string) (any, error) {
+		return map[string]any{"echo": args}, nil
+	})
+	mustOK("chatv2.tools", len(r.app.Chat.Tools()) >= 1, "no tools")
+	v2reply, _, err := r.app.Chat.SendWithTools(ctx, v2se.ID, "你好", nil, nil)
+	must("chatv2.send", err)
+	mustOK("chatv2.reply", v2reply != "", "empty reply")
+	sess, err := r.app.Chat.GetSession(v2se.ID)
+	must("chatv2.get", err)
+	mustOK("chatv2.messages", sess != nil && len(sess.Messages) >= 2, fmt.Sprintf("messages=%d", len(sess.Messages)))
+	// 持久化：同一 db 重启后仍可读（通过内存加载验证）
+	v2count, err := r.app.Chat.CountSessions()
+	must("chatv2.count", err)
+	mustOK("chatv2.count.n", v2count >= 1, fmt.Sprintf("count=%d", v2count))
 }
 
 // fileExists 判断文件是否存在。

@@ -1166,3 +1166,73 @@ func (a *App) MultiDelete(uri string) error { return a.Multi.Delete(uri) }
 
 // MultiStats 索引统计。
 func (a *App) MultiStats() (*multimodal.Stats, error) { return a.Multi.Stats() }
+
+// ===== chat_v2 会话管理 =====
+
+// ChatV2ListGroups 列出分组。
+func (a *App) ChatV2ListGroups(includeDeleted bool) []*chat.Group { return a.Chat.ListGroups(includeDeleted) }
+
+// ChatV2UpdateGroup 更新分组。
+func (a *App) ChatV2UpdateGroup(g *chat.Group) error { return a.Chat.UpdateGroup(g) }
+
+// ChatV2DeleteGroup 软删除分组。
+func (a *App) ChatV2DeleteGroup(id string) error { return a.Chat.DeleteGroup(id) }
+
+// ChatV2RestoreGroup 恢复分组。
+func (a *App) ChatV2RestoreGroup(id string) error { return a.Chat.RestoreGroup(id) }
+
+// ChatV2PurgeGroup 彻底删除分组。
+func (a *App) ChatV2PurgeGroup(id string) error { return a.Chat.PurgeGroup(id) }
+
+// ChatV2ListSessions 列出会话。
+func (a *App) ChatV2ListSessions(filter chat.SessionFilter) []*chat.Session {
+	return a.Chat.ListSessions(filter)
+}
+
+// ChatV2GetSession 读取会话。
+func (a *App) ChatV2GetSession(id string) (*chat.Session, error) { return a.Chat.GetSession(id) }
+
+// ChatV2UpdateTitle 修改会话标题。
+func (a *App) ChatV2UpdateTitle(id, title string) error { return a.Chat.UpdateSessionTitle(id, title) }
+
+// ChatV2Pin 置顶会话。
+func (a *App) ChatV2Pin(id string, pinned bool) error { return a.Chat.PinSession(id, pinned) }
+
+// ChatV2SoftDelete 软删除会话。
+func (a *App) ChatV2SoftDelete(id string) error { return a.Chat.SoftDeleteSession(id) }
+
+// ChatV2Restore 恢复会话。
+func (a *App) ChatV2Restore(id string) error { return a.Chat.RestoreSession(id) }
+
+// ChatV2Purge 彻底删除会话。
+func (a *App) ChatV2Purge(id string) error { return a.Chat.PurgeSession(id) }
+
+// ChatV2UpdateTags 更新会话标签。
+func (a *App) ChatV2UpdateTags(id string, tags []string) error { return a.Chat.UpdateSessionTags(id, tags) }
+
+// ChatV2Search 搜索会话消息。
+func (a *App) ChatV2Search(keyword string, limit int) ([]chat.SearchHit, error) {
+	return a.Chat.SearchContent(keyword, limit)
+}
+
+// ChatV2Count 会话总数。
+func (a *App) ChatV2Count() (int64, error) { return a.Chat.CountSessions() }
+
+// ChatV2DeleteMessage 删除单条消息。
+func (a *App) ChatV2DeleteMessage(sessionID, messageID string) error {
+	return a.Chat.DeleteMessage(sessionID, messageID)
+}
+
+// ChatV2RegisterTool 注册工具。
+func (a *App) ChatV2RegisterTool(name string, fn chat.ToolFunc) { a.Chat.RegisterTool(name, fn) }
+
+// ChatV2Tools 列出工具。
+func (a *App) ChatV2Tools() []string { return a.Chat.Tools() }
+
+// ChatV2Send 带工具循环发送消息。
+func (a *App) ChatV2Send(sessionID, content string, refs []string) (string, []chat.ToolCallRecord, error) {
+	return a.Chat.SendWithTools(a.Ctx, sessionID, content, refs, nil)
+}
+
+// ChatV2Export 导出全部会话 JSON。
+func (a *App) ChatV2Export() ([]byte, error) { return a.Chat.ExportJSON() }
