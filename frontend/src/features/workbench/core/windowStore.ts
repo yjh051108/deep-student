@@ -312,7 +312,7 @@ export const useWindowStore = create<WorkbenchStoreState>((set, get) => ({
       title: input.title ?? '',
       frame: nextFrame(input, state.desktopSize, state.windows),
       restoreFrame: null,
-      displayMode: smallDesktop ? 'maximized' : 'floating',
+      displayMode: smallDesktop || input.openMaximized || def?.openMaximized ? 'maximized' : 'floating',
       minimized: false,
       zIndex: ++zTop,
       createdAt: now,

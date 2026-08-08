@@ -333,3 +333,15 @@ func truncate(s string, n int) string {
 	}
 	return s[:n] + "..."
 }
+
+// ListApiConfigurations 列出全部运行时可调用的配置（对齐原版 get_api_configurations）。
+func (m *Manager) ListApiConfigurations() []ApiConfig {
+	profiles := m.store.getProfiles()
+	out := make([]ApiConfig, 0, len(profiles))
+	for _, p := range profiles {
+		if cfg, err := m.ResolveApiConfig(p.ID); err == nil && cfg != nil {
+			out = append(out, *cfg)
+		}
+	}
+	return out
+}

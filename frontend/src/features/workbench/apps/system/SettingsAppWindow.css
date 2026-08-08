@@ -1,11 +1,25 @@
 /** SettingsAppWindow — 真实内容常驻，长列表由设置模块虚拟化。 */
 
+/* ── 沉浸式系统设置中心（Puter/macOS 系统设置风格）──
+ * 窗口壳整体毛玻璃：半透明背景 + 强模糊，透出桌面壁纸；
+ * 内部侧栏/内容主表面同步半透明，保持「浑然天成」的 OS 感。
+ * 材质降级档（reduced/minimal）关闭 backdrop-filter，
+ * 自动提升背景不透明度保证可读性。 */
 [data-wb-settings-host] {
   position: relative;
   height: 100%;
   width: 100%;
   overflow: hidden;
-  background: var(--wb-window-bg, hsl(var(--background)));
+  background: color-mix(in srgb, var(--wb-window-bg, hsl(var(--card))) 88%, transparent);
+  -webkit-backdrop-filter: var(--wb-glass-blur-strong, blur(24px) saturate(1.8) brightness(1.05));
+  backdrop-filter: var(--wb-glass-blur-strong, blur(24px) saturate(1.8) brightness(1.05));
+  /* 玻璃内缘高光（Puter 玻璃面板边缘） */
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.06), inset 0 0 0 1px hsl(0 0% 100% / 0.02);
+}
+
+/* 高档位（blur 生效）：半透明玻璃 */
+:root:not([data-wb-material='reduced']):not([data-wb-material='minimal']) [data-wb-settings-host] {
+  background: color-mix(in srgb, var(--wb-window-bg, hsl(var(--card))) 62%, transparent);
 }
 
 [data-wb-settings-layer] {
@@ -13,6 +27,24 @@
   width: 100%;
   min-height: 0;
   min-width: 0;
+}
+
+/* 设置内容主表面：高档位半透明透出玻璃 */
+[data-wb-settings-host] [data-wb-settings-content-ready] {
+  background: color-mix(in srgb, var(--shell-workspace-panel, hsl(var(--card))) 92%, transparent);
+}
+:root:not([data-wb-material='reduced']):not([data-wb-material='minimal'])
+  [data-wb-settings-host] [data-wb-settings-content-ready] {
+  background: color-mix(in srgb, var(--shell-workspace-panel, hsl(var(--card))) 52%, transparent);
+}
+
+/* 设置侧栏表面：高档位半透明透出玻璃 */
+[data-wb-settings-host] .study-shell-sidebar-frame {
+  background: color-mix(in srgb, var(--shell-navigation-panel, hsl(var(--card))) 92%, transparent);
+}
+:root:not([data-wb-material='reduced']):not([data-wb-material='minimal'])
+  [data-wb-settings-host] .study-shell-sidebar-frame {
+  background: color-mix(in srgb, var(--shell-navigation-panel, hsl(var(--card))) 64%, transparent);
 }
 
 /* 跟手期停动画：animation-play-state 不继承，必须点名子元素 */

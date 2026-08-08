@@ -108,6 +108,14 @@ const BRIDGES: Record<string, CommandBridge> = {
   delete_setting: { method: 'DeleteSetting', args: (p) => [p.key] },
   get_settings_by_prefix: { method: 'GetSettingsByPrefix', args: (p) => [p.prefix ?? ''] },
 
+  // —— LLM 配置 ——
+  get_api_configurations: { method: 'LLMCfgListApiConfigurations' },
+  get_model_assignments: { method: 'LLMCfgGetAssignments' },
+  save_model_assignments: { method: 'LLMCfgSaveAssignments', args: (p) => [p.assignments ?? p] },
+  get_vendor_configs: { method: 'LLMCfgGetVendors' },
+  get_model_profiles: { method: 'LLMCfgGetProfiles' },
+  test_api_connection: { method: 'LLMCfgTestConnection', args: (p) => [p.profileId ?? p.profileID ?? p.id] },
+
   // —— notes ——
   notes_create: { method: 'NotesCreate', args: (p) => [p.params ?? p] },
   notes_get: { method: 'NotesGet', args: (p) => [p.id] },

@@ -450,6 +450,8 @@ export interface AppDefinition {
   keepAliveWhenOccluded?: boolean;
   defaultFrame: Size;
   minSize: Size;
+  /** 打开即最大化（沉浸式系统窗口，如系统设置中心）。 */
+  openMaximized?: boolean;
   render: React.LazyExoticComponent<React.FC<AppWindowProps>>;
   /** 一次性指令送达（scrollToMessage / gotoPage 等）；可返回结构化回执 */
   onActivation?: (
@@ -552,6 +554,8 @@ export interface OpenWindowInput {
   initialFrame?: Partial<Frame>;
   /** 桌面坐标系落点；仅新建窗口生效。非法坐标忽略并回退级联落位。 */
   dropPoint?: { x: number; y: number };
+  /** 打开即最大化（沉浸式系统窗口，如系统设置中心）。 */
+  openMaximized?: boolean;
 }
 
 export interface WorkbenchStoreState {

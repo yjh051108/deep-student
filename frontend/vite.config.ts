@@ -418,7 +418,6 @@ export default defineConfig(({ command, mode }) => ({
       'mustache',
       'dompurify',
       'cmdk',
-      'react-hotkeys-hook',
       // Milkdown/Crepe 依赖
       '@milkdown/crepe',
       '@milkdown/kit',

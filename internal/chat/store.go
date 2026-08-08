@@ -294,7 +294,7 @@ func (s *Store) ListSessions(filter SessionFilter) ([]*Session, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []*Session
+	out := make([]*Session, 0)
 	for rows.Next() {
 		var se Session
 		var tagsJSON, created, updated string

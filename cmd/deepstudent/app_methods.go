@@ -809,7 +809,12 @@ func (a *App) TodoListOverdue() ([]todo.Item, error) { return a.Todo.ListOverdue
 func (a *App) TodoListUpcoming() ([]todo.Item, error) { return a.Todo.ListUpcoming() }
 
 // TodoListReminders 最近到提醒时间的条目。
-func (a *App) TodoListReminders(limit int) ([]todo.Item, error) { return a.Todo.ListReminders(limit) }
+func (a *App) TodoListReminders(limit ...int) ([]todo.Item, error) {
+	if len(limit) == 0 {
+		return a.Todo.ListReminders(30)
+	}
+	return a.Todo.ListReminders(limit[0])
+}
 
 // TodoSearch 搜索待办。
 func (a *App) TodoSearch(keyword string, limit int) ([]todo.Item, error) { return a.Todo.Search(keyword, limit) }
@@ -1334,4 +1339,9 @@ func (a *App) DeleteSetting(key string) (bool, error) {
 // GetSettingsByPrefix 按前缀查询设置。
 func (a *App) GetSettingsByPrefix(prefix string) ([]store.SettingRow, error) {
 	return a.store.GetSettingsByPrefix(prefix)
+}
+
+// LLMCfgListApiConfigurations 列出全部 API 配置（对齐原版 get_api_configurations）。
+func (a *App) LLMCfgListApiConfigurations() []llmcfg.ApiConfig {
+	return a.LLMCfg.ListApiConfigurations()
 }
