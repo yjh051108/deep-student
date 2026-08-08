@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { useHubStore } from "@/state/hub";
 import { ResourceList } from "@/components/hub/ResourceList";
 import { ResourcePreview } from "@/components/hub/ResourcePreview";
+import { HubApp } from "@/components/hub/HubApp";
 import { ImportDialog } from "@/components/hub/ImportDialog";
 import { WorkbenchGrid } from "@/components/hub/WorkbenchGrid";
 
@@ -140,12 +141,12 @@ export function HubPage() {
           </div>
         </div>
 
-        {/* 应用面板 */}
+        {/* 应用面板：按类型路由到原生应用 */}
         <div className="flex min-h-0 flex-1">
           <div className="flex min-w-0 flex-1 flex-col">
-            <ResourceList
+            <HubApp
               key={activeTab + selectedType}
-              typeFilter={activeTab === "all" ? selectedType : activeTab}
+              type={activeTab === "all" ? selectedType : activeTab}
               onOpenImport={() => setImportOpen(true)}
             />
           </div>

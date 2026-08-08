@@ -58,8 +58,9 @@ const ROUTE_COMMANDS: { id: string; label: string; to: string; icon: typeof Layo
   { id: "skills", label: "前往 Skills · 技能", to: "/skills", icon: Wrench },
   { id: "governance", label: "前往 Governance · 治理", to: "/governance", icon: ShieldCheck },
   { id: "todo", label: "前往 Todo · 待办", to: "/todo", icon: ListChecks },
-  { id: "pomodoro", label: "前往 Pomodoro · 番茄钟", to: "/pomodoro", icon: ListChecks },
-  { id: "llm-usage", label: "前往 LLM Usage · 用量", to: "/llm-usage", icon: Search },
+  { id: "fsrs", label: "前往 FSRS · 间隔复习", to: "/fsrs", icon: ListChecks },
+  { id: "ocr", label: "前往 OCR · 识别", to: "/ocr", icon: Search },
+  { id: "sync", label: "前往 Sync · 云同步", to: "/sync", icon: Search },
   { id: "sandbox", label: "前往 Sandbox · 沙盒", to: "/sandbox", icon: Code2 },
   { id: "settings", label: "前往 Settings · 设置", to: "/settings", icon: SettingsIcon },
 ];
