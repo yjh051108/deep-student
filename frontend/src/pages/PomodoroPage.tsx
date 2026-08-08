@@ -110,7 +110,7 @@ function TimerPanel() {
               className={cn(
                 "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] transition-colors",
                 mode === m.key
-                  ? "bg-card font-medium text-primary shadow-soft"
+                  ? "bg-card font-medium text-primary shadow-[var(--shadow-shell-soft)]"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >

@@ -263,7 +263,7 @@ function SessionRow({
       </div>
 
       {/* hover 操作 */}
-      <div className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-lg bg-[var(--shell-inspector-panel)] px-1 py-0.5 shadow-soft group-hover:flex">
+      <div className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-lg bg-[var(--shell-inspector-panel)] px-1 py-0.5 shadow-[var(--shadow-shell-soft)] group-hover:flex">
         <button title="重命名" onClick={(e) => { e.stopPropagation(); setEditing(true); }} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
           <PencilSimple size={12} />
         </button>

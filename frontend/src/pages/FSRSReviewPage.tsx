@@ -184,7 +184,7 @@ export function FSRSReviewPage() {
               <div
                 onClick={() => setFlipped((v) => !v)}
                 className={cn(
-                  "flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-xl border bg-card p-8 text-center shadow-soft transition-transform",
+                  "flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-xl border bg-card p-8 text-center shadow-[var(--shadow-shell-soft)] transition-transform",
                   flipped ? "border-primary/40" : "border-border"
                 )}
               >

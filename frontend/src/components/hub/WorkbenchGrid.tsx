@@ -104,7 +104,7 @@ export function WorkbenchGrid() {
               <button
                 key={app.to}
                 onClick={() => navigate(app.to)}
-                className="group flex flex-col gap-2.5 rounded-lg border border-border bg-card p-4 text-left transition-all hover:border-primary/40 hover:shadow-soft"
+                className="group flex flex-col gap-2.5 rounded-lg border border-border bg-card p-4 text-left transition-all hover:border-primary/40 hover:shadow-[var(--shadow-shell-soft)]"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/12 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">

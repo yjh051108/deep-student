@@ -19,7 +19,7 @@ const TooltipContent = React.forwardRef<
       sideOffset={sideOffset}
       className={cn(
         // 暗色背景 + 浮层阴影 + 进入动画
-        "z-50 overflow-hidden rounded-md border border-border bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow-floating",
+        "z-50 overflow-hidden rounded-md border border-border bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow-[var(--shadow-shell-floating)]",
         "animate-zoom-in",
         className
       )}

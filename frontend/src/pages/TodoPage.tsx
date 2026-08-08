@@ -120,7 +120,7 @@ function TodoToolbar({
               onClick={() => onSwitch(s.key)}
               className={cn(
                 "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] transition-colors",
-                view === s.key ? "bg-card font-medium text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground"
+                view === s.key ? "bg-card font-medium text-foreground shadow-[var(--shadow-shell-soft)]" : "text-muted-foreground hover:text-foreground"
               )}
             >
               {s.label}

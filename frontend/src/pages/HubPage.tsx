@@ -170,7 +170,7 @@ function ViewSwitch({ active, onChange }: { active: View; onChange: (v: View) =>
         onClick={() => onChange("workbench")}
         className={cn(
           "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] transition-colors",
-          active === "workbench" ? "bg-card font-medium text-primary shadow-soft" : "text-muted-foreground hover:text-foreground"
+          active === "workbench" ? "bg-card font-medium text-primary shadow-[var(--shadow-shell-soft)]" : "text-muted-foreground hover:text-foreground"
         )}
       >
         <Desktop size={12} />
@@ -180,7 +180,7 @@ function ViewSwitch({ active, onChange }: { active: View; onChange: (v: View) =>
         onClick={() => onChange("hub")}
         className={cn(
           "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] transition-colors",
-          active === "hub" ? "bg-card font-medium text-primary shadow-soft" : "text-muted-foreground hover:text-foreground"
+          active === "hub" ? "bg-card font-medium text-primary shadow-[var(--shadow-shell-soft)]" : "text-muted-foreground hover:text-foreground"
         )}
       >
         <FolderSimple size={12} />

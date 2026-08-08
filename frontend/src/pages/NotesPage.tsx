@@ -878,7 +878,7 @@ function ImportDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-      <div className="w-full max-w-xl rounded-dialog border border-[var(--shell-seam)] bg-[var(--shell-inspector-panel)] p-6 shadow-floating">
+      <div className="w-full max-w-xl rounded-[var(--radius-shell-dialog)] border border-[var(--shell-seam)] bg-[var(--shell-inspector-panel)] p-6 shadow-[var(--shadow-shell-floating)]">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-foreground">
             导入 Markdown

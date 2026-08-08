@@ -155,7 +155,7 @@ function MessageBlock({
               ? new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
               : ""}
           </span>
-          <div className="ml-auto hidden items-center gap-0.5 rounded-lg bg-[var(--shell-inspector-panel)] px-1 py-0.5 shadow-soft group-hover:flex">
+          <div className="ml-auto hidden items-center gap-0.5 rounded-lg bg-[var(--shell-inspector-panel)] px-1 py-0.5 shadow-[var(--shadow-shell-soft)] group-hover:flex">
             <ActionBtn title="复制" onClick={() => { void navigator.clipboard?.writeText(msg.content); setCopied(true); setTimeout(() => setCopied(false), 1200); }}>
               {copied ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
             </ActionBtn>

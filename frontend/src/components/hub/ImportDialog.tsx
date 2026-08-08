@@ -86,7 +86,7 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
       onClick={handleClose}
     >
       <div
-        className="relative w-full max-w-lg overflow-hidden rounded-lg border border-border bg-card shadow-floating animate-zoom-in"
+        className="relative w-full max-w-lg overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-shell-floating)] animate-zoom-in"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 头部 */}

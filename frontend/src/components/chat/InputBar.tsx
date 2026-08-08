@@ -123,7 +123,7 @@ export function InputBar() {
 
         {/* —— composer 卡片 —— */}
         <div
-          className="rounded-[var(--radius-shell-toolbar)] border border-[var(--border-default)] bg-[var(--shell-inspector-panel)] p-2 shadow-soft transition-colors focus-within:border-[var(--primary-color)]/40"
+          className="rounded-[var(--radius-shell-toolbar)] border border-[var(--border-default)] bg-[var(--shell-inspector-panel)] p-2 shadow-[var(--shadow-shell-soft)] transition-colors focus-within:border-[var(--primary-color)]/40"
         >
           {/* 输入区 */}
           <div className="flex items-end gap-2 px-1">

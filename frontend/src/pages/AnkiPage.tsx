@@ -301,7 +301,7 @@ function JobView() {
   return (
     <div className="space-y-4 px-4 py-4 animate-fade-in">
       {/* Job 状态卡片 */}
-      <div className="rounded-lg border border-border bg-card p-4 shadow-soft">
+      <div className="rounded-lg border border-border bg-card p-4 shadow-[var(--shadow-shell-soft)]">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold text-foreground">
@@ -479,7 +479,7 @@ function AddTemplateDialog() {
       onClick={handleClose}
     >
       <div
-        className="relative w-full max-w-lg overflow-hidden rounded-lg border border-border bg-card shadow-floating animate-zoom-in"
+        className="relative w-full max-w-lg overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-shell-floating)] animate-zoom-in"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 头部 */}

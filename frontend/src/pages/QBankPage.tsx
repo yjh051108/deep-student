@@ -82,7 +82,7 @@ export function QBankPage() {
         <div className="absolute left-2 top-2 z-10">
           <button
             onClick={() => setMode(null)}
-            className="rounded-md bg-[var(--shell-inspector-panel)] px-2.5 py-1 text-[11px] text-muted-foreground shadow-soft hover:text-foreground"
+            className="rounded-md bg-[var(--shell-inspector-panel)] px-2.5 py-1 text-[11px] text-muted-foreground shadow-[var(--shadow-shell-soft)] hover:text-foreground"
           >
             ← 返回模式选择
           </button>
@@ -171,7 +171,7 @@ export function QBankPage() {
       {/* 抽题对话框（简易：输入 URI + 标题） */}
       {importOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setImportOpen(false)}>
-          <div className="w-[420px] rounded-[var(--radius-shell-dialog)] border border-[var(--border-default)] bg-[var(--shell-inspector-panel)] p-5 shadow-floating" onClick={(e) => e.stopPropagation()}>
+          <div className="w-[420px] rounded-[var(--radius-shell-dialog)] border border-[var(--border-default)] bg-[var(--shell-inspector-panel)] p-5 shadow-[var(--shadow-shell-floating)]" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center gap-2">
               <FileText size={16} className="text-primary" />
               <span className="text-[13px] font-semibold text-foreground">从资源抽题</span>
@@ -222,7 +222,7 @@ function ModeCardBtn({ mode, onClick }: { mode: ModeCard; onClick: () => void })
   return (
     <button
       onClick={onClick}
-      className="group flex flex-col gap-2 rounded-lg border border-[var(--border-default)] bg-[var(--shell-inspector-panel)] p-3.5 text-left transition-all hover:border-[var(--primary-color)]/40 hover:shadow-soft"
+      className="group flex flex-col gap-2 rounded-lg border border-[var(--border-default)] bg-[var(--shell-inspector-panel)] p-3.5 text-left transition-all hover:border-[var(--primary-color)]/40 hover:shadow-[var(--shadow-shell-soft)]"
     >
       <div className={cn("flex h-8 w-8 items-center justify-center rounded-md", mode.color)}>
         <Icon size={16} weight="regular" />
