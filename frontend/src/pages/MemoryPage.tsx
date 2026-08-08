@@ -39,7 +39,7 @@ export function MemoryPage() {
   return (
     <div className="flex h-full w-full min-h-0 bg-background">
       {/* —— 左：操作面板 —— */}
-      <aside className="w-60 shrink-0 border-r border-border bg-card">
+      <aside className="w-60 shrink-0 border-r border-[var(--shell-seam)] bg-[var(--shell-inspector-panel)]">
         <OperationPanel />
       </aside>
 
@@ -49,7 +49,7 @@ export function MemoryPage() {
       </section>
 
       {/* —— 右：详情 + 摄入 —— */}
-      <aside className="w-96 shrink-0 border-l border-border bg-card">
+      <aside className="w-96 shrink-0 border-l border-[var(--shell-seam)] bg-[var(--shell-inspector-panel)]">
         <DetailPanel />
       </aside>
     </div>
@@ -74,7 +74,7 @@ function OperationPanel() {
 
   return (
     <div className="flex h-full w-full flex-col">
-      <div className="shrink-0 border-b border-border px-3 py-2.5">
+      <div className="shrink-0 border-b border-[var(--shell-seam)] px-3 py-2.5">
         <div className="flex items-center gap-2">
           <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/15 text-primary">
             <Brain size={13} />
@@ -134,7 +134,7 @@ function OperationPanel() {
         </div>
 
         {/* 分隔线 */}
-        <div className="border-t border-border/60" />
+        <div className="border-t border-[var(--shell-seam)]/60" />
 
         {/* 用户画像 */}
         <div className="space-y-1.5">
@@ -158,7 +158,7 @@ function OperationPanel() {
         </div>
 
         {/* 分隔线 */}
-        <div className="border-t border-border/60" />
+        <div className="border-t border-[var(--shell-seam)]/60" />
 
         {/* 隐私模式 */}
         <div className="space-y-1.5">
@@ -175,7 +175,7 @@ function OperationPanel() {
         </div>
 
         {/* 分隔线 */}
-        <div className="border-t border-border/60" />
+        <div className="border-t border-[var(--shell-seam)]/60" />
 
         {/* 衰减 */}
         <div className="space-y-1.5">
@@ -203,7 +203,7 @@ function OperationPanel() {
       </div>
 
       {/* 底部状态 */}
-      <div className="shrink-0 border-t border-border px-3 py-2">
+      <div className="shrink-0 border-t border-[var(--shell-seam)] px-3 py-2">
         {toast ? (
           <div className="flex items-center gap-1.5 text-[10px] text-emerald-500">
             <CheckCircle2 size={10} />
@@ -259,7 +259,7 @@ function MemoryList() {
   return (
     <div className="flex h-full w-full min-w-0 flex-col">
       {/* 头部 */}
-      <div className="shrink-0 border-b border-border bg-card px-4 py-3">
+      <div className="shrink-0 border-b border-[var(--shell-seam)] bg-[var(--shell-inspector-panel)] px-4 py-3">
         <div className="flex items-center justify-between">
           <h1 className="text-sm font-semibold text-foreground">
             {searching ? "搜索结果" : "记忆库"}
@@ -353,7 +353,7 @@ function CategoryGroup({
         <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">
           {items.length}
         </span>
-        <div className="flex-1 border-t border-border/40" />
+        <div className="flex-1 border-t border-[var(--shell-seam)]/40" />
       </div>
       <ul className="space-y-1">
         {items.map((item) => (
@@ -447,7 +447,7 @@ function DetailPanel() {
   return (
     <div className="flex h-full w-full flex-col">
       {/* 头部 */}
-      <div className="shrink-0 border-b border-border px-3 py-2.5">
+      <div className="shrink-0 border-b border-[var(--shell-seam)] px-3 py-2.5">
         <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
           详情与摄入
         </div>
@@ -592,7 +592,7 @@ function ProfileView({ profile }: { profile: string }) {
         <UserRound size={11} className="text-primary" />
         用户画像
       </div>
-      <pre className="whitespace-pre-wrap break-words rounded-md border border-border bg-background p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
+      <pre className="whitespace-pre-wrap break-words rounded-md border border-[var(--shell-seam)] bg-background p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
         {profile}
       </pre>
     </div>
@@ -608,7 +608,7 @@ function IngestPanel() {
   const ingestedItems = useMemoryStore((s) => s.ingestedItems);
 
   return (
-    <div className="shrink-0 border-t border-border bg-background px-3 py-3">
+    <div className="shrink-0 border-t border-[var(--shell-seam)] bg-background px-3 py-3">
       <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
         <MessageSquarePlus size={11} className="text-primary" />
         摄入对话

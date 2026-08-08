@@ -16,7 +16,7 @@ export function EssayPage() {
       </section>
 
       {/* —— 右：批改结果 —— */}
-      <aside className="w-[30rem] shrink-0 border-l border-border bg-background">
+      <aside className="w-[30rem] shrink-0 border-l border-[var(--shell-seam)] bg-background">
         <EssayResultPanel />
       </aside>
     </div>

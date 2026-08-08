@@ -42,7 +42,7 @@ export function MindmapPage() {
   return (
     <div className="flex h-full w-full min-h-0 flex-col bg-background">
       {/* —— 顶部工具条 —— */}
-      <div className="shrink-0 space-y-2 border-b border-border bg-card px-4 py-3">
+      <div className="shrink-0 space-y-2 border-b border-[var(--shell-seam)] bg-[var(--shell-inspector-panel)] px-4 py-3">
         <div className="flex items-center gap-2">
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary">
             <Brain size={15} />
@@ -138,7 +138,7 @@ export function MindmapPage() {
         </section>
 
         {/* 右侧：操作面板 */}
-        <aside className="w-80 shrink-0 border-l border-border bg-card">
+        <aside className="w-80 shrink-0 border-l border-[var(--shell-seam)] bg-[var(--shell-inspector-panel)]">
           <OperationsPanel />
         </aside>
       </div>
@@ -264,7 +264,7 @@ function OutlineView() {
           </h2>
         </div>
         {outline ? (
-          <pre className="whitespace-pre-wrap break-words rounded-md border border-border bg-background p-4 font-mono text-[12px] leading-relaxed text-foreground/90">
+          <pre className="whitespace-pre-wrap break-words rounded-md border border-[var(--shell-seam)] bg-background p-4 font-mono text-[12px] leading-relaxed text-foreground/90">
             {outline}
           </pre>
         ) : (
@@ -306,7 +306,7 @@ function OperationsPanel() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="shrink-0 border-b border-border px-3 py-2.5">
+      <div className="shrink-0 border-b border-[var(--shell-seam)] px-3 py-2.5">
         <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
           操作面板
         </div>
@@ -342,7 +342,7 @@ function OperationsPanel() {
         </div>
 
         {/* 分隔线 */}
-        <div className="border-t border-border/60" />
+        <div className="border-t border-[var(--shell-seam)]/60" />
 
         {/* 蒙版 */}
         <div className="space-y-2">
@@ -380,7 +380,7 @@ function OperationsPanel() {
         </div>
 
         {/* 分隔线 */}
-        <div className="border-t border-border/60" />
+        <div className="border-t border-[var(--shell-seam)]/60" />
 
         {/* 导图信息 */}
         <div className="space-y-1.5">

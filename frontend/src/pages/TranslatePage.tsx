@@ -58,7 +58,7 @@ export function TranslatePage() {
   return (
     <div className="flex h-full w-full min-h-0 flex-col bg-background">
       {/* —— 顶部配置栏 —— */}
-      <header className="shrink-0 space-y-2 border-b border-border bg-card px-4 py-3">
+      <header className="shrink-0 space-y-2 border-b border-[var(--shell-seam)] bg-[var(--shell-inspector-panel)] px-4 py-3">
         <div className="flex items-center gap-2 text-sm">
           <Languages size={16} className="text-primary" />
           <h1 className="font-semibold text-foreground">翻译工作台</h1>
@@ -76,7 +76,7 @@ export function TranslatePage() {
             type="button"
             onClick={swapLangs}
             title="交换源 / 目标语言"
-            className="mb-1 rounded-md border border-border bg-background p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="mb-1 rounded-md border border-[var(--shell-seam)] bg-background p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <ArrowLeftRight size={13} />
           </button>
@@ -92,7 +92,7 @@ export function TranslatePage() {
               className="h-[var(--touch-target-size)] rounded-md border border-input bg-transparent px-3 text-sm text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {DOMAINS.map((d) => (
-                <option key={d.key} value={d.key} className="bg-card">
+                <option key={d.key} value={d.key} className="bg-[var(--shell-inspector-panel)]">
                   {d.label} — {d.description}
                 </option>
               ))}
@@ -130,7 +130,7 @@ export function TranslatePage() {
       <div className="flex min-h-0 flex-1 gap-px bg-border">
         {/* 左：源文本 */}
         <section className="flex min-w-0 flex-1 flex-col bg-background">
-          <div className="shrink-0 border-b border-border bg-card px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+          <div className="shrink-0 border-b border-[var(--shell-seam)] bg-[var(--shell-inspector-panel)] px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
             源文本
             <span className="ml-2 font-normal normal-case text-muted-foreground/50">
               {sourceText.length} 字符
@@ -146,7 +146,7 @@ export function TranslatePage() {
 
         {/* 右：译文 */}
         <section className="flex min-w-0 flex-1 flex-col bg-muted/20">
-          <div className="flex shrink-0 items-center justify-between border-b border-border bg-card px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+          <div className="flex shrink-0 items-center justify-between border-b border-[var(--shell-seam)] bg-[var(--shell-inspector-panel)] px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
             <span>
               译文
               {translating && (
@@ -181,7 +181,7 @@ export function TranslatePage() {
       </div>
 
       {/* —— 底部操作 + 术语表 —— */}
-      <footer className="shrink-0 space-y-3 border-t border-border bg-card px-4 py-3">
+      <footer className="shrink-0 space-y-3 border-t border-[var(--shell-seam)] bg-[var(--shell-inspector-panel)] px-4 py-3">
         {/* 操作按钮 */}
         <div className="flex flex-wrap items-end gap-3">
           <Button
@@ -260,7 +260,7 @@ export function TranslatePage() {
             </Button>
           </div>
           {glossary.length === 0 ? (
-            <div className="rounded-md border border-dashed border-border bg-background px-3 py-2 text-[11px] text-muted-foreground">
+            <div className="rounded-md border border-dashed border-[var(--shell-seam)] bg-background px-3 py-2 text-[11px] text-muted-foreground">
               暂无术语表条目 —— 点击"添加"建立 key → value 对照（如：
               attention → 注意力）
             </div>
@@ -335,7 +335,7 @@ function LangSelect({
     >
       {LANGUAGES.filter((l) => (excludeAuto ? l.code !== "auto" : true)).map(
         (l) => (
-          <option key={l.code} value={l.code} className="bg-card">
+          <option key={l.code} value={l.code} className="bg-[var(--shell-inspector-panel)]">
             {l.label}
           </option>
         )

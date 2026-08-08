@@ -60,12 +60,12 @@ export function NotesPage() {
   return (
     <div className="flex h-full w-full min-h-0 bg-background">
       {/* —— 左：文件夹树 + 回收站 —— */}
-      <aside className="w-56 shrink-0 border-r border-border bg-card">
+      <aside className="w-56 shrink-0 border-r border-[var(--shell-seam)] bg-[var(--shell-navigation-surface)]">
         <FolderPanel />
       </aside>
 
       {/* —— 中：笔记列表 —— */}
-      <section className="w-72 shrink-0 flex min-w-0 flex-col border-r border-border bg-background">
+      <section className="w-72 shrink-0 flex min-w-0 flex-col border-r border-[var(--shell-seam)] bg-[var(--shell-navigation-surface)]">
         <NoteList />
       </section>
 
@@ -104,7 +104,7 @@ function FolderPanel() {
   return (
     <div className="flex h-full w-full flex-col">
       {/* 头部 */}
-      <div className="shrink-0 border-b border-border px-3 py-2.5">
+      <div className="shrink-0 border-b border-[var(--shell-seam)] px-3 py-2.5">
         <div className="flex items-center gap-2">
           <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/15 text-primary">
             <NotebookPen size={13} />
@@ -232,7 +232,7 @@ function FolderPanel() {
       </div>
 
       {/* 底部状态 */}
-      <div className="shrink-0 border-t border-border px-3 py-2">
+      <div className="shrink-0 border-t border-[var(--shell-seam)] px-3 py-2">
         {toast ? (
           <div className="flex items-center gap-1.5 text-[10px] text-emerald-500">
             <CheckCircle2 size={10} />
@@ -280,7 +280,7 @@ function NoteList() {
   return (
     <div className="flex h-full w-full min-w-0 flex-col">
       {/* 头部 */}
-      <div className="shrink-0 border-b border-border bg-card px-3 py-2.5">
+      <div className="shrink-0 border-b border-[var(--shell-seam)] bg-[var(--shell-inspector-panel)] px-3 py-2.5">
         <div className="mb-2 flex items-center justify-between">
           <h1 className="text-sm font-semibold text-foreground">
             {viewingTrash ? "回收站" : "笔记列表"}
@@ -318,7 +318,7 @@ function NoteList() {
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="flex h-6 items-center gap-1 rounded-md border border-border bg-background px-2 text-[10px] text-muted-foreground hover:bg-accent"
+                  className="flex h-6 items-center gap-1 rounded-md border border-[var(--shell-seam)] bg-background px-2 text-[10px] text-muted-foreground hover:bg-accent"
                 >
                   <ChevronDown size={10} />
                   排序：{sortLabel(sortBy, sortDir)}
@@ -392,7 +392,7 @@ function NoteList() {
       </div>
 
       {/* 底部计数 */}
-      <div className="shrink-0 border-t border-border bg-card px-3 py-1.5">
+      <div className="shrink-0 border-t border-[var(--shell-seam)] bg-[var(--shell-inspector-panel)] px-3 py-1.5">
         <span className="text-[10px] text-muted-foreground/70">
           共 {total} 篇
         </span>
@@ -612,7 +612,7 @@ function NoteEditor() {
   return (
     <div className="flex h-full w-full min-w-0 flex-col">
       {/* 工具栏 */}
-      <div className="shrink-0 border-b border-border bg-card px-4 py-2">
+      <div className="shrink-0 border-b border-[var(--shell-seam)] bg-[var(--shell-inspector-panel)] px-4 py-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/70">
             <span>{formatDateTime(current.updatedAt)}</span>
@@ -806,7 +806,7 @@ function AssetBar({ noteId }: { noteId: string }) {
   };
 
   return (
-    <div className="shrink-0 border-t border-border bg-card px-4 py-2">
+    <div className="shrink-0 border-t border-[var(--shell-seam)] bg-[var(--shell-inspector-panel)] px-4 py-2">
       <div className="flex items-center gap-2">
         <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
           <Paperclip size={10} />
@@ -841,7 +841,7 @@ function AssetBar({ noteId }: { noteId: string }) {
             assets.map((a) => (
               <div
                 key={a.id}
-                className="group flex items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                className="group flex items-center gap-1 rounded border border-[var(--shell-seam)] bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground"
               >
                 <FileText size={9} />
                 <span className="max-w-32 truncate">{a.filename}</span>
@@ -878,7 +878,7 @@ function ImportDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-      <div className="w-full max-w-xl rounded-dialog border border-border bg-card p-6 shadow-floating">
+      <div className="w-full max-w-xl rounded-dialog border border-[var(--shell-seam)] bg-[var(--shell-inspector-panel)] p-6 shadow-floating">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-foreground">
             导入 Markdown

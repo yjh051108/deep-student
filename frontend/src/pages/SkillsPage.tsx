@@ -53,7 +53,7 @@ export function SkillsPage() {
   return (
     <div className="flex h-full w-full min-h-0 flex-col bg-background">
       {/* —— 顶部标题栏 —— */}
-      <header className="shrink-0 flex items-center justify-between border-b border-border bg-card px-4 py-3">
+      <header className="shrink-0 flex items-center justify-between border-b border-[var(--shell-seam)] bg-[var(--shell-inspector-panel)] px-4 py-3">
         <div className="flex items-center gap-2 text-sm">
           <Sparkles size={16} className="text-primary" />
           <h1 className="font-semibold text-foreground">技能与 MCP</h1>
@@ -112,13 +112,13 @@ export function SkillsPage() {
 
       {/* —— 三栏主体 —— */}
       <div className="flex min-h-0 flex-1 gap-px bg-border">
-        <aside className="w-72 shrink-0 overflow-y-auto bg-card scrollbar-dark">
+        <aside className="w-72 shrink-0 overflow-y-auto bg-[var(--shell-inspector-panel)] scrollbar-dark">
           <SkillListPanel />
         </aside>
         <section className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-background scrollbar-dark">
           <ToolPanel />
         </section>
-        <aside className="w-80 shrink-0 overflow-y-auto bg-card scrollbar-dark">
+        <aside className="w-80 shrink-0 overflow-y-auto bg-[var(--shell-inspector-panel)] scrollbar-dark">
           <MCPPanel />
         </aside>
       </div>
@@ -149,7 +149,7 @@ function SkillListPanel() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="shrink-0 border-b border-border px-3 py-2.5">
+      <div className="shrink-0 border-b border-[var(--shell-seam)] px-3 py-2.5">
         <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
           <Sparkles size={11} className="text-primary" />
           技能列表
@@ -224,7 +224,7 @@ function SkillListPanel() {
 
       {/* 选中技能的详情 */}
       {activeSkill && (
-        <div className="shrink-0 space-y-2 border-t border-border bg-muted/20 px-3 py-3">
+        <div className="shrink-0 space-y-2 border-t border-[var(--shell-seam)] bg-muted/20 px-3 py-3">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
             技能详情
           </div>
@@ -236,7 +236,7 @@ function SkillListPanel() {
               <div className="mb-1 text-[10px] text-muted-foreground/60">
                 Prompt：
               </div>
-              <pre className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words rounded border border-border bg-background p-2 font-mono text-[10px] leading-relaxed text-foreground/70 scrollbar-dark">
+              <pre className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words rounded border border-[var(--shell-seam)] bg-background p-2 font-mono text-[10px] leading-relaxed text-foreground/70 scrollbar-dark">
                 {activeSkill.prompt}
               </pre>
             </div>
@@ -245,7 +245,7 @@ function SkillListPanel() {
       )}
 
       {/* 加载 SKILL.md 表单 */}
-      <div className="shrink-0 space-y-2 border-t border-border px-3 py-3">
+      <div className="shrink-0 space-y-2 border-t border-[var(--shell-seam)] px-3 py-3">
         <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
           加载 SKILL.md
         </div>
@@ -260,7 +260,7 @@ function SkillListPanel() {
                 "rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors",
                 tier === t.key
                   ? "border-primary/40 bg-primary/15 text-primary"
-                  : "border-border bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
+                  : "border-[var(--shell-seam)] bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
               )}
             >
               {t.label}
@@ -313,7 +313,7 @@ function ToolPanel() {
   return (
     <div className="flex h-full flex-col">
       {/* 工具列表 */}
-      <div className="shrink-0 border-b border-border bg-card px-4 py-3">
+      <div className="shrink-0 border-b border-[var(--shell-seam)] bg-[var(--shell-inspector-panel)] px-4 py-3">
         <div className="mb-2 flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
             <Wrench size={11} className="text-primary" />
@@ -354,7 +354,7 @@ function ToolPanel() {
                       "w-full rounded-md border px-2.5 py-1.5 text-left transition-colors",
                       active
                         ? "border-primary/40 bg-primary/10"
-                        : "border-border bg-background hover:bg-accent"
+                        : "border-[var(--shell-seam)] bg-background hover:bg-accent"
                     )}
                   >
                     <div className="flex items-center gap-1">
@@ -389,7 +389,7 @@ function ToolPanel() {
       <div className="flex min-h-0 flex-1 flex-col">
         {selectedTool ? (
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="shrink-0 space-y-2 border-b border-border bg-card px-4 py-3">
+            <div className="shrink-0 space-y-2 border-b border-[var(--shell-seam)] bg-[var(--shell-inspector-panel)] px-4 py-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
                   <Terminal size={11} className="text-primary" />
@@ -443,7 +443,7 @@ function ToolPanel() {
                   调用结果
                 </div>
                 {callResult ? (
-                  <pre className="whitespace-pre-wrap break-words rounded-md border border-border bg-muted/30 p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
+                  <pre className="whitespace-pre-wrap break-words rounded-md border border-[var(--shell-seam)] bg-muted/30 p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
                     {callResult}
                   </pre>
                 ) : (
@@ -530,7 +530,7 @@ function MCPPanel() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="shrink-0 border-b border-border px-3 py-2.5">
+      <div className="shrink-0 border-b border-[var(--shell-seam)] px-3 py-2.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
             <Server size={11} className="text-primary" />
@@ -566,7 +566,7 @@ function MCPPanel() {
               {mcpServers.map((name) => (
                 <li
                   key={name}
-                  className="flex items-center gap-2 rounded-md border border-border bg-background px-2.5 py-1.5"
+                  className="flex items-center gap-2 rounded-md border border-[var(--shell-seam)] bg-background px-2.5 py-1.5"
                 >
                   <Power size={11} className="shrink-0 text-success" />
                   <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">
@@ -588,7 +588,7 @@ function MCPPanel() {
         </div>
 
         {/* Spawn MCP 表单 */}
-        <div className="space-y-2 border-t border-border px-3 py-3">
+        <div className="space-y-2 border-t border-[var(--shell-seam)] px-3 py-3">
           <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
             <Terminal size={11} className="text-primary" />
             Spawn MCP 进程
@@ -636,7 +636,7 @@ function MCPPanel() {
         </div>
 
         {/* 启用新服务器表单 */}
-        <div className="space-y-2 border-t border-border px-3 py-3">
+        <div className="space-y-2 border-t border-[var(--shell-seam)] px-3 py-3">
           <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
             <Power size={11} className="text-primary" />
             启用 MCP 服务器
