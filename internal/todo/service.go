@@ -365,7 +365,7 @@ func (s *Service) ListReminders(limit int) ([]Item, error) {
 		return nil, err
 	}
 	now := time.Now().UTC()
-	var out []Item
+	out := make([]Item, 0)
 	for _, it := range items {
 		if it.RemindAt != nil && !it.RemindAt.After(now) {
 			out = append(out, *it)

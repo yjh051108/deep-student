@@ -48,21 +48,43 @@ export interface CommandBridge {
 // 显式桥接表：命令名 → Go 方法。
 // 缺省回退：snake_case → PascalCase 直接匹配；再缺省则单对象透传。
 const BRIDGES: Record<string, CommandBridge> = {
-  // —— todo ——
-  todo_list_items: { method: 'TodoListItems', args: (p) => [p.listId ?? 'inbox', p.filter ?? 'all'] },
-  todo_create_item: { method: 'TodoCreateItem', args: (p) => [p.listId ?? 'inbox', p.title, p.notes, p.due, p.priority, p.tags, p.parentId] },
-  todo_update_item: { method: 'TodoUpdateItem', args: (p) => [p.params ?? p] },
+  // —— todo（参数形状对齐原版 api.ts）——
+  todo_list_items: { method: 'TodoListItems', args: (p) => [p.listId ?? 'inbox', p.includeCompleted === false ? 'pending' : (p.filter ?? 'all')] },
+  todo_list_items_with_stats: { method: 'TodoListItems', args: (p) => [p.listId ?? 'inbox', p.includeCompleted === false ? 'pending' : 'all'] },
+  todo_create_item: { method: 'TodoCreateItem', args: (p) => [p.input ?? p] },
+  todo_update_item: { method: 'TodoUpdateItem', args: (p) => [p.input ?? p] },
   todo_toggle_item: { method: 'TodoToggleItem', args: (p) => [p.itemId ?? p.id] },
+  todo_get_item: { method: 'TodoGetItem', args: (p) => [p.itemId ?? p.id] },
   todo_delete_item: { method: 'TodoDeleteItem', args: (p) => [p.itemId ?? p.id] },
-  todo_trash_item: { method: 'TodoTrashItem', args: (p) => [p.itemId ?? p.id] },
+  todo_trash_item: { method: 'TodoDeleteItem', args: (p) => [p.itemId ?? p.id] },
   todo_restore_item: { method: 'TodoRestoreItem', args: (p) => [p.itemId ?? p.id] },
-  todo_list_lists: { method: 'TodoListLists' },
-  todo_create_list: { method: 'TodoCreateList', args: (p) => [p.name] },
-  todo_rename_list: { method: 'TodoRenameList', args: (p) => [p.listId, p.name] },
-  todo_delete_list: { method: 'TodoDeleteList', args: (p) => [p.listId] },
-  todo_list_trash: { method: 'TodoListTrash' },
-  todo_empty_trash: { method: 'TodoEmptyTrash' },
-  todo_ai_split: { method: 'TodoAISplit', args: (p) => [p.itemId, p.prompt] },
+  todo_purge_item: { method: 'TodoPurgeItem', args: (p) => [p.itemId ?? p.id] },
+  todo_purge_deleted_items: { method: 'TodoPurgeDeletedItems' },
+  todo_list_deleted_items: { method: 'TodoListDeletedItems' },
+  todo_list_lists: { method: 'TodoListLists', args: (p) => [p.includeDeleted ?? p.include_deleted ?? false] },
+  todo_list_deleted_lists: { method: 'TodoListDeletedLists' },
+  todo_list_reminders: { method: 'TodoListReminders', args: (p) => [p.limit ?? 30] },
+  todo_create_list: { method: 'TodoCreateList', args: (p) => [p.input ?? p] },
+  todo_get_list: { method: 'TodoGetList', args: (p) => [p.listId ?? p.id] },
+  todo_update_list: { method: 'TodoUpdateList', args: (p) => [p.input ?? p] },
+  todo_delete_list: { method: 'TodoDeleteList', args: (p) => [p.listId ?? p.id] },
+  todo_restore_list: { method: 'TodoRestoreList', args: (p) => [p.listId ?? p.id] },
+  todo_purge_list: { method: 'TodoPurgeList', args: (p) => [p.listId ?? p.id] },
+  todo_purge_deleted_lists: { method: 'TodoPurgeDeletedLists' },
+  todo_ensure_inbox: { method: 'TodoEnsureInbox' },
+  todo_list_today: { method: 'TodoListToday' },
+  todo_list_overdue: { method: 'TodoListOverdue' },
+  todo_list_upcoming: { method: 'TodoListUpcoming' },
+  todo_search: { method: 'TodoSearch', args: (p) => [p.keyword ?? p.query, p.limit ?? 50] },
+  todo_summary: { method: 'TodoSummary' },
+  todo_reorder_items: { method: 'TodoReorderItems', args: (p) => [p.listId ?? p.list_id, p.ids ?? p.itemIds ?? []] },
+  todo_ai_split: {
+    method: 'TodoAIBreakdown',
+    args: (p) => {
+      const input = (p.input ?? p) as Record<string, unknown>;
+      return [String(input.title ?? p.title ?? ''), String(input.notes ?? p.notes ?? '')];
+    },
+  },
 
   // —— hub / vfs 资源 ——
   hub_import_resource: { method: 'HubImportResource', args: (p) => [p.typ ?? p.type, p.title, p.data, p.tags] },
