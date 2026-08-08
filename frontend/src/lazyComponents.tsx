@@ -1,0 +1,171 @@
+/**
+ * 🚀 性能优化：页面组件懒加载
+ *
+ * 将页面组件改为 React.lazy() 动态导入，
+ * 减少初始 bundle 大小，加快首帧渲染。
+ *
+ * 清理说明（2026-01）：
+ * - 移除废弃组件：MathWorkflowManager、BridgeToIrec、IrecInsightRecall、
+ *   IrecServiceSwitcher、MemoryIntakeDashboard（旧版）
+ * - ★ 2026-01 移除：IrecGraphFlow、IrecGraphPage、IrecGraphFlowDemo（图谱模块已废弃）
+ * - ★ 2026-02 优化：ChatV2Page 改为懒加载，大幅减少初始 bundle（含 DnD/framer-motion/chat-v2 init 等）
+ *
+ * 首屏必需（保持同步）：
+ * - ModernSidebar（侧边栏）
+ * - 基础 UI 组件
+ */
+
+import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import './styles/page-loading.css';
+
+// ============================================================================
+// 懒加载 fallback 组件
+// ============================================================================
+
+/**
+ * 页面加载占位符（极简，避免布局抖动）
+ */
+interface PageLoadingFallbackProps {
+  fullScreen?: boolean;
+}
+
+export const PageLoadingFallback: React.FC<PageLoadingFallbackProps> = ({ fullScreen = false }) => {
+  const { t } = useTranslation('common');
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setIsVisible(true), 220);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  return (
+    <div
+      className={fullScreen ? 'page-loading-fallback page-loading-fallback--fullscreen bg-background' : 'page-loading-fallback bg-background'}
+      role="status"
+      aria-label={t('loading')}
+      aria-busy="true"
+    >
+      <div className="page-loading-fallback__logo-wrap" data-visible={isVisible}>
+        <img
+          className="page-loading-fallback__logo"
+          src="/logo-black.svg"
+          alt=""
+          aria-hidden="true"
+          width="60"
+          height="60"
+        />
+        <img
+          className="page-loading-fallback__logo page-loading-fallback__shine"
+          src="/logo-black.svg"
+          alt=""
+          aria-hidden="true"
+          width="60"
+          height="60"
+        />
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// 懒加载页面组件
+// ============================================================================
+
+// 设置页
+export const LazySettings = React.lazy(() =>
+  import('./features/settings/components/Settings').then(m => ({ default: m.Settings }))
+);
+
+// ★ 2026-02：批量分析已废弃（旧错题系统已移除）
+// ★ 2026-06-13：移除 LazyDashboard（components/Dashboard.tsx 旧仪表盘已被 SOTADashboardLite 取代且无人引用；后端 get_statistics 命令已移除，统计走 get_enhanced_statistics）
+
+// SOTA 仪表盘
+export const LazySOTADashboard = React.lazy(() =>
+  import('./components/SOTADashboardLite').then(m => ({ default: m.SOTADashboard }))
+);
+
+// ★ 2026-07-08：移除 LazyLlmUsageStatsPage 死导出（llm-usage-stats 独立视图已并入 DataStats，
+//   页面组件仍以 embedded 形态被 LlmUsageStatsSection 使用）
+
+// 数据导入导出
+export const LazyDataImportExport = React.lazy(() =>
+  import('./components/DataImportExport').then(m => ({ default: m.DataImportExport }))
+);
+
+// 导入对话框
+export const LazyImportConversationDialog = React.lazy(() =>
+  import('./components/ImportConversationDialog').then(m => ({ default: m.ImportConversationDialog }))
+);
+
+// 技能管理
+export const LazySkillsManagementPage = React.lazy(() =>
+  import('./components/skills-management/SkillsManagementPage').then(m => ({ default: m.SkillsManagementPage }))
+);
+
+// 模板管理
+export const LazyTemplateManagementPage = React.lazy(() =>
+  import('./features/template-management/TemplateManagementApp').then(m => ({ default: m.default }))
+);
+
+// UI 样式调试
+export const LazyStyleDebugPage = React.lazy(() =>
+  import('./components/style-lab/StyleDebugPage')
+);
+
+// 模板 JSON 预览
+export const LazyTemplateJsonPreviewPage = React.lazy(() =>
+  import('./components/TemplateJsonPreviewPage').then(m => ({ default: m.default }))
+);
+
+// ★ 知识图谱已废弃（2026-01 移除）
+// LazyIrecGraphFlow, LazyIrecGraphPage, LazyIrecGraphFlowDemo
+
+// 学习中心
+// ★ 2026-06-12：必须深路径导入。App.tsx 静态导入了 features/learning-hub barrel,
+//   若此处动态导入同一 barrel,Rollup 会把 LearningHubPage 并入首屏 chunk,懒加载失效。
+export const LazyLearningHubPage = React.lazy(() =>
+  import('./features/learning-hub/LearningHubPage').then(m => ({ default: m.LearningHubPage }))
+);
+
+// Sandbox 工作台
+export const LazySandboxWorkbenchPage = React.lazy(() =>
+  import('./features/sandbox/pages/SandboxWorkbenchPage').then(m => ({ default: m.SandboxWorkbenchPage }))
+);
+
+// PDF 阅读器
+export const LazyPdfReader = React.lazy(() =>
+  import('./features/pdf/components/PdfReader').then(m => ({ default: m.default }))
+);
+
+// 待办事项
+export const LazyTodoPage = React.lazy(() =>
+  import('@/features/todo/components/TodoPage').then(m => ({ default: m.TodoPage }))
+);
+
+// 开发专用组件：生产构建中 import.meta.env.DEV 为 false，动态 import 被 Rollup 死代码消除
+const DevNull: React.FC<any> = () => null;
+const devLazy = () => Promise.resolve({ default: DevNull as React.ComponentType<any> });
+
+export const LazyCrepeDemoPage = import.meta.env.DEV
+  ? React.lazy(() => import('./components/dev/CrepeDemoPage').then(m => ({ default: m.CrepeDemoPage })))
+  : React.lazy(devLazy);
+
+export const LazyChatV2IntegrationTest = import.meta.env.DEV
+  ? React.lazy(() => import('./features/chat/dev').then(m => ({ default: m.IntegrationTest })))
+  : React.lazy(devLazy);
+
+export const LazyLLMOutputPlayground = import.meta.env.DEV
+  ? React.lazy(() => import('./features/chat/dev/playground').then(m => ({ default: m.LLMOutputPlayground })))
+  : React.lazy(devLazy);
+
+// 图片查看器
+export const LazyImageViewer = React.lazy(() =>
+  import('./components/ImageViewer').then(m => ({ default: m.ImageViewer }))
+);
+
+// 🚀 Chat V2 主页面（默认视图，改为懒加载以减少初始 bundle）
+// 其依赖链包含 @hello-pangea/dnd、framer-motion、chat-v2/init 等重量级模块
+export const LazyChatV2Page = React.lazy(() =>
+  import('./features/chat/pages').then(m => ({ default: m.ChatV2Page }))
+);

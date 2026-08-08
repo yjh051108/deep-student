@@ -1,0 +1,461 @@
+/**
+ * Chat V2 - 论文保存进度块渲染组件
+ *
+ * 渲染 paper_save 工具的细粒度下载/导入进度。
+ * 解析后端通过 emit_chunk 发射的 NDJSON 进度快照，
+ * 显示每篇论文的阶段、下载进度条、文件大小等信息。
+ *
+ * 进度 NDJSON 格式（每行一个 JSON 快照）：
+ * {"papers":[{"i":0,"t":"Title","s":"downloading","pct":45,"dl":2300000,"total":5100000}]}
+ */
+
+import React, { useMemo, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { cn } from '@/utils/cn';
+import { DsButton } from '@/components/ui/DsButton';
+import {
+  DownloadSimple,
+  CheckCircle,
+  WarningCircle,
+  CircleNotch,
+  MagnifyingGlass,
+  HardDrive,
+  FileText,
+  Database,
+  Copy,
+  ArrowCounterClockwise,
+  CaretDown,
+} from '@phosphor-icons/react';
+import { invoke } from '@tauri-apps/api/core';
+import { blockRegistry, type BlockComponentProps } from '../../registry';
+
+// ============================================================================
+// 类型
+// ============================================================================
+
+interface SourceCandidate {
+  label: string;
+  url: string;
+}
+
+interface PaperProgressItem {
+  i: number;
+  t: string;
+  s: 'resolving' | 'downloading' | 'deduplicating' | 'storing' | 'processing' | 'indexing' | 'done' | 'error';
+  pct: number;
+  dl?: number;
+  total?: number;
+  fid?: string;
+  dedup?: boolean;
+  err?: string;
+  src?: string;
+  srcs?: SourceCandidate[];
+}
+
+interface ProgressSnapshot {
+  papers: PaperProgressItem[];
+}
+
+// ============================================================================
+// 阶段配置
+// ============================================================================
+
+/** Stage weight/icon only — labels come from chatV2:blocks.paperSave.stage.* */
+const STAGE_CONFIG: Record<string, { icon: React.ElementType; weight: number }> = {
+  resolving:     { icon: MagnifyingGlass, weight: 5 },
+  downloading:   { icon: DownloadSimple,  weight: 60 },
+  deduplicating: { icon: Copy,            weight: 5 },
+  storing:       { icon: HardDrive,       weight: 10 },
+  processing:    { icon: FileText,        weight: 10 },
+  indexing:      { icon: Database,        weight: 10 },
+  done:          { icon: CheckCircle,     weight: 0 },
+  error:         { icon: WarningCircle,   weight: 0 },
+};
+
+const STAGE_ORDER = ['resolving', 'downloading', 'deduplicating', 'storing', 'processing', 'indexing', 'done'];
+
+/** 计算总进度百分比（基于阶段权重 + 下载细粒度） */
+function computeOverallPercent(paper: PaperProgressItem): number {
+  if (paper.s === 'done') return 100;
+  if (paper.s === 'error') return 0;
+
+  const stageIdx = STAGE_ORDER.indexOf(paper.s);
+  if (stageIdx < 0) return 0;
+
+  // 累加已完成阶段的权重
+  let acc = 0;
+  for (let j = 0; j < stageIdx; j++) {
+    acc += STAGE_CONFIG[STAGE_ORDER[j]]?.weight ?? 0;
+  }
+
+  // 当前阶段内的进度
+  const currentWeight = STAGE_CONFIG[paper.s]?.weight ?? 0;
+  if (paper.s === 'downloading') {
+    acc += (paper.pct / 100) * currentWeight;
+  } else {
+    acc += currentWeight * 0.5; // 非下载阶段取中点
+  }
+
+  return Math.round(acc);
+}
+
+/** 格式化文件大小 */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// ============================================================================
+// 单篇论文进度行
+// ============================================================================
+
+const PaperRow: React.FC<{ paper: PaperProgressItem }> = ({ paper }) => {
+  const { t } = useTranslation('chatV2');
+  const config = STAGE_CONFIG[paper.s] || STAGE_CONFIG.resolving;
+  const Icon = config.icon;
+  const overallPct = computeOverallPercent(paper);
+  const isDone = paper.s === 'done';
+  const isError = paper.s === 'error';
+  const isDownloading = paper.s === 'downloading';
+  const isActive = !isDone && !isError;
+
+  const [retryState, setRetryState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [retryError, setRetryError] = useState<string | null>(null);
+  const [showSources, setShowSources] = useState(false);
+  const [selectedSourceIdx, setSelectedSourceIdx] = useState<number | null>(null);
+  // 错误信息可点展开（触屏无 hover，title 提示不可见）
+  const [showFullError, setShowFullError] = useState(false);
+
+  const sources = useMemo(() => paper.srcs ?? [], [paper.srcs]);
+  const hasMultipleSources = sources.length > 1;
+
+  const handleRetry = useCallback(async (sourceUrl?: string) => {
+    const url = sourceUrl ?? sources[0]?.url;
+    if (!url) return;
+
+    setRetryState('loading');
+    setRetryError(null);
+    setShowSources(false);
+
+    try {
+      await invoke('vfs_download_paper', {
+        params: { url, title: paper.t },
+      });
+      setRetryState('success');
+    } catch (e) {
+      setRetryState('error');
+      setRetryError(typeof e === 'string' ? e : (e as Error)?.message ?? t('blocks.paperSave.downloadFailed'));
+    }
+  }, [sources, paper.t, t]);
+
+  return (
+    <div className="flex flex-col gap-1.5 py-2 first:pt-0 last:pb-0">
+      {/* 标题行（窄屏允许右侧状态簇换行，避免挤压标题） */}
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <Icon
+            className={cn(
+              'w-3.5 h-3.5 shrink-0',
+              isDone && 'text-success',
+              isError && 'text-destructive',
+              isActive && 'text-primary',
+              isActive && paper.s !== 'downloading' && 'animate-pulse',
+              retryState === 'success' && 'text-success',
+            )}
+          />
+          <span
+            className={cn(
+              'text-sm truncate',
+              isDone && 'text-muted-foreground',
+              isError && 'text-destructive',
+              isActive && 'text-foreground',
+              retryState === 'success' && 'text-muted-foreground',
+            )}
+            title={paper.t}
+          >
+            {paper.t}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-end gap-1.5 text-xs text-muted-foreground">
+          {/* 当前源标签 */}
+          {isActive && paper.src && (
+            <span className="text-muted-foreground/60" title={t('blocks.paperSave.sourceTitle', { source: paper.src })}>
+              {paper.src}
+            </span>
+          )}
+
+          {/* 去重标识 */}
+          {paper.dedup && (
+            <span className="text-warning" title={t('blocks.paperSave.dedupTitle')}>
+              {t('blocks.paperSave.dedup')}
+            </span>
+          )}
+
+          {/* 下载大小 */}
+          {isDownloading && paper.dl != null && (
+            <span>
+              {formatBytes(paper.dl)}
+              {paper.total != null && ` / ${formatBytes(paper.total)}`}
+            </span>
+          )}
+
+          {/* 阶段标签 */}
+          {isActive && (
+            <span className="text-primary">{t(`blocks.paperSave.stage.${paper.s}`)}</span>
+          )}
+
+          {/* 完成 */}
+          {(isDone || retryState === 'success') && (
+            <span className="text-success">{t('blocks.paperSave.saved')}</span>
+          )}
+
+          {/* 错误 + 重试按钮 */}
+          {isError && retryState !== 'success' && (
+            <>
+              {/* 错误信息可点展开（触屏无 hover，title 不可达）；展开态多行 break-words */}
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={() => setShowFullError(v => !v)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setShowFullError(v => !v);
+                  }
+                }}
+                className={cn(
+                  'text-destructive cursor-pointer',
+                  showFullError
+                    ? 'min-w-0 max-w-full whitespace-normal break-words'
+                    : 'truncate max-w-[100px]'
+                )}
+                title={paper.err}
+              >
+                {paper.err || t('blocks.paperSave.stage.error')}
+              </span>
+              {retryState === 'loading' ? (
+                <CircleNotch size={12} className="animate-spin text-primary" />
+              ) : (
+                <div className="relative flex items-center gap-0.5">
+                  <DsButton variant="ghost" size="sm" onClick={() => handleRetry()} disabled={sources.length === 0} className="text-primary hover:bg-primary/10" title={t('blocks.paperSave.retryTitle')}>
+                    <ArrowCounterClockwise size={12} />
+                    <span>{t('blocks.paperSave.retry')}</span>
+                  </DsButton>
+                  {hasMultipleSources && (
+                    <DsButton variant="ghost" size="icon" iconOnly onClick={() => setShowSources(v => !v)} className="relative !h-7 !w-7 after:absolute after:-inset-1.5 after:content-['']" aria-label={t('blocks.paperSave.switchSource')} title={t('blocks.paperSave.switchSource')}>
+                      <CaretDown className={cn('transition-transform', showSources && 'rotate-180')} size={12} />
+                    </DsButton>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* 重试失败 */}
+          {retryState === 'error' && (
+            <span className="text-destructive" title={retryError ?? undefined}>{t('blocks.paperSave.retryFailed')}</span>
+          )}
+        </div>
+      </div>
+
+      {/* 源切换下拉 */}
+      {showSources && sources.length > 0 && (
+        <div className="ml-5 flex flex-wrap gap-1">
+          {sources.map((src, si) => (
+            <DsButton
+              key={si}
+              variant={selectedSourceIdx === si ? 'outline' : 'ghost'}
+              size="sm"
+              onClick={() => {
+                setSelectedSourceIdx(si);
+                handleRetry(src.url);
+              }}
+              className={cn(
+                '!h-auto !py-1',
+                selectedSourceIdx === si
+                  ? 'border-primary text-primary bg-primary/10'
+                  : 'border-border/50 hover:border-primary/50',
+              )}
+              title={src.url}
+            >
+              {/* 触屏无 hover 看不到 title，URL 直接展示为可断行小字 */}
+              <span className="flex min-w-0 max-w-full flex-col items-start text-left">
+                <span>{src.label}</span>
+                <span className="max-w-full break-all text-2xs font-normal text-muted-foreground/70">
+                  {src.url}
+                </span>
+              </span>
+            </DsButton>
+          ))}
+        </div>
+      )}
+
+      {/* 进度条 */}
+      <div
+        className={cn(
+          'h-1.5 rounded-full overflow-hidden',
+          isError && retryState !== 'success' ? 'bg-destructive/20' : 'bg-muted/40',
+        )}
+      >
+        <div
+          className={cn(
+            'h-full rounded-full transition-all duration-500 ease-out',
+            (isDone || retryState === 'success') && 'bg-success',
+            isError && retryState !== 'success' && 'bg-destructive',
+            isActive && 'bg-primary',
+            retryState === 'loading' && 'bg-primary animate-pulse',
+          )}
+          style={{ width: `${isDone || retryState === 'success' ? 100 : isError ? 100 : overallPct}%` }}
+        />
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// 主组件
+// ============================================================================
+
+const PaperSaveBlock: React.FC<BlockComponentProps> = React.memo(({ block }) => {
+  const { t } = useTranslation('chatV2');
+  // 从 block.content 解析最后一行 NDJSON 获取当前进度快照
+  const snapshot = useMemo<ProgressSnapshot | null>(() => {
+    const raw = block.content;
+    if (!raw) return null;
+
+    // 找最后一个非空行
+    const lines = raw.trimEnd().split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      try {
+        return JSON.parse(line) as ProgressSnapshot;
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  }, [block.content]);
+
+  // 🔧 修复：当 block.content 为空（如页面刷新后从数据库加载，后端保存 content: None），
+  // 从 block.toolOutput 中提取论文计数信息作为回退
+  const toolOutputFallback = useMemo<{ doneCount: number; errorCount: number; totalCount: number } | null>(() => {
+    if (snapshot) return null; // 有 NDJSON 快照时不需要回退
+    const output = block.toolOutput as { total?: number; success_count?: number; failed_count?: number; results?: Array<{ success?: boolean }> } | undefined;
+    if (!output) return null;
+    const totalCount = output.total ?? output.results?.length ?? 0;
+    const doneCount = output.success_count ?? output.results?.filter(r => r.success)?.length ?? 0;
+    const errorCount = output.failed_count ?? (totalCount - doneCount);
+    return { doneCount, errorCount, totalCount };
+  }, [snapshot, block.toolOutput]);
+
+  // 完成后显示 toolOutput 中的最终结果
+  const isComplete = block.status === 'success';
+  const isError = block.status === 'error';
+
+  // 如果既没有进度数据也没有完成，显示占位
+  if (!snapshot && !isComplete && !isError) {
+    return (
+      <div className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
+        <CircleNotch size={16} className="animate-spin text-primary" />
+        <span>{t('blocks.paperSave.preparing')}</span>
+      </div>
+    );
+  }
+
+  const papers = snapshot?.papers ?? [];
+  const doneCount = toolOutputFallback?.doneCount ?? papers.filter(p => p.s === 'done').length;
+  const errorCount = toolOutputFallback?.errorCount ?? papers.filter(p => p.s === 'error').length;
+  const totalCount = toolOutputFallback?.totalCount ?? papers.length;
+
+  return (
+    <div
+      className={cn(
+        'rounded-lg border overflow-hidden',
+        'bg-card dark:bg-card/80',
+        isError ? 'border-destructive/30' : 'border-border/50',
+      )}
+    >
+      {/* 头部 */}
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/30">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 rounded-md bg-primary/10 dark:bg-primary/20">
+            <DownloadSimple size={16} className="text-primary" />
+          </div>
+          <div className="flex flex-col">
+            <span className="text-sm font-medium text-foreground">
+              {t('blocks.paperSave.title')}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {isComplete
+                ? errorCount > 0
+                  ? t('blocks.paperSave.summaryWithFailures', {
+                      done: doneCount,
+                      total: totalCount,
+                      count: errorCount,
+                    })
+                  : t('blocks.paperSave.summaryDone', { done: doneCount, total: totalCount, count: totalCount })
+                : isError
+                  ? (totalCount > 0
+                    ? t('blocks.paperSave.summaryWithFailures', {
+                        done: doneCount,
+                        total: totalCount,
+                        count: errorCount,
+                      })
+                    : t('blocks.paperSave.downloadFailed'))
+                  : t('blocks.paperSave.downloading', { done: doneCount, total: totalCount })}
+            </span>
+          </div>
+        </div>
+
+        {/* 全局状态图标 */}
+        <div className="flex items-center gap-1.5">
+          {isComplete && errorCount === 0 && (
+            <CheckCircle className="w-4 h-4 text-success" />
+          )}
+          {isComplete && errorCount > 0 && (
+            <WarningCircle size={16} className="text-warning" />
+          )}
+          {!isComplete && !isError && (
+            <CircleNotch size={16} className="text-primary animate-spin" />
+          )}
+          {isError && (
+            <WarningCircle size={16} className="text-destructive" />
+          )}
+        </div>
+      </div>
+
+      {/* 论文列表 */}
+      {papers.length > 0 && (
+        <div className="px-3 py-2 divide-y divide-border/20">
+          {papers.map((paper) => (
+            <PaperRow key={paper.i} paper={paper} />
+          ))}
+        </div>
+      )}
+
+      {/* 错误信息 */}
+      {isError && !snapshot && (
+        <div className="p-3 text-sm text-destructive">
+          {block.error || t('blocks.paperSave.blockError')}
+        </div>
+      )}
+    </div>
+  );
+});
+
+// ============================================================================
+// 自动注册
+// ============================================================================
+
+// 🔧 P0 修复：正式注册 paper_save 块类型，防止历史/异常 type=paper_save 块
+// 落到 GenericBlock（此前仅由 mcpTool 按 toolName 委托渲染）
+blockRegistry.register('paper_save', {
+  type: 'paper_save',
+  component: PaperSaveBlock,
+  onAbort: 'mark-error',
+});
+
+export { PaperSaveBlock };

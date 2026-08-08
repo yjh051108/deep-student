@@ -1,0 +1,518 @@
+/**
+ * 命令面板样式
+ * 支持亮色/暗色主题
+ */
+
+/* ==================== 点击层（非遮罩） ==================== */
+
+/*
+ * 不加灰色压暗/全页模糊——Spotlight 语义：面板靠自身投影与背景分离，
+ * 本元素保留仅用于点空白关闭与居中布局。
+ */
+.command-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 15vh;
+  background: transparent;
+}
+
+/* ==================== 容器 ==================== */
+
+.command-palette-container {
+  width: 100%;
+  max-width: 560px;
+  margin: 0 16px;
+  background-color: hsl(var(--popover));
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  box-shadow: 
+    0 25px 50px -12px hsl(var(--shadow-base) / 0.25),
+    0 0 0 1px hsl(var(--shadow-base) / 0.05);
+  overflow: hidden;
+  animation: command-palette-slide-down 150ms ease-out;
+}
+
+@keyframes command-palette-slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ==================== 搜索栏 ==================== */
+
+.command-palette-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+/* 输入框容器：圆角 + 背景 + 聚焦效果，对齐 AppMenu 搜索框设计 */
+.command-palette-input-wrapper {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.command-palette-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  flex-shrink: 0;
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+  z-index: 1;
+}
+
+.command-palette-input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px 0 32px;
+  font-size: 14px;
+  line-height: 34px;
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--input));
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  outline: none;
+  transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.command-palette-input:focus {
+  background-color: hsl(var(--card));
+  border-color: hsl(var(--ring) / 0.45);
+  box-shadow: 0 0 0 2px hsl(var(--ring) / 0.18);
+}
+
+.command-palette-input::placeholder {
+  color: hsl(var(--muted-foreground));
+}
+
+.command-palette-close-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: hsl(var(--muted-foreground));
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.command-palette-close-btn:hover {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--muted));
+}
+
+/* ==================== 模式切换按钮 ==================== */
+
+.command-palette-mode-buttons {
+  display: flex;
+  gap: 4px;
+  margin-right: 8px;
+}
+
+.command-palette-mode-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: hsl(var(--muted-foreground));
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.command-palette-mode-btn:hover {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--muted));
+}
+
+.command-palette-mode-btn-active {
+  color: hsl(var(--primary));
+  background-color: hsl(var(--primary) / 0.1);
+}
+
+.command-palette-mode-btn-active:hover {
+  color: hsl(var(--primary));
+  background-color: hsl(var(--primary) / 0.15);
+}
+
+/* ==================== 命令列表 ==================== */
+
+.command-palette-scroll-area {
+  position: relative;
+}
+
+/* OverlayScrollbars host: override h-full 为 auto，用 max-height 限制 */
+.command-palette-scroll-area .command-palette-list {
+  height: auto;
+  max-height: 400px;
+}
+
+.command-palette-list {
+  padding: 8px;
+  /* 列表滚到边界后不把滚动链传给背景页面（触屏防穿透） */
+  overscroll-behavior: contain;
+}
+
+/* ==================== 分组 ==================== */
+
+.command-palette-group {
+  margin-bottom: 8px;
+}
+
+.command-palette-group:last-child {
+  margin-bottom: 0;
+}
+
+.command-palette-group-label {
+  padding: 8px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ==================== 命令项 ==================== */
+
+.command-palette-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 100ms ease;
+}
+
+.command-palette-item:hover,
+.command-palette-item-selected {
+  background-color: hsl(var(--accent));
+}
+
+.command-palette-item-selected {
+  background-color: hsl(var(--accent));
+}
+
+.command-palette-item-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.command-palette-item-disabled:hover,
+.command-palette-item-disabled.command-palette-item-selected {
+  background-color: hsl(var(--muted) / 0.5);
+}
+
+.command-palette-item-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.command-palette-item-icon {
+  flex-shrink: 0;
+  color: hsl(var(--muted-foreground));
+}
+
+.command-palette-item-selected .command-palette-item-icon {
+  color: hsl(var(--foreground));
+}
+
+.command-palette-item-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: hsl(var(--foreground));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.command-palette-item-description {
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ==================== 收藏按钮 ==================== */
+
+.command-palette-item-favorite {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: hsl(var(--muted-foreground) / 0.5);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 150ms ease;
+}
+
+.command-palette-item:hover .command-palette-item-favorite,
+.command-palette-item-selected .command-palette-item-favorite {
+  opacity: 1;
+}
+
+.command-palette-item-favorite:hover {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--muted));
+}
+
+.command-palette-item-favorite-active {
+  opacity: 1;
+  color: hsl(var(--warning)); /* 使用语义化警告色/金黄色 */
+}
+
+.command-palette-item-favorite-active:hover {
+  color: hsl(var(--warning) / 0.85);
+}
+
+/* ==================== 快捷键 ==================== */
+
+.command-palette-item-shortcut {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  color: hsl(var(--muted-foreground));
+  background-color: hsl(var(--muted));
+  padding: 3px 6px;
+  border-radius: 4px;
+  border: 1px solid hsl(var(--border));
+}
+
+/* ==================== 空状态 ==================== */
+
+.command-palette-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: hsl(var(--muted-foreground));
+  font-size: 14px;
+}
+
+/* ==================== 底部提示 ==================== */
+
+.command-palette-footer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-top: 1px solid hsl(var(--border));
+  background-color: hsl(var(--muted) / 0.5);
+}
+
+.command-palette-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+
+.command-palette-hint-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  color: hsl(var(--muted-foreground));
+  background-color: hsl(var(--background));
+  border: 1px solid hsl(var(--border));
+  border-radius: 4px;
+}
+
+/* ==================== 暗色模式增强 ==================== */
+
+.dark .command-palette-container {
+  box-shadow: 
+    0 25px 50px -12px hsl(var(--shadow-base) / 0.5),
+    0 0 0 1px hsl(var(--background) / 0.05);
+}
+
+.dark .command-palette-item-shortcut {
+  background-color: hsl(var(--background));
+}
+
+/* ==================== 响应式适配 ==================== */
+
+/* ★ 2026-07 移动端内联化：<768 从「居中浮层」切换为「全屏内联子屏」形态——
+   背景实色占满 viewport、顶栏（返回 + 搜索）、结果列表全高滚动、safe-area 兼容。
+   软键盘弹出时由 JS 写入 --cp-viewport-height（visualViewport.height）驱动容器收缩，
+   替代旧 max-height:55vh 方案（vh 不随软键盘收缩，底部结果易被裁切）。
+   断点用 range 语法 (width < 768px)：与 JS 侧 !(min-width:768px) 精确互补，
+   避免 767.x 小数视口宽（显示缩放/分屏）下与移动壳判定分叉。 */
+@media (width < 768px) {
+  .command-palette-backdrop {
+    padding-top: 0;
+    align-items: stretch;
+    justify-content: stretch;
+    /* 全屏形态没有「点空白关闭」语义，遮罩退化为实色画布 */
+    background: hsl(var(--background));
+  }
+
+  .command-palette-container {
+    display: flex;
+    flex-direction: column;
+    max-width: none;
+    margin: 0;
+    height: var(--cp-viewport-height, 100dvh);
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background-color: hsl(var(--background));
+    /* Android 上 env() 不可用，真实值由 platform.ts 注入 --android-safe-area-*
+       （与 app/shell/mobileShell.ts 的兜底链一致；容器 portal 到 body，
+       不能用只定义在 app-shell 上的 --mobile-safe-area-*） */
+    padding-top: var(--android-safe-area-top, env(safe-area-inset-top, 0px));
+    padding-bottom: var(--android-safe-area-bottom, env(safe-area-inset-bottom, 0px));
+    /* 横屏刘海/圆角屏：全屏形态左右同样需要避让安全区 */
+    padding-left: var(--android-safe-area-left, env(safe-area-inset-left, 0px));
+    padding-right: var(--android-safe-area-right, env(safe-area-inset-right, 0px));
+    animation: command-palette-page-in 180ms ease-out;
+  }
+
+  .command-palette-search {
+    flex-shrink: 0;
+    padding: 10px 12px;
+  }
+
+  .command-palette-input {
+    height: 40px;
+    line-height: 40px;
+    font-size: 15px;
+  }
+
+  /* 结果列表占满剩余高度并独立滚动 */
+  .command-palette-scroll-area {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .command-palette-scroll-area .command-palette-list {
+    height: 100%;
+    max-height: none;
+  }
+
+  .command-palette-footer {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* ★ 2026-07-20（R11）：窄屏结果项改上下两行（名称 / 描述），
+     否则文件路径、会话摘要与命令名同行争抢 ~300px 行宽，
+     描述几乎必被省略号吞掉。max-width 保证列向布局下省略号仍生效。 */
+  .command-palette-item-left {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .command-palette-item-name,
+  .command-palette-item-description {
+    max-width: 100%;
+  }
+}
+
+@keyframes command-palette-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .command-palette-container {
+    animation: none;
+  }
+}
+
+/* 移动端顶栏返回按钮（全屏内联子屏的返回入口，触控 ≥44px） */
+.command-palette-back-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-left: -4px;
+  color: hsl(var(--foreground));
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.command-palette-back-btn:active {
+  background-color: hsl(var(--muted));
+}
+
+/* ==================== 触屏适配 ==================== */
+
+/* 触屏主指针设备:hover 不可达、触控目标需放大 */
+@media (pointer: coarse) {
+  /* 收藏按钮默认依赖 hover 显现,触屏上永远不可见 → 常显 */
+  .command-palette-item-favorite {
+    opacity: 1;
+    width: 40px;
+    height: 40px;
+  }
+
+  /* 顶栏操作触控目标 ≥44px */
+  .command-palette-mode-btn,
+  .command-palette-close-btn,
+  .command-palette-back-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* ★ 2026-07-08 移动端审计：结果项触控行高 ≥44px */
+  .command-palette-item {
+    min-height: 44px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  /* 键盘快捷键提示(↑↓/Enter/Esc)对触屏无意义,隐藏以释放纵向空间 */
+  .command-palette-footer {
+    display: none;
+  }
+}

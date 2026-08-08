@@ -1,0 +1,478 @@
+/**
+ * 笔记工具预览组件
+ * 
+ * 功能：
+ * - 展示操作前后的 diff 对比
+ * - Markdown 渲染预览
+ * - 点击打开 DSTU 笔记面板
+ */
+
+import React, { useMemo, useState, useCallback } from 'react';
+import { DsButton } from '@/components/ui/DsButton';
+import { CustomScrollArea } from '@/components/custom-scroll-area';
+import { useTranslation } from 'react-i18next';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  NotePencil,
+  FilePlus,
+  MagnifyingGlass,
+  Swap,
+  ArrowSquareOut,
+  CaretDown,
+  CaretRight,
+  CheckCircle,
+  WarningCircle,
+  CircleNotch,
+  Eye,
+  ArrowsLeftRight,
+} from '@phosphor-icons/react';
+import { cn } from '@/utils/cn';
+import { StreamingMarkdownRenderer } from '../renderers';
+import { getReadableToolName } from '@/features/chat/utils/toolDisplayName';
+import { formatToolDurationShort } from '@/features/chat/utils/toolDuration';
+import { TextShimmer } from '../ui/TextShimmer';
+
+// ============================================================================
+// 类型定义
+// ============================================================================
+
+/** 笔记工具类型 */
+type NoteToolType = 'note_read' | 'note_append' | 'note_replace' | 'note_set' | 'note_create' | 'note_list' | 'note_search';
+
+/** 笔记工具预览 Props */
+export interface NoteToolPreviewProps {
+  /** 工具名称 */
+  toolName: string;
+  /** 工具状态 */
+  status: 'running' | 'success' | 'error' | 'pending';
+  /** 🔧 P7修复：会话级流式状态，用于修正 status='running' 的显示 */
+  isStreaming?: boolean;
+  /** 工具输入参数 */
+  input?: Record<string, unknown>;
+  /** 工具输出结果 */
+  output?: {
+    success?: boolean;
+    beforePreview?: string;
+    afterPreview?: string;
+    addedContent?: string;
+    searchPattern?: string;
+    replaceWith?: string;
+    content?: string;
+    wordCount?: number;
+    appendedCount?: number;
+    replaceCount?: number;
+  };
+  /** 错误信息 */
+  error?: string;
+  /** 执行时间（毫秒） */
+  durationMs?: number;
+  /** 笔记 ID */
+  noteId?: string;
+  /** 点击打开笔记回调 */
+  onOpenNote?: (noteId: string) => void;
+  /** 自定义类名 */
+  className?: string;
+}
+
+// ============================================================================
+// 笔记工具名称集合
+// ============================================================================
+
+const NOTE_TOOL_NAMES = new Set([
+  'note_read', 'note_append', 'note_replace', 'note_set', 'note_create', 'note_list', 'note_search',
+  'builtin-note_read', 'builtin-note_append', 'builtin-note_replace', 'builtin-note_set',
+  'builtin-note_create', 'builtin-note_list', 'builtin-note_search',
+]);
+
+/** 判断是否为笔记工具 */
+export function isNoteTool(toolName: string | undefined): boolean {
+  return toolName ? NOTE_TOOL_NAMES.has(toolName) : false;
+}
+
+/** 获取工具类型（去除 builtin- 前缀） */
+function getToolType(toolName: string): NoteToolType {
+  return toolName.replace('builtin-', '') as NoteToolType;
+}
+
+// ============================================================================
+// 组件实现
+// ============================================================================
+
+// React.memo：时间线流式更新时，父组件每个 chunk 重渲染一次；
+// 本组件全部 props 为原始值或来自 block 的稳定引用，浅比较即可跳过未变化的节点
+export const NoteToolPreview: React.FC<NoteToolPreviewProps> = React.memo(({
+  toolName,
+  status,
+  isStreaming = false,
+  input,
+  output,
+  error,
+  durationMs,
+  noteId,
+  onOpenNote,
+  className,
+}) => {
+  const { t } = useTranslation('chatV2');
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [viewMode, setViewMode] = useState<'diff' | 'preview'>('diff');
+
+  const toolType = getToolType(toolName);
+  // 🔧 P7修复：isRunning 需要同时满足 status='running' 和 isStreaming=true
+  // 避免数据恢复后（activeBlockIds 为空）错误显示加载状态
+  const isRunning = status === 'running' && isStreaming;
+  const isError = status === 'error';
+  const isSuccess = status === 'success';
+
+  // 获取工具图标
+  const ToolIcon = useMemo(() => {
+    switch (toolType) {
+      case 'note_read': return MagnifyingGlass;
+      case 'note_append': return FilePlus;
+      case 'note_replace': return Swap;
+      case 'note_set': return NotePencil;
+      case 'note_create': return FilePlus;
+      case 'note_list': return MagnifyingGlass;
+      case 'note_search': return MagnifyingGlass;
+      default: return NotePencil;
+    }
+  }, [toolType]);
+
+  // 获取工具显示名称
+  const toolDisplayName = useMemo(() => {
+    switch (toolType) {
+      case 'note_read': return t('timeline.noteTool.read');
+      case 'note_append': return t('timeline.noteTool.append');
+      case 'note_replace': return t('timeline.noteTool.replace');
+      case 'note_set': return t('timeline.noteTool.set');
+      case 'note_create': return t('timeline.noteTool.create');
+      case 'note_list': return t('timeline.noteTool.list');
+      case 'note_search': return t('timeline.noteTool.searchNotes');
+      default: return getReadableToolName(toolName, t);
+    }
+  }, [toolType, toolName, t]);
+
+  // 获取状态信息
+  const statusInfo = useMemo(() => {
+    if (isRunning) {
+      return {
+        icon: CircleNotch,
+        text: t('timeline.noteTool.running'),
+        color: 'text-primary',
+        spin: true,
+      };
+    }
+    if (isError) {
+      return {
+        icon: WarningCircle,
+        text: t('timeline.noteTool.failed'),
+        color: 'text-destructive',
+        spin: false,
+      };
+    }
+    if (isSuccess) {
+      return {
+        icon: null,
+        text: t('timeline.noteTool.completed'),
+        color: 'text-success',
+        spin: false,
+      };
+    }
+    return {
+      icon: null,
+      text: t('timeline.noteTool.pending'),
+      color: 'text-muted-foreground',
+      spin: false,
+    };
+  }, [isRunning, isError, isSuccess, t]);
+
+  const durationText = useMemo(() => {
+    if (!isSuccess) return '';
+    return formatToolDurationShort(durationMs);
+  }, [durationMs, isSuccess]);
+
+  // 处理打开笔记
+  const handleOpenNote = useCallback(() => {
+    const targetNoteId = noteId || (input?.noteId as string) || (input?.note_id as string);
+    if (targetNoteId && onOpenNote) {
+      onOpenNote(targetNoteId);
+    }
+  }, [noteId, input, onOpenNote]);
+
+  // 是否有预览内容
+  const hasPreview = !!(output?.beforePreview || output?.afterPreview || output?.content || output?.addedContent);
+
+  // 是否有可展开的内容（预览 / 错误信息 / 操作统计）；否则点击头部展开的是空面板
+  const hasStats = isSuccess && !!output && (
+    output.appendedCount !== undefined ||
+    output.replaceCount !== undefined ||
+    output.wordCount !== undefined
+  );
+  const hasExpandableContent = hasPreview || hasStats || !!(isError && error);
+
+  // 渲染 diff 视图
+  const renderDiffView = () => {
+    if (!output) return null;
+
+    const { beforePreview, afterPreview, addedContent, searchPattern, replaceWith, content } = output;
+
+    // note_read: 显示读取的内容
+    if (toolType === 'note_read' && content) {
+      return (
+        <div className="space-y-2">
+          <div className="text-xs text-muted-foreground font-medium">
+            {t('timeline.noteTool.readContent')}
+          </div>
+          <CustomScrollArea fullHeight={false} className="max-h-48 rounded-md bg-muted/50 border border-border" viewportClassName="max-h-48 p-3">
+            <StreamingMarkdownRenderer content={content} isStreaming={false} />
+          </CustomScrollArea>
+        </div>
+      );
+    }
+
+    // note_append: 显示追加的内容
+    if (toolType === 'note_append' && addedContent) {
+      return (
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5 text-xs text-success font-medium">
+              <FilePlus size={12} />
+              {t('timeline.noteTool.addedContent')}
+            </div>
+            <CustomScrollArea fullHeight={false} className="max-h-32 rounded-md bg-success/10 border border-success/30" viewportClassName="max-h-32 p-3">
+              <StreamingMarkdownRenderer content={addedContent} isStreaming={false} />
+            </CustomScrollArea>
+          </div>
+          {afterPreview && (
+            <div className="space-y-2">
+              <div className="text-xs text-muted-foreground font-medium">
+                {t('timeline.noteTool.afterContent')}
+              </div>
+              <CustomScrollArea fullHeight={false} className="max-h-32 rounded-md bg-muted/50 border border-border" viewportClassName="max-h-32 p-3">
+                <StreamingMarkdownRenderer content={afterPreview} isStreaming={false} />
+              </CustomScrollArea>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // note_replace: 显示替换信息
+    if (toolType === 'note_replace') {
+      return (
+        <div className="space-y-3">
+          {searchPattern && (
+            // 窄屏适配：长搜索/替换串允许换行，code 内部长 token 强制断行避免撑破容器
+            <div className="flex flex-wrap items-start gap-2 text-xs">
+              <span className="text-muted-foreground">{t('timeline.noteTool.search')}:</span>
+              <code className="min-w-0 max-w-full break-all px-1.5 py-0.5 rounded bg-danger/10 text-danger font-mono">
+                {searchPattern}
+              </code>
+              <span className="text-muted-foreground">→</span>
+              <code className="min-w-0 max-w-full break-all px-1.5 py-0.5 rounded bg-success/10 text-success font-mono">
+                {replaceWith || t('timeline.noteTool.emptyString')}
+              </code>
+            </div>
+          )}
+          {beforePreview && afterPreview && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <div className="text-xs text-danger font-medium">
+                  {t('timeline.noteTool.before')}
+                </div>
+                <CustomScrollArea fullHeight={false} className="max-h-32 rounded-md bg-danger/10 border border-danger/30 text-xs" viewportClassName="max-h-32 p-2">
+                  <StreamingMarkdownRenderer content={beforePreview} isStreaming={false} />
+                </CustomScrollArea>
+              </div>
+              <div className="space-y-1">
+                <div className="text-xs text-success font-medium">
+                  {t('timeline.noteTool.after')}
+                </div>
+                <CustomScrollArea fullHeight={false} className="max-h-32 rounded-md bg-success/10 border border-success/30 text-xs" viewportClassName="max-h-32 p-2">
+                  <StreamingMarkdownRenderer content={afterPreview} isStreaming={false} />
+                </CustomScrollArea>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // note_set: 显示设置前后对比
+    if (toolType === 'note_set' && (beforePreview || afterPreview)) {
+      return (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="space-y-1">
+            <div className="text-xs text-danger font-medium">
+              {t('timeline.noteTool.before')}
+            </div>
+            <CustomScrollArea fullHeight={false} className="max-h-32 rounded-md bg-danger/10 border border-danger/30 text-xs" viewportClassName="max-h-32 p-2">
+              <StreamingMarkdownRenderer content={beforePreview || t('timeline.noteTool.empty')} isStreaming={false} />
+            </CustomScrollArea>
+          </div>
+          <div className="space-y-1">
+            <div className="text-xs text-success font-medium">
+              {t('timeline.noteTool.after')}
+            </div>
+            <CustomScrollArea fullHeight={false} className="max-h-32 rounded-md bg-success/10 border border-success/30 text-xs" viewportClassName="max-h-32 p-2">
+              <StreamingMarkdownRenderer content={afterPreview || t('timeline.noteTool.empty')} isStreaming={false} />
+            </CustomScrollArea>
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  return (
+    <div className={cn('rounded-lg border border-border bg-card/50', className)}>
+      {/* 头部 */}
+      <DsButton
+        variant="ghost"
+        size="sm"
+        onClick={hasExpandableContent ? () => setIsExpanded(!isExpanded) : undefined}
+        aria-expanded={hasExpandableContent ? isExpanded : undefined}
+        className={cn(
+          'w-full !justify-between gap-2 !px-3 !py-2',
+          'text-left !rounded-t-lg !rounded-b-none',
+          !hasExpandableContent && 'cursor-default',
+          isExpanded && 'border-b border-border'
+        )}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <ToolIcon size={16} className="text-primary flex-shrink-0" />
+          <span className="font-medium text-sm truncate">{toolDisplayName}</span>
+          {statusInfo.icon && (
+            <statusInfo.icon
+              size={14}
+              className={cn('flex-shrink-0', statusInfo.color, statusInfo.spin && 'animate-spin')}
+            />
+          )}
+          {isRunning ? (
+            <TextShimmer
+              className={cn('text-xs', statusInfo.color)}
+              duration={1.5}
+              spread={3}
+            >
+              {statusInfo.text}
+            </TextShimmer>
+          ) : (
+            <>
+              <span className={cn('text-xs', statusInfo.color)}>{statusInfo.text}</span>
+              {durationText && (
+                <span className="text-xs text-muted-foreground">{durationText}</span>
+              )}
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {/* 打开笔记按钮 - 使用 span 避免 button 嵌套，增强点击区域 */}
+          {(noteId || input?.noteId || input?.note_id) && onOpenNote && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                handleOpenNote();
+              }}
+              onMouseDown={(e) => {
+                // 阻止父级 button 捕获 mousedown
+                e.stopPropagation();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  handleOpenNote();
+                }
+              }}
+              className="p-1.5 rounded hover:bg-[var(--interactive-hover)] transition-colors cursor-pointer relative z-10"
+              title={t('timeline.noteTool.openNote')}
+            >
+              <ArrowSquareOut size={14} className="text-muted-foreground hover:text-foreground" />
+            </span>
+          )}
+          {hasExpandableContent && (
+            isExpanded ? <CaretDown size={14} /> : <CaretRight size={14} />
+          )}
+        </div>
+      </DsButton>
+
+      {/* 展开内容 */}
+      <AnimatePresence initial={false}>
+        {isExpanded && hasExpandableContent && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="p-3 space-y-3">
+              {/* 错误信息 */}
+              {isError && error && (
+                <div className="flex items-start gap-2 p-2 rounded-md bg-destructive/10 border border-destructive/20">
+                  <WarningCircle size={14} className="text-destructive flex-shrink-0 mt-0.5" />
+                  <span className="text-xs text-destructive">{error}</span>
+                </div>
+              )}
+
+              {/* 视图切换（仅在有 before/after 时显示） */}
+              {output?.beforePreview && output?.afterPreview && toolType !== 'note_read' && (
+                <div className="flex items-center gap-1 p-0.5 rounded-md bg-muted/50 w-fit">
+                  <DsButton
+                    variant={viewMode === 'diff' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('diff')}
+                    className={cn(viewMode === 'diff' && 'shadow-sm')}
+                  >
+                    <ArrowsLeftRight size={12} />
+                    {t('timeline.noteTool.diffView')}
+                  </DsButton>
+                  <DsButton
+                    variant={viewMode === 'preview' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('preview')}
+                    className={cn(viewMode === 'preview' && 'shadow-sm')}
+                  >
+                    <Eye size={12} />
+                    {t('timeline.noteTool.previewView')}
+                  </DsButton>
+                </div>
+              )}
+
+              {/* Diff 视图 */}
+              {viewMode === 'diff' && renderDiffView()}
+
+              {/* 预览视图（仅显示 after） */}
+              {viewMode === 'preview' && output?.afterPreview && (
+                <CustomScrollArea fullHeight={false} className="max-h-64 rounded-md bg-muted/50 border border-border" viewportClassName="max-h-64 p-3">
+                  <StreamingMarkdownRenderer content={output.afterPreview} isStreaming={false} />
+                </CustomScrollArea>
+              )}
+
+              {/* 操作统计 */}
+              {isSuccess && output && (
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  {output.appendedCount !== undefined && (
+                    <span>{t('timeline.noteTool.appendedChars', { count: output.appendedCount })}</span>
+                  )}
+                  {output.replaceCount !== undefined && (
+                    <span>{t('timeline.noteTool.replacedCount', { count: output.replaceCount })}</span>
+                  )}
+                  {output.wordCount !== undefined && (
+                    <span>{t('timeline.noteTool.wordCount', { count: output.wordCount })}</span>
+                  )}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+});
+NoteToolPreview.displayName = 'NoteToolPreview';
+
+export default NoteToolPreview;

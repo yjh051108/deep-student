@@ -1,0 +1,582 @@
+/**
+ * 应用自动更新 Hook
+ *
+ * 基于 @tauri-apps/plugin-updater 实现桌面端自动更新检查。
+ * - 启动后延迟 5 秒静默检查
+ * - 提供手动检查更新功能
+ * - Android/iOS 走应用商店，不使用此机制
+ */
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { isMobilePlatform } from '../utils/platform';
+import { openLink } from '../utils/urlOpener';
+
+/**
+ * 获取一个不受 CORS 限制的 fetch 函数。
+ * 移动端 WebView 严格执行 CORS，需要走 Tauri HTTP 插件（原生网络层）；
+ * 桌面端浏览器 fetch 可直接使用。
+ */
+async function getCorsFetch(): Promise<typeof fetch> {
+  if (isMobilePlatform()) {
+    try {
+      const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http');
+      return tauriFetch as unknown as typeof fetch;
+    } catch {
+      return fetch;
+    }
+  }
+  return fetch;
+}
+
+export type UpdateChannel = 'stable' | 'experimental';
+const UPDATE_CHANNEL_KEY = 'ds-update-channel';
+
+// ---- Auto-update frequency & skip settings ----
+export type UpdateFrequency = 'every_launch' | 'every_n_days' | 'never';
+const UPDATE_FREQUENCY_KEY = 'ds-update-frequency';
+const UPDATE_FREQUENCY_DAYS_KEY = 'ds-update-frequency-days';
+const UPDATE_LAST_CHECK_KEY = 'ds-update-last-check';
+const UPDATE_SKIPPED_VERSION_KEY = 'ds-update-skipped-version';
+const UPDATE_NO_REMIND_KEY = 'ds-update-no-remind';
+
+export function getUpdateFrequency(): UpdateFrequency {
+  try {
+    const v = localStorage.getItem(UPDATE_FREQUENCY_KEY);
+    if (v === 'every_n_days' || v === 'never') return v;
+    return 'every_launch';
+  } catch { return 'every_launch'; }
+}
+
+export function setUpdateFrequency(freq: UpdateFrequency) {
+  try {
+    localStorage.setItem(UPDATE_FREQUENCY_KEY, freq);
+    // Changing frequency away from 'never' implicitly clears no-remind
+    if (freq !== 'never') {
+      localStorage.removeItem(UPDATE_NO_REMIND_KEY);
+    }
+  } catch { /* localStorage 不可用时静默忽略 */ }
+}
+
+export function getUpdateFrequencyDays(): number {
+  try {
+    const v = parseInt(localStorage.getItem(UPDATE_FREQUENCY_DAYS_KEY) ?? '', 10);
+    return Number.isFinite(v) && v > 0 ? v : 3;
+  } catch { return 3; }
+}
+
+export function setUpdateFrequencyDays(days: number) {
+  try { localStorage.setItem(UPDATE_FREQUENCY_DAYS_KEY, String(Math.max(1, Math.round(days)))); } catch { /* localStorage 不可用时静默忽略 */ }
+}
+
+export function getSkippedVersion(): string {
+  try { return localStorage.getItem(UPDATE_SKIPPED_VERSION_KEY) ?? ''; } catch { return ''; }
+}
+
+export function setSkippedVersion(version: string) {
+  try { localStorage.setItem(UPDATE_SKIPPED_VERSION_KEY, version); } catch { /* localStorage 不可用时静默忽略 */ }
+}
+
+export function getNoRemind(): boolean {
+  try { return localStorage.getItem(UPDATE_NO_REMIND_KEY) === 'true'; } catch { return false; }
+}
+
+export function setNoRemind(value: boolean) {
+  try {
+    if (value) {
+      localStorage.setItem(UPDATE_NO_REMIND_KEY, 'true');
+    } else {
+      localStorage.removeItem(UPDATE_NO_REMIND_KEY);
+    }
+  } catch { /* localStorage 不可用时静默忽略 */ }
+}
+
+function getLastCheckTime(): number {
+  try {
+    const v = parseInt(localStorage.getItem(UPDATE_LAST_CHECK_KEY) ?? '', 10);
+    return Number.isFinite(v) ? v : 0;
+  } catch { return 0; }
+}
+
+function setLastCheckTime() {
+  try { localStorage.setItem(UPDATE_LAST_CHECK_KEY, String(Date.now())); } catch { /* localStorage 不可用时静默忽略 */ }
+}
+
+/** Determine if a startup auto-check should run based on user preferences */
+function shouldAutoCheck(): boolean {
+  if (getNoRemind()) return false;
+  const freq = getUpdateFrequency();
+  if (freq === 'never') return false;
+  if (freq === 'every_launch') return true;
+  // every_n_days
+  const days = getUpdateFrequencyDays();
+  const last = getLastCheckTime();
+  if (last === 0) return true;
+  const elapsed = Date.now() - last;
+  return elapsed >= days * 24 * 60 * 60 * 1000;
+}
+
+export function getUpdateChannel(): UpdateChannel {
+  try {
+    return localStorage.getItem(UPDATE_CHANNEL_KEY) === 'experimental' ? 'experimental' : 'stable';
+  } catch { return 'stable'; }
+}
+
+export function setUpdateChannel(channel: UpdateChannel) {
+  try { localStorage.setItem(UPDATE_CHANNEL_KEY, channel); } catch { /* localStorage 不可用时静默忽略 */ }
+}
+
+const R2_LATEST_URL = 'https://download.deepstudent.cn/releases/latest.json';
+const GH_LATEST_URL = 'https://github.com/helixnow/deep-student/releases/latest/download/latest.json';
+
+/** semver 大于比较（不引入额外依赖） */
+function isNewerVersion(latest: string, current: string): boolean {
+  // 仅比较 core semver（major.minor.patch），忽略 prerelease/build metadata
+  const normalize = (v: string): [number, number, number] => {
+    const core = v.trim().replace(/^v/i, '').split(/[+-]/, 1)[0] || '';
+    const [major, minor, patch] = core.split('.');
+    const toInt = (s?: string) => {
+      const n = Number.parseInt(s ?? '0', 10);
+      return Number.isFinite(n) ? n : 0;
+    };
+    return [toInt(major), toInt(minor), toInt(patch)];
+  };
+
+  const l = normalize(latest);
+  const c = normalize(current);
+
+  for (let i = 0; i < 3; i++) {
+    const lv = l[i];
+    const cv = c[i];
+    if (lv > cv) return true;
+    if (lv < cv) return false;
+  }
+  return false;
+}
+
+export interface UpdateInfo {
+  version: string;
+  date?: string;
+  body?: string;
+  /** R2 镜像 APK 下载地址（仅移动端从 R2 latest.json 获取） */
+  apkUrl?: string;
+}
+
+/** 更新失败的阶段 */
+export type UpdateErrorPhase =
+  | 'check'           // 检查更新失败（网络/端点不可用）
+  | 'download'        // 下载失败（网络中断/文件不存在）
+  | 'install'         // 安装失败（签名验证/磁盘空间/权限）
+  | 'relaunch'        // 重启失败（更新已安装，需手动重启）
+  | 'unavailable';    // 更新源已不可用
+
+export interface UpdateError {
+  phase: UpdateErrorPhase;
+  message: string;
+}
+
+interface UpdateState {
+  /** 是否正在检查 */
+  checking: boolean;
+  /** 是否有可用更新 */
+  available: boolean;
+  /** 已是最新版本（检查完成但无更新） */
+  upToDate: boolean;
+  /** 更新信息 */
+  info: UpdateInfo | null;
+  /** 是否正在下载安装 */
+  downloading: boolean;
+  /** 下载进度 (0-100) */
+  progress: number;
+  /** 错误信息（细粒度） */
+  error: UpdateError | null;
+  /** 是否为启动时自动检查触发（用于弹窗判断） */
+  isStartupCheck: boolean;
+}
+
+export interface AppUpdaterController extends UpdateState {
+  isMobile: boolean;
+  checkForUpdate: (silent?: boolean, startup?: boolean) => Promise<boolean>;
+  downloadAndInstall: () => Promise<void>;
+  dismiss: () => void;
+  skipVersion: (version: string) => void;
+  setNeverRemind: () => void;
+  performUpdateAction: () => Promise<void>;
+}
+
+const initialState: UpdateState = {
+  checking: false,
+  available: false,
+  upToDate: false,
+  info: null,
+  downloading: false,
+  progress: 0,
+  error: null,
+  isStartupCheck: false,
+};
+
+/** 根据 downloadAndInstall 抛出的原始错误推断失败阶段 */
+function classifyDownloadInstallError(err: any): UpdateErrorPhase {
+  const msg = (err?.message || String(err)).toLowerCase();
+  // 网络 / 下载阶段关键词
+  if (
+    msg.includes('network') ||
+    msg.includes('fetch') ||
+    msg.includes('timeout') ||
+    msg.includes('dns') ||
+    msg.includes('connect') ||
+    msg.includes('download') ||
+    msg.includes('status code')
+  ) {
+    return 'download';
+  }
+  // 签名验证 / 权限 / 磁盘空间 → 安装阶段
+  if (
+    msg.includes('signature') ||
+    msg.includes('verify') ||
+    msg.includes('permission') ||
+    msg.includes('disk') ||
+    msg.includes('space') ||
+    msg.includes('extract') ||
+    msg.includes('io error')
+  ) {
+    return 'install';
+  }
+  // 默认归为安装阶段（下载成功但后续失败的概率更高）
+  return 'install';
+}
+
+export function useAppUpdater(): AppUpdaterController {
+  const [state, setState] = useState<UpdateState>(initialState);
+  const pendingUpdateRef = useRef<any>(null);
+  const downloadingRef = useRef(false);
+
+  const mobile = isMobilePlatform();
+
+  /** 检查更新 */
+  const checkForUpdate = useCallback(async (silent = false, startup = false): Promise<boolean> => {
+    // 移动端：优先从 R2 检查最新版本，回退到 GitHub API
+    if (mobile) {
+      setState(prev => ({ ...prev, checking: true, error: null, upToDate: false, isStartupCheck: startup }));
+      try {
+        const { default: VERSION_INFO } = await import('../version');
+        const currentVersion = VERSION_INFO.APP_VERSION;
+        const safeFetch = await getCorsFetch();
+
+        let latestVersion = '';
+        let releaseBody: string | undefined;
+        let publishedAt: string | undefined;
+        let apkUrl: string | undefined;
+
+        let releaseChannel = '';
+
+        // 优先尝试 R2 镜像（国内更快）
+        try {
+          const r2Controller = new AbortController();
+          const r2Timeout = setTimeout(() => r2Controller.abort(), 5000);
+          const r2Resp = await safeFetch(R2_LATEST_URL, {
+            signal: r2Controller.signal,
+          }).finally(() => clearTimeout(r2Timeout));
+          if (r2Resp.ok) {
+            const r2Data = await r2Resp.json();
+            latestVersion = r2Data.version ?? '';
+            releaseBody = r2Data.notes ?? undefined;
+            publishedAt = r2Data.pub_date ?? undefined;
+            apkUrl = r2Data.apk_url ?? undefined;
+            releaseChannel = r2Data.channel ?? 'stable';
+          }
+        } catch {
+          // R2 失败，静默回退
+        }
+
+        // R2 失败时回退到 GitHub API
+        if (!latestVersion) {
+          const ghController = new AbortController();
+          const ghTimeout = setTimeout(() => ghController.abort(), 10000);
+          const resp = await safeFetch('https://api.github.com/repos/helixnow/deep-student/releases/latest', {
+            headers: { Accept: 'application/vnd.github+json' },
+            signal: ghController.signal,
+          }).finally(() => clearTimeout(ghTimeout));
+          if (!resp.ok) throw new Error(`GitHub API ${resp.status}`);
+          const data = await resp.json();
+          // 兼容 'v0.9.9' 和 'deep-student-v0.9.9' 两种 tag 格式
+          const tagName = data.tag_name ?? '';
+          latestVersion = tagName.match(/v?(\d+\.\d+\.\d+)/)?.[1] ?? tagName.replace(/^v/, '');
+          releaseBody = data.body ?? undefined;
+          publishedAt = data.published_at ?? undefined;
+          // 从 release assets 中查找 APK，构造 R2 镜像下载链接
+          if (!apkUrl && tagName) {
+            const apkAsset = (data.assets as any[])?.find((a: any) => a.name?.endsWith('.apk'));
+            if (apkAsset) {
+              apkUrl = `https://download.deepstudent.cn/releases/${tagName}/${apkAsset.name}`;
+            }
+          }
+          // GitHub API 不含 channel，从 GitHub Release 的 latest.json asset 补取
+          if (!releaseChannel) {
+            try {
+              const ghLatestCtrl = new AbortController();
+              const ghLatestTimeout = setTimeout(() => ghLatestCtrl.abort(), 5000);
+              const ghLatestResp = await safeFetch(GH_LATEST_URL, {
+                signal: ghLatestCtrl.signal,
+              }).finally(() => clearTimeout(ghLatestTimeout));
+              if (ghLatestResp.ok) {
+                const ghLatestData = await ghLatestResp.json();
+                releaseChannel = ghLatestData.channel ?? 'stable';
+              }
+            } catch { /* 渠道探测失败时按 stable 处理 */ }
+          }
+        }
+
+        if (!releaseChannel) releaseChannel = 'stable';
+
+        // 稳定版用户遇到实验版 → 视为已是最新
+        if (getUpdateChannel() === 'stable' && releaseChannel === 'experimental') {
+          setState(prev => ({ ...prev, checking: false, available: false, upToDate: !silent }));
+          return true;
+        }
+
+        if (latestVersion && isNewerVersion(latestVersion, currentVersion)) {
+          // Startup check: skip if user chose to skip this specific version
+          if (startup && getSkippedVersion() === latestVersion) {
+            setState(prev => ({ ...prev, checking: false, available: false, upToDate: false }));
+            return true;
+          }
+          setState(prev => ({
+            ...prev,
+            checking: false,
+            available: true,
+            info: {
+              version: latestVersion,
+              date: publishedAt,
+              body: releaseBody,
+              apkUrl,
+            },
+          }));
+        } else {
+          setState(prev => ({ ...prev, checking: false, available: false, upToDate: !silent, info: null }));
+        }
+      } catch (err: any) {
+        if (!silent) {
+          setState(prev => ({ ...prev, checking: false, error: { phase: 'check', message: err?.message || String(err) } }));
+        } else {
+          setState(prev => ({ ...prev, checking: false }));
+          console.warn('[Updater] Mobile silent check failed:', err?.message || String(err));
+        }
+        return false;
+      }
+      return true;
+    }
+
+    // 桌面端使用 Tauri updater 插件
+    setState(prev => ({ ...prev, checking: true, error: null, upToDate: false, isStartupCheck: startup }));
+
+    try {
+      // 稳定版用户：先从 R2 检查 latest.json 的 channel，实验版则跳过
+      // 注：桌面端 webview CSP 不允许 fetch github.com，故仅用 R2；
+      //     R2 不可用时 fail-open 进入正常 Tauri updater 流程
+      if (getUpdateChannel() === 'stable') {
+        try {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 5000);
+          const resp = await fetch(R2_LATEST_URL, { signal: ctrl.signal }).finally(() => clearTimeout(t));
+          if (resp.ok && (await resp.json()).channel === 'experimental') {
+            setState(prev => ({ ...prev, checking: false, available: false, upToDate: !silent }));
+            return true;
+          }
+        } catch { /* R2 不可用，继续正常流程 */ }
+      }
+
+      const { check } = await import('@tauri-apps/plugin-updater');
+      const update = await check();
+
+      if (update) {
+        // Startup check: skip if user chose to skip this specific version
+        if (startup && getSkippedVersion() === update.version) {
+          pendingUpdateRef.current = null;
+          setState(prev => ({ ...prev, checking: false, available: false, upToDate: false }));
+        } else {
+          pendingUpdateRef.current = update;
+          setState(prev => ({
+            ...prev,
+            checking: false,
+            available: true,
+            info: {
+              version: update.version,
+              date: update.date ?? undefined,
+              body: update.body ?? undefined,
+            },
+          }));
+        }
+      } else {
+        pendingUpdateRef.current = null;
+        setState(prev => ({
+          ...prev,
+          checking: false,
+          available: false,
+          upToDate: !silent,
+          info: null,
+        }));
+      }
+    } catch (err: any) {
+      pendingUpdateRef.current = null;
+      const errorMsg = err?.message || String(err);
+      if (!silent) {
+        setState(prev => ({
+          ...prev,
+          checking: false,
+          error: { phase: 'check', message: errorMsg },
+        }));
+      } else {
+        setState(prev => ({ ...prev, checking: false }));
+        console.warn('[Updater] Silent check failed:', errorMsg);
+      }
+      return false;
+    }
+    return true;
+  }, [mobile]);
+
+  /** 下载并安装更新（仅桌面端） */
+  const downloadAndInstall = useCallback(async () => {
+    if (mobile) return; // 移动端不支持 in-app 安装
+    if (downloadingRef.current) return; // 防止并发下载
+    downloadingRef.current = true;
+
+    setState(prev => ({ ...prev, downloading: true, progress: 0, error: null }));
+
+    try {
+      let update = pendingUpdateRef.current;
+      if (!update) {
+        const { check } = await import('@tauri-apps/plugin-updater');
+        update = await check();
+      }
+
+      if (!update) {
+        setState(prev => ({ ...prev, downloading: false, error: { phase: 'unavailable', message: '更新已不可用，请稍后重试' } }));
+        return;
+      }
+      pendingUpdateRef.current = null;
+
+      // 下载并安装（官方推荐：用 downloaded/contentLength 计算真实进度）
+      let downloaded = 0;
+      let contentLength = 0;
+      await update.downloadAndInstall((event) => {
+        switch (event.event) {
+          case 'Started':
+            contentLength = event.data.contentLength ?? 0;
+            downloaded = 0;
+            setState(prev => ({ ...prev, progress: 0 }));
+            break;
+          case 'Progress':
+            downloaded += event.data.chunkLength;
+            setState(prev => ({
+              ...prev,
+              progress: contentLength > 0
+                ? Math.min(Math.round((downloaded / contentLength) * 100), 99)
+                : Math.min(prev.progress + 2, 95),
+            }));
+            break;
+          case 'Finished':
+            setState(prev => ({ ...prev, progress: 100 }));
+            break;
+        }
+      });
+
+      // 安装完成后需要重启
+      try {
+        const { relaunch } = await import('@tauri-apps/plugin-process');
+        await relaunch();
+      } catch (relaunchErr: any) {
+        console.error('[Updater] Relaunch failed:', relaunchErr);
+        downloadingRef.current = false;
+        setState(prev => ({
+          ...prev,
+          available: false,
+          downloading: false,
+          progress: 100,
+          error: {
+            phase: 'relaunch',
+            message: '更新已安装，请手动重启应用以完成更新',
+          },
+        }));
+      }
+    } catch (err: any) {
+      downloadingRef.current = false;
+      const errorMsg = err?.message || String(err) || 'Unknown error';
+      setState(prev => {
+        // 如果 Finished 事件已触发（progress >= 100），说明下载完成、
+        // 更新大概率已写入磁盘（macOS .app 替换后抛异常的典型场景）。
+        // 此时归为 relaunch 阶段，避免误报"安装失败"。
+        if (prev.progress >= 100) {
+          console.warn('[Updater] Post-install error (update likely applied):', errorMsg, err);
+          return {
+            ...prev,
+            available: false,
+            downloading: false,
+            error: {
+              phase: 'relaunch',
+              message: '更新已安装，请手动重启应用以完成更新',
+            },
+          };
+        }
+        const phase = classifyDownloadInstallError(err);
+        console.error(`[Updater] ${phase} failed:`, errorMsg, err);
+        return {
+          ...prev,
+          downloading: false,
+          error: { phase, message: errorMsg },
+        };
+      });
+    }
+  }, [mobile]);
+
+  const performUpdateAction = useCallback(async () => {
+    if (!state.available || !state.info) return;
+
+    if (mobile) {
+      const fallbackUrl = 'https://github.com/helixnow/deep-student/releases/latest';
+      await openLink(state.info.apkUrl || fallbackUrl);
+      return;
+    }
+
+    await downloadAndInstall();
+  }, [downloadAndInstall, mobile, state.available, state.info]);
+
+  /** 关闭更新提示 */
+  const dismiss = useCallback(() => {
+    setState(initialState);
+  }, []);
+
+  /** 跳过某个特定版本 */
+  const skipVersion = useCallback((version: string) => {
+    setSkippedVersion(version);
+    setState(initialState);
+  }, []);
+
+  /** 设置不再提醒 */
+  const setNeverRemind = useCallback(() => {
+    setNoRemind(true);
+    setState(initialState);
+  }, []);
+
+  // 启动后延迟静默检查（受频率设置控制）
+  useEffect(() => {
+    if (!shouldAutoCheck()) return;
+    const timer = setTimeout(async () => {
+      // Fix: 仅在检查成功时记录时间，网络失败不应延后下次检查
+      const success = await checkForUpdate(true, true);
+      if (success) {
+        setLastCheckTime();
+      }
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [checkForUpdate]);
+
+  return {
+    ...state,
+    isMobile: mobile,
+    checkForUpdate,
+    downloadAndInstall,
+    performUpdateAction,
+    dismiss,
+    skipVersion,
+    setNeverRemind,
+  };
+}

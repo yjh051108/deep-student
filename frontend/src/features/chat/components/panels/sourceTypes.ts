@@ -1,0 +1,168 @@
+/**
+ * Chat V2 - Source Panel 类型定义
+ *
+ * 本地定义 UnifiedSource 相关类型，消除对 @/chat-core 的依赖
+ */
+
+// ============================================================================
+// RAG 来源信息（与 chat-core 保持兼容）
+// ============================================================================
+
+export interface RagSourceInfo {
+  document_id: string;
+  file_name: string;
+  chunk_text: string;
+  score: number;
+  chunk_index: number;
+  origin?: string;
+  provider_id?: string;
+  provider_label?: string;
+  provider_icon?: string;
+  provider_group?: string;
+  source_type?: string;
+  source_id?: string;
+  url?: string;
+  problem_id?: string;
+  stage?: string;
+}
+
+// ============================================================================
+// 多模态来源信息（Multimodal RAG）
+// ============================================================================
+
+/** 多模态来源类型 */
+export type MultimodalSourceType = 'attachment' | 'file' | 'image' | 'exam' | 'textbook';
+
+/** 多模态检索结果来源 */
+export type MultimodalRetrievalSource = 'multimodal_page' | 'text_chunk';
+
+/** 多模态来源信息 */
+export interface MultimodalSourceInfo {
+  /** 来源类型 */
+  source_type: MultimodalSourceType;
+  /** 来源资源 ID */
+  source_id: string;
+  /** 页码（页面级结果） */
+  page_index?: number;
+  /** 块索引（段落级结果） */
+  chunk_index?: number;
+  /** 文本内容 */
+  text_content?: string;
+  /** 缩略图 Base64（可选） */
+  thumbnail_base64?: string;
+  /** Blob 哈希（用于加载原图） */
+  blob_hash?: string;
+  /** 相关性分数 */
+  score: number;
+  /** 结果来源 */
+  retrieval_source: MultimodalRetrievalSource;
+}
+
+// ============================================================================
+// 统一来源展示类型
+// ============================================================================
+
+/**
+ * 引用契约类型（与 citationParser 的 `[类型-N]` 契约一致）
+ */
+export type SourceCitationType = 'rag' | 'memory' | 'web_search' | 'multimodal';
+
+/**
+ * 检索失败信息（由 adapter 从 error 状态的检索块提取）
+ */
+export interface SourceRetrievalError {
+  /** 失败的块 ID */
+  blockId: string;
+  /** 块类型（rag/memory/web_search/multimodal_rag/academic_search） */
+  blockType: string;
+  /** 归一化后的来源分组（rag/memory/web_search/multimodal） */
+  origin: string;
+  /** 错误描述（可选） */
+  message?: string;
+}
+
+/**
+ * 单个来源项
+ */
+export interface UnifiedSourceItem {
+  id: string;
+  title: string;
+  snippet: string;
+  score?: number;
+  link?: string;
+  origin: 'rag' | 'memory' | 'web_search' | 'tool' | 'multimodal' | string;
+  providerId: string;
+  providerLabel: string;
+  providerIcon?: string;
+  raw: RagSourceInfo;
+  /** 图片 URL（后端返回的 imageUrl 字段） */
+  imageUrl?: string;
+  /** 图片引用 Markdown（后端返回的 imageCitation 字段） */
+  imageCitation?: string;
+  /** VFS 资源 ID（用于获取 PDF 页面图片，格式 res_xxx） */
+  resourceId?: string;
+  /** DSTU 资源 ID（用于打开预览器，格式 tb_xxx/note_xxx 等） */
+  sourceId?: string;
+  /** 资源路径（用于显式路由到 Learning Hub） */
+  path?: string;
+  /** 页码（0-indexed，用于获取 PDF 页面图片） */
+  pageIndex?: number;
+  /** 资源类型（textbook/attachment/exam 等） */
+  resourceType?: string;
+  /**
+   * 引用契约类型（与 citation `[类型-N]` 契约一致）
+   * tool/graph 等无引用契约的来源为 undefined
+   */
+  citationType?: SourceCitationType;
+  /**
+   * 类型内序号（1-based，对应 citation `[类型-N]` 中的 N）
+   *
+   * 信任策略（与后端 Citation Ledger 契约一致）：
+   * - 后端提供 typeIndex/citationTag 时直接信任使用
+   * - 仅在缺失时由 sourceAdapter 按跨块全局顺序本地分配（防御式兼容旧数据）
+   */
+  typeIndex?: number;
+  /**
+   * 后端原始引用标记（如 `[知识库-2]`），由 Citation Ledger 生成。
+   * 存在时作为 typeIndex 的权威来源；仅作展示/解析用途，可缺失。
+   */
+  citationTag?: string;
+  /** 多模态扩展信息（可选） */
+  multimodal?: {
+    /** 来源类型 */
+    sourceType: MultimodalSourceType;
+    /** 来源资源 ID */
+    sourceId: string;
+    /** 页码 */
+    pageIndex?: number;
+    /** 缩略图 Base64 */
+    thumbnailBase64?: string;
+    /** Blob 哈希（用于加载原图） */
+    blobHash?: string;
+    /** 检索来源 */
+    retrievalSource: MultimodalRetrievalSource;
+  };
+}
+
+/**
+ * 来源分组
+ */
+export interface UnifiedSourceGroup {
+  group: 'rag' | 'memory' | 'web_search' | 'tool' | 'multimodal' | string;
+  providerId: string;
+  providerLabel: string;
+  providerIcon?: string;
+  count: number;
+  items: UnifiedSourceItem[];
+}
+
+/**
+ * 统一来源包
+ */
+export interface UnifiedSourceBundle {
+  total: number;
+  groups: UnifiedSourceGroup[];
+  stage?: string;
+  /** 检索失败的块信息（可为空；用于面板内联错误态） */
+  errors?: SourceRetrievalError[];
+}

@@ -1,28 +1,39 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
+    "target": "ES2022",
     "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
-    "skipLibCheck": true,
+
+    /* Bundler mode */
     "moduleResolution": "bundler",
+    "baseUrl": "./",
+    "paths": {
+      "@/*": ["src/*"],
+      "@tauri-apps/api": ["src/shims/tauri/api/index.ts"],
+      "@tauri-apps/api/*": ["src/shims/tauri/api/*"],
+      "@tauri-apps/plugin-dialog": ["src/shims/tauri/plugins/dialog.ts"],
+      "@tauri-apps/plugin-http": ["src/shims/tauri/plugins/http.ts"],
+      "@tauri-apps/plugin-fs": ["src/shims/tauri/plugins/fs.ts"],
+      "@tauri-apps/plugin-clipboard-manager": ["src/shims/tauri/plugins/clipboard-manager.ts"],
+      "@tauri-apps/plugin-updater": ["src/shims/tauri/plugins/updater.ts"]
+    },
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "strict": true,
+    "types": ["vite/client", "node"],
+
+    /* Linting */
+    "strict": false,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "noFallthroughCasesInSwitch": true,
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "forceConsistentCasingInFileNames": true,
-    "types": ["node"],
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"]
-    }
+    "noFallthroughCasesInSwitch": false,
+    "skipLibCheck": true,
+    "noImplicitAny": false
   },
-  "include": ["src", "wailsjs", "vite.config.ts"]
+  "include": ["src"],
+  "exclude": ["src/**/__tests__/**", "src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.spec.ts", "src/**/*.spec.tsx"],
+  "references": [{ "path": "./tsconfig.node.json" }]
 }

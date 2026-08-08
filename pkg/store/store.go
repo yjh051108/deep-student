@@ -39,6 +39,74 @@ func (s *Store) Close() error {
 	return s.DB.Close()
 }
 
+// SettingRow 设置项。
+type SettingRow struct {
+	Key       string `json:"key"`
+	Value     string `json:"value"`
+	UpdatedAt string `json:"updated_at,omitempty"`
+}
+
+// GetSetting 读取设置（与 Tauri 原版 get_setting 对齐：缺失返回空串与 false）。
+func (s *Store) GetSetting(key string) (string, bool, error) {
+	if s == nil || s.DB == nil {
+		return "", false, errors.New("store: db not open")
+	}
+	var v string
+	err := s.DB.QueryRow(`SELECT value FROM app_settings WHERE key=?`, key).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return v, true, nil
+}
+
+// SaveSetting 保存设置（upsert，对齐原版 ON CONFLICT 语义）。
+func (s *Store) SaveSetting(key, value string) error {
+	if s == nil || s.DB == nil {
+		return errors.New("store: db not open")
+	}
+	_, err := s.DB.Exec(`INSERT INTO app_settings(key, value) VALUES(?,?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+		key, value)
+	return err
+}
+
+// DeleteSetting 删除设置；返回是否实际删除。
+func (s *Store) DeleteSetting(key string) (bool, error) {
+	if s == nil || s.DB == nil {
+		return false, errors.New("store: db not open")
+	}
+	res, err := s.DB.Exec(`DELETE FROM app_settings WHERE key=?`, key)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// GetSettingsByPrefix 按前缀查询设置。
+func (s *Store) GetSettingsByPrefix(prefix string) ([]SettingRow, error) {
+	if s == nil || s.DB == nil {
+		return nil, errors.New("store: db not open")
+	}
+	rows, err := s.DB.Query(`SELECT key, value FROM app_settings WHERE key LIKE ?`, prefix+"%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SettingRow
+	for rows.Next() {
+		var r SettingRow
+		if err := rows.Scan(&r.Key, &r.Value); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // Backup 把当前 SQLite 拷贝到目标路径；用 SQL Online Backup API 保证一致性，
 // 避免在 VFS 写入中复制得到损坏的数据库。
 func (s *Store) Backup(target string) error {

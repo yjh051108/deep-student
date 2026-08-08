@@ -1,0 +1,709 @@
+import { findModelRecordById } from './modelCapabilityRegistry';
+
+export type ApiCapabilityType =
+  | 'reasoning'
+  | 'vision'
+  | 'function_calling'
+  | 'web_search'
+  | 'embedding'
+  | 'rerank'
+  | 'audio_transcription';
+
+export interface ApiCapabilityOverride {
+  type: ApiCapabilityType;
+  isUserSelected?: boolean;
+}
+
+export interface ApiModelDescriptor {
+  id: string;
+  name?: string;
+  capabilities?: ApiCapabilityOverride[];
+  providerScope?: string;
+}
+
+export interface InferredApiCapabilities {
+  reasoning: boolean;
+  vision: boolean;
+  functionCalling: boolean;
+  webSearch: boolean;
+  embedding: boolean;
+  rerank: boolean;
+  audioTranscription: boolean;
+  imageModel: boolean;
+  supportsReasoningEffort: boolean;
+  supportsThinkingTokens: boolean;
+  supportsHybridReasoning: boolean;
+  /** 推断的上下文窗口大小（tokens），基于模型 ID/名称的启发式匹配 */
+  contextWindow: number;
+}
+
+const toLower = (value: string | undefined | null): string => (value ?? '').toLowerCase();
+
+const getOverride = (descriptor: ApiModelDescriptor, type: ApiCapabilityType): boolean | undefined => {
+  const list = descriptor.capabilities ?? [];
+  const hit = list.find(item => item.type === type && item.isUserSelected !== undefined);
+  if (!hit) return undefined;
+  return !!hit.isUserSelected;
+};
+
+const EMBEDDING_REGEX = /(?:^text-|embed|bge-|e5-|llm2vec|retrieval|uae-|gte-|jina-clip|jina-embeddings|voyage-)/i;
+const RERANK_REGEX = /(?:rerank|re-rank|re-ranker|re-ranking|retrieval|retriever)/i;
+const AUDIO_TRANSCRIPTION_REGEX =
+  /(?:^|[/_-])(?:asr|stt)(?:$|[/_-])|transcrib(?:e|er|ing|ption)|whisper|sensevoice|telespeechasr|speech(?:[-_/]to[-_/]text|[-_/]?asr)|gpt-4o(?:-mini)?-transcribe|qwen3-asr|scribe(?:[-_/]v?\d+)?/i;
+const AUDIO_TRANSCRIPTION_EXCLUDED_REGEX = /tts|text-to-speech|speech(?:[-_/]synthesis|[-_/]generation)/i;
+
+const IMAGE_MODEL_REGEX = /flux|diffusion|stabilityai|sd-|dall|cogview|janus|midjourney|mj-|image|gpt-image/i;
+const MIMO_CHAT_REGEX = /^mimo-v2(?:\.5)?(?:-(?:pro|flash))?$|^mimo-v2-omni$/i;
+const MIMO_MULTIMODAL_REGEX = /^mimo-v2\.5$|^mimo-v2-omni$/i;
+
+const IMAGE_MODEL_ID_SET = new Set(
+  [
+    'grok-2-image',
+    'grok-2-image-1212',
+    'grok-2-image-latest',
+    'dall-e-3',
+    'dall-e-2',
+    'gpt-image-1',
+    'gpt-image-1.5',
+    'gpt-image-1-mini',
+    // ⚠️ Gemini 2.0 系列将于 2026-03-31 关停
+    'gemini-2.0-flash-exp',
+    'gemini-2.0-flash-exp-image-generation',
+    'gemini-2.0-flash-preview-image-generation',
+    'gemini-2.5-flash-image',
+  ].map(v => v.toLowerCase())
+);
+
+// 推理模型正则：o系列、gpt-5系列（除gpt-5-chat）、gpt-oss、codex-mini、各厂商推理模型
+// Grok 系列：3-mini, 4, 4-fast, 4.1, 4-1-fast, code-fast 都是推理模型（排除 -non-reasoning 变体）
+// Mistral Magistral 系列：magistral-small/medium 是推理模型
+const REASONING_REGEX = /^(?!.*-non-reasoning\b)(?:o\d+(?:-[\w-]+)?|gpt-5(?!-chat)[\w.-]*|gpt-oss|codex-mini|.*\b(?:reasoning|reasoner|thinking)\b.*|.*-[rR]\d+.*|.*\bqwq(?:-[\w-]+)?\b.*|.*\bhunyuan-t1(?:-[\w-]+)?\b.*|.*\bglm-zero-preview\b.*|.*\bgrok-(?:3-mini|4(?:[.-]\d+)?(?:-fast)?|code-fast)(?:-[\w-]+)?\b.*|.*\bernie-x1[\w.-]*\b.*|.*\bmagistral(?:-[\w-]+)?\b.*|.*\bmistral-(?:medium-(?:latest|3[.-]?5)|small-(?:latest|4))\b[\w.-]*.*|.*\bkimi-k3[\w.-]*\b.*|.*\bnemotron-3-(?:nano|super|ultra)\b.*)$/i;
+
+const VISION_ALLOWED_PATTERNS: (string | RegExp)[] = [
+  // OCR 专用模型（DeepSeek-OCR、PaddleOCR-VL 等）
+  'ocr',
+  'llava',
+  'moondream',
+  'minicpm',
+  // ⚠️ Gemini 1.5 已于 2026-01-29 关停，不再列入
+  'gemini-2.0',
+  'gemini-2.5',
+  'gemini-2.5-flash-lite',
+  'gemini-3',
+  'gemini-flash-latest',
+  'gemini-pro-latest',
+  'gemini-flash-lite-latest',
+  'gemini-exp',
+  'claude-3',
+  'claude-haiku-4',
+  'claude-sonnet-4',
+  'claude-opus-4',
+  // Claude 4.1/4.5 系列
+  'claude-opus-4-1',
+  'claude-opus-4.1',
+  'claude-opus-4-5',
+  'claude-opus-4.5',
+  'claude-sonnet-4-5',
+  'claude-sonnet-4.5',
+  'claude-haiku-4-5',
+  'claude-haiku-4.5',
+  // Claude 4.6 系列
+  'claude-opus-4-6',
+  'claude-opus-4.6',
+  // Claude 2026 系列：opus-4-7/4-8 已被 'claude-opus-4' 前缀覆盖；Sonnet 5 / Fable 5 需显式列出
+  'claude-sonnet-5',
+  'claude-fable-5',
+  'claude-haiku-5',
+  'vision',
+  // 智谱仅 V 系列支持视觉，避免把 glm-4.7/4.6/5 等纯文本模型误判为多模态
+  /glm-(?:4(?:\.\d+)?|5(?:\.\d+)?)v/i,
+  'qwen-vl',
+  'qwen2-vl',
+  'qwen2.5-vl',
+  'qwen3-vl',
+  /qwen3(?:[.-]5)?-(?:plus|turbo)/i,
+  // qwen3.7-plus / qwen3.6-plus/flash 原生多模态（2026-07 调研 05 §1.3；qwen3.7-max 为纯文本）
+  /qwen3[.-][67]-(?:plus|flash)/i,
+  'qwen2.5-omni',
+  'qwen3-omni',
+  'qvq',
+  'internvl2',
+  'grok-vision-beta',
+  'grok-4',
+  'grok-4-fast',
+  'grok-4-1',
+  'grok-4-1-fast',
+  'grok-4.1',
+  'pixtral',
+  'gpt-4',
+  'gpt-4.1',
+  'gpt-4o',
+  'gpt-4.5',
+  'gpt-5',
+  'chatgpt-4o',
+  'o1',
+  'o3',
+  'o4',
+  'o3-pro',
+  'codex-mini',
+  'computer-use',
+  'deepseek-vl',
+  'kimi-latest',
+  'kimi-thinking-preview',
+  // Kimi K2.5 多模态（2026-01新增，支持图片+视频）
+  'kimi-k2.5',
+  'kimi-k2-5',
+  // Kimi K2.6 原生多模态（文本+图像+视频，2026-07 调研 07 §2.1）
+  'kimi-k2.6',
+  'kimi-k2-6',
+  'kimi-k3',
+  /mistral-(?:medium-3[.-]?5|medium-latest|small-4|small-latest)/i,
+  'gemma-3',
+  'doubao-seed-1.6',
+  'doubao-seed-1-6',
+  'doubao-seed-1.8',
+  'doubao-seed-1-8',
+  'doubao-seed-2.0',
+  'doubao-seed-2-0',
+  // doubao-seed-2.x 全系（2.1 Pro/Turbo 等）多模态；code 变体由 VISION_EXCLUDED 排除
+  /doubao-seed-2[.-]\d/i,
+  // MiniMax M3（1M 上下文、多模态，2026-07 调研 08 §1.1）
+  'minimax-m3',
+  // ERNIE 5.0 原生全模态；4.5 Turbo VL 视觉主力（2026-07 调研 06 §2.1）
+  'ernie-5.0',
+  /ernie-4\.5[\w.-]*-vl/i,
+  'kimi-vl-a3b-thinking',
+  'llama-guard-4',
+  'llama-4',
+  'step-1o',
+  'step-1v',
+  'step-3',
+  'step-r1-v',
+  'qwen-omni',
+];
+
+const VISION_EXCLUDED_REGEXES: RegExp[] = [
+  /gpt-4-\d+-preview/i,
+  /gpt-4-turbo-preview/i,
+  /gpt-4-32k/i,
+  /gpt-4-\d+/i,
+  /\bo1-mini\b/i,
+  /\bo3-mini\b/i,
+  /\bo1-preview\b/i,
+  /aidc-ai\/marco-o1/i,
+  /gpt-oss/i, // gpt-oss 仅支持文本
+  /gpt-5-chat/i, // gpt-5-chat 仅支持文本输出
+  /grok-code-fast/i, // grok-code-fast 专为代码优化，不支持视觉
+  /grok-3-mini/i, // grok-3-mini 为纯文本推理模型，不支持视觉
+  /doubao-seed-.*code/i, // doubao-seed-2-0-code 为纯文本编程模型
+];
+
+// 函数调用支持白名单：OpenAI GPT系列、o系列、各厂商主流模型
+// 2026-02: 添加 doubao-seed-2.0, MiniMax-M2.5, GLM-5, grok-4.1 支持
+// 2026-07: 扩展 doubao-seed-2.x/evolving、MiniMax-M3、ERNIE 5.x/X1.x/4.5、Mistral 主线
+const FUNCTION_CALLING_WHITELIST_REGEX = /(gpt-4o-mini|gpt-4o|gpt-4\.1|gpt-4\.5|gpt-4(?!-\d)|gpt-oss|gpt-5|o[134]\b|o3-pro|codex-mini|computer-use|claude|qwen3?|hunyuan|hy3|deepseek|glm-(?:4(?:\.[5-7])?|5(?:\.\d+)?)|learnlm|gemini(?!.*embedding)|grok-[34]|doubao-seed-(?:1(?:\.[68]|-[68])|2(?:[.-]\d)|evolving)|kimi-(?:k[23](?:[.-][0-9])?|latest|vl)|ling-[\w-]+|ring-[\w-]+|minimax-m[23](?:\.\d)?|devstral|mistral-(?:large|medium|small)|ernie-(?:5(?:\.\d+)?|x1(?:[.-]\w+)?|4\.5)|nemotron-3-(?:nano|super|ultra)|mimo-v2(?:\.5)?(?:-(?:pro|flash))?|mimo-v2-omni)/i;
+
+const FUNCTION_CALLING_EXCLUDED_REGEXES: RegExp[] = [
+  /\baqa\b/i,
+  /imagen/i,
+  /\bo1-mini\b/i,
+  /\bo1-preview\b/i,
+  /aidc-ai\/marco-o1/i,
+  /gemini-1[\w-]*/i,
+  /qwen-mt/i,
+  /gpt-5-chat/i,
+  /glm-(?:4(?:\.[0-4])?v)/i, // 仅排除 GLM-4.4V 及以下（4.5V+ 原生支持工具调用）
+  /hunyuan-mt/i, // 排除 Hunyuan-MT 翻译系列，不支持工具调用
+  /deepseek-v3\.2-speciale/i, // DeepSeek V3.2-Speciale 不支持工具调用
+  /mimo-v2(?:\.5)?-tts/i, // MiMo TTS 系列不支持工具调用
+];
+
+// Web Search 支持白名单
+const WEB_SEARCH_WHITELIST_REGEXES: RegExp[] = [
+  /\bgpt-4o-search-preview\b/i,
+  /\bgpt-4o-mini-search-preview\b/i,
+  /\bgpt-4\.1(?!-nano)\b/i,
+  /\bgpt-4o(?!-image)\b/i,
+  /\bgpt-5(?!-chat)\b/i,
+  /\bsonar-deep-research\b/i,
+  /\bsonar-reasoning-pro\b/i,
+  /\bsonar-reasoning\b/i,
+  /\bsonar-pro\b/i,
+  /\bsonar\b/i,
+  // Gemini 2.x/3.x 系列（排除 image/tts 专用模型）
+  /gemini-(?:2|3)(?:\.\d)?(?!.*(?:image|tts))[\w.-]*$/i,
+  /gemini-(?:flash-latest|pro-latest|flash-lite-latest)/i,
+];
+
+// Gemini Thinking 支持：2.5系列（除了image/tts）、3系列
+const GEMINI_THINKING_REGEX = /^(?:gemini-(?:2\.5|3)[^\s]*|gemini-(?:flash-latest|pro-latest|flash-lite-latest))/i;
+
+// Qwen Thinking Token 模式支持：qwen-plus/turbo/flash 以及 qwen3 系列
+const QWEN_PLUS_REGEX = /^qwen-plus/i;
+const QWEN_TURBO_REGEX = /^qwen-turbo/i;
+const QWEN_FLASH_REGEX = /^qwen-flash/i;
+// Qwen3 商业模型正则
+const QWEN3_MAX_REGEX = /^qwen3?-max/i;
+
+// Claude Extended Thinking 支持模型：3.7+ 和所有 Claude 4.x 系列
+const CLAUDE_THINKING_PATTERNS = [
+  'claude-3-7-sonnet',
+  'claude-3.7-sonnet',
+  'claude-sonnet-4',
+  'claude-opus-4',
+  'claude-haiku-4',
+  // Claude 4.1 系列
+  'claude-opus-4-1',
+  'claude-opus-4.1',
+  // Claude 4.5 系列
+  'claude-opus-4-5',
+  'claude-opus-4.5',
+  'claude-sonnet-4-5',
+  'claude-sonnet-4.5',
+  'claude-haiku-4-5',
+  'claude-haiku-4.5',
+  // Claude 4.6 系列
+  'claude-opus-4-6',
+  'claude-opus-4.6',
+  // Claude 2026 系列（opus-4-7/4-8 已被 'claude-opus-4' 前缀覆盖）
+  // 注意：这些模型需 adaptive thinking + output_config.effort（type:"enabled" 会 400，见 r4 P0-#1）
+  'claude-sonnet-5',
+  'claude-fable-5',
+  'claude-haiku-5',
+];
+
+const DOUBAO_THINKING_REGEXES: RegExp[] = [
+  /doubao-1\.5-thinking-vision-pro/i,
+  /doubao-1-5-thinking-vision-pro/i,
+  /doubao-1\.5-thinking-pro-m/i,
+  /doubao-1-5-thinking-pro-m/i,
+];
+
+// Gemini 排除 image/tts/audio 专用模型的 thinking 能力
+const GEMINI_IMAGE_EXCLUDE_REGEX = /(image|tts|audio)/i;
+// GLM 4.5/4.6/4.7/5 支持思维链 (Preserved Thinking / Interleaved Thinking)
+// 包括视觉模型（GLM-4.5V / GLM-4.6V 均支持 thinking.type 参数，Z.ai 官方文档确认）
+// 排除 flash/flashx 变体（免费/快速模型不支持 thinking）和 4.1V（不支持 thinking 参数）
+const ZHIPU_GLM_THINKING_REGEX = /glm-(?:4\.[5-7]|5(?:\.\d+)?)(?:v(?!-flash))?(?!-flash)/i;
+// 仅匹配 GLM-4.1V 及更低版本的视觉模型（质量差且不支持 thinking/tools）
+const ZHIPU_GLM_OLD_VISION_REGEX = /glm-(?:4(?:\.[0-4])?v)/i;
+
+// Kimi K2/K2.5/K2.6/K2.7 Thinking 系列支持思维链回传 (reasoning_content)
+// - kimi-k2-thinking, kimi-k2-0711-thinking 等 K2 Thinking 变体
+// - kimi-k2.5 / kimi-k2.6 多模态（K2.6 默认思考）、kimi-k2.7-code（强制思考，2026-07 调研 07 §2.1）
+// - kimi-thinking-preview, kimi-vl-a3b-thinking 等预览/VL 版本
+const KIMI_K2_THINKING_REGEX = /kimi-(?:k2(?:[.-][5-9])?(?:-[\w-]*)?thinking|k2[.-][5-9](?:[\w.-]*)?|thinking-preview|vl-[\w-]*thinking)/i;
+
+// MiniMax M2/M2.1/M2.5/M3 系列支持思维链回传 (不回传性能降 3-40%；M3 支持 thinking adaptive/disabled)
+const MINIMAX_THINKING_REGEXES: RegExp[] = [
+  /minimax-m[23](?:\.\d)?/i,
+  /abab7/i,
+  /minimax-text-01/i,
+];
+
+// ERNIE 深度思考模型：X1.x 系与 5.0-thinking 系（reasoning_content，2026-07 调研 06 §2.1/2.3）
+const ERNIE_THINKING_REGEX = /ernie-(?:x1[\w.-]*|[\w.-]*thinking[\w.-]*)/i;
+
+// Gemini 3 系列支持 thoughtSignature（工具调用时必须回传）
+const GEMINI_3_THINKING_REGEX = /gemini-3/i;
+
+// Perplexity sonar-reasoning-pro 基于 DeepSeek-R1，暴露推理内容
+const PERPLEXITY_REASONING_REGEX = /sonar-reasoning-pro/i;
+
+// DeepSeek 混合推理模型：V3.1+ 支持 thinking_mode 动态切换
+// - DeepSeek V4 使用 thinking.type + official reasoning_effort
+// - deepseek-chat 对应非思考模式，deepseek-reasoner 对应思考模式（V4 Flash 兼容别名）
+// - V3.2-Speciale 不支持工具调用
+// 注意：DeepSeek 官方文档要求区分“同一问题内的 tool loop 回传 reasoning_content”
+// 与“下一次用户问题开始时删除旧 reasoning_content”
+const DEEPSEEK_V4_REGEX = /deepseek-v4/i;
+const DEEPSEEK_LEGACY_ALIAS_REGEX = /^deepseek-(?:chat|reasoner)$/i;
+const DEEPSEEK_HYBRID_REGEXES: RegExp[] = [
+  DEEPSEEK_V4_REGEX,
+  /deepseek-v3[.-]\d/i,
+  /deepseek-chat(?!-v2)/i, // deepseek-chat (V3.2) 但排除 v2 系列
+  /deepseek-reasoner/i, // deepseek-reasoner (V3.2)
+];
+
+// ========== 上下文窗口推断表 ==========
+// first-match-wins，具体模式在前，通用回退在后。
+// 数据来源：各厂商 2025-2026 官方文档，取主流/保守值。
+
+const DEFAULT_CONTEXT_WINDOW = 100_000;
+
+const CONTEXT_WINDOW_RULES: Array<{ pattern: RegExp; window: number }> = [
+  // GPT-5.6：1.05M tokens
+  { pattern: /gpt-5\.6/i, window: 1_050_000 },
+  // Claude 2026 主线与 Kimi K3：1M tokens
+  { pattern: /claude-(?:fable-5|sonnet-5|opus-4[-.](?:7|8))/i, window: 1_000_000 },
+  { pattern: /kimi-k3/i, window: 1_000_000 },
+  // MiniMax M2.7 与 Doubao Evolving：1M tokens
+  { pattern: /minimax-m2\.7|doubao-seed-evolving/i, window: 1_000_000 },
+  // --- 1M 级 ---
+  // GPT-4.1 系列：1,047,576 tokens（OpenAI 官方 2025-04）
+  { pattern: /gpt-4\.1/i, window: 1_000_000 },
+  // Gemini 2.0/2.5/3 系列：1,048,576 tokens（Google Cloud 官方）
+  // ⚠️ Gemini 1.5 已于 2026-01-29 关停
+  { pattern: /gemini-(?:2\.[05]|3)/i, window: 1_000_000 },
+  // Gemini 别名（flash-latest/pro-latest 等指向 2.5+ 系列）
+  { pattern: /gemini-(?:flash-latest|pro-latest|flash-lite-latest)/i, window: 1_000_000 },
+  // DeepSeek V4 官方模型及兼容别名：1M context
+  { pattern: /deepseek-v4|^deepseek-(?:chat|reasoner)$/i, window: 1_000_000 },
+  // NVIDIA Nemotron 3 系列：NIM/API Catalog 暴露 1M 级上下文窗口
+  { pattern: /nemotron-3-(?:nano|super|ultra)/i, window: 1_000_000 },
+  // Xiaomi MiMo V2.5 Pro / V2 Pro / V2.5：官方 1M context
+  { pattern: /(?:^|\s)(?:mimo-v2\.5-pro|mimo-v2-pro|mimo-v2\.5)(?:\s|$)/i, window: 1_000_000 },
+  // Grok 4.3 / 4.20 家族：1,000,000 tokens（xAI 官方 2026-07，调研 04 §1.1）
+  { pattern: /grok-4[.-](?:3|20)\b/i, window: 1_000_000 },
+  // Qwen3.6/3.7 商业版：1,000,000 tokens（阿里云官方 2026，调研 05 §1.1）
+  { pattern: /qwen3[.-][67]/i, window: 1_000_000 },
+  // MiniMax M3：1,000,000 tokens（MiniMax 官方 2026，调研 08 §1.1）
+  { pattern: /minimax-m3/i, window: 1_000_000 },
+
+  // --- 2M 级 ---
+  // Grok 4.1 Fast / Grok 4 Fast：2,000,000 tokens（xAI 官方 2025-11）
+  { pattern: /grok-4.*fast/i, window: 2_000_000 },
+
+  // --- 500K 级 ---
+  { pattern: /grok-4[.-]5\b/i, window: 500_000 },
+
+  // --- 256K 级 ---
+  // Grok 4 标准版：256,000 tokens（xAI 官方 2025-07）
+  { pattern: /grok-4/i, window: 256_000 },
+
+  // --- 400K 级 ---
+  // GPT-5 / GPT-5.2 系列：400K tokens（OpenAI 官方 2025）
+  { pattern: /gpt-5/i, window: 400_000 },
+
+  // --- 1M 级 ---
+  // Qwen-Plus：1,000,000 tokens（阿里云官方 2026-02，思考+非思考双模式）
+  { pattern: /qwen-plus/i, window: 1_000_000 },
+
+  // --- 256K 级 ---
+  // Kimi K2.5：256K tokens（Moonshot 官方 2026-01）; K2: 128-256K
+  { pattern: /kimi|moonshot/i, window: 256_000 },
+  // Codestral：256K tokens（Mistral 官方 2025-07）
+  { pattern: /codestral/i, window: 256_000 },
+  // Qwen3-Max：256K tokens（阿里云官方）; Qwen-Long: 10M（取 256K 保守值）
+  { pattern: /qwen3?-max|qwen-long/i, window: 256_000 },
+  // Doubao 256K 变体 + Seed 系列：256K tokens（火山引擎官方）
+  { pattern: /doubao.*256k|doubao-seed/i, window: 256_000 },
+  // Xiaomi MiMo V2 Flash / Omni：官方 256K context
+  { pattern: /(?:^|\s)(?:mimo-v2(?:\.5)?-flash|mimo-v2-omni)(?:\s|$)/i, window: 256_000 },
+  // Mistral Large 3 / Medium 3.5 / Small 4：256K tokens
+  { pattern: /mistral-(?:large-3|medium-(?:3[.-]?5|latest)|small-(?:4|latest))/i, window: 256_000 },
+
+  // --- 200K 级 ---
+  // 其余 Claude 系列：标准 200K
+  { pattern: /claude|anthropic/i, window: 200_000 },
+  // OpenAI o 系列：o1/o3/o4-mini 200K tokens; codex-mini 200K（OpenAI 官方 2025）
+  { pattern: /\bo[1-4]\b|\bo1-|\bo3-|\bo4-|codex-mini/i, window: 200_000 },
+  // MiniMax M2/M2.1/M2.5：205K tokens（M2.7 已在上方覆盖）
+  { pattern: /minimax|abab/i, window: 205_000 },
+  // GLM-4.6/4.7/5：200K tokens（智谱官方 2025-10+）
+  { pattern: /glm-(?:4\.[6-9]|5(?:\.\d+)?)/i, window: 200_000 },
+
+  // --- 128K 级（GLM-4.5 系列）---
+  // GLM-4.5/4.5V/4.5-Air：128K tokens（智谱官方 2025-07）
+  { pattern: /glm-4\.5/i, window: 128_000 },
+
+  // --- 131K 级 ---
+  // Grok 3/3-mini：131,072 tokens（xAI 官方）
+  { pattern: /grok/i, window: 131_072 },
+
+  // --- 128K 级 ---
+  // GPT-4o / GPT-4.5：128K tokens（OpenAI 官方）
+  { pattern: /gpt-4o|gpt-4\.5/i, window: 128_000 },
+  // DeepSeek V3.1/V3.2：128K tokens（DeepSeek 官方）
+  { pattern: /deepseek/i, window: 128_000 },
+  // ERNIE-4.5：128K tokens（百度官方）
+  { pattern: /ernie|baidu/i, window: 128_000 },
+  // Doubao 通用（非 256K/Seed 变体）：128K tokens（火山引擎官方）
+  { pattern: /doubao/i, window: 128_000 },
+  // Qwen 通用（非 Max/Long 变体）/ QwQ：128K tokens（阿里云官方）
+  { pattern: /qwen|qwq/i, window: 128_000 },
+  // GLM 通用（4.0 等旧版）：128K tokens（智谱官方）
+  { pattern: /glm|zhipu|chatglm/i, window: 128_000 },
+  // Mistral Large/Small / Mixtral / Magistral / Devstral：128K tokens（Mistral 官方）
+  { pattern: /mistral|mixtral|magistral|devstral/i, window: 128_000 },
+  // 腾讯 TokenHub Hy3：256K；旧混元保守 128K
+  { pattern: /\bhy3(?:[-_/]|$)/i, window: 256_000 },
+  { pattern: /hunyuan/i, window: 128_000 },
+  // Llama 4 系列：128K tokens
+  { pattern: /llama-4|llama4/i, window: 128_000 },
+  // Step 系列（阶跃星辰）：128K tokens
+  { pattern: /step-/i, window: 128_000 },
+];
+
+/**
+ * 根据模型 ID 和名称推断上下文窗口大小。
+ * 使用 first-match-wins 策略，具体模式优先于通用模式。
+ *
+ * @param fingerprint - 小写的 "id name" 拼接字符串
+ * @returns 推断的上下文窗口大小（tokens）
+ */
+function inferContextWindow(fingerprint: string): number {
+  for (const rule of CONTEXT_WINDOW_RULES) {
+    if (rule.pattern.test(fingerprint)) {
+      return rule.window;
+    }
+  }
+  return DEFAULT_CONTEXT_WINDOW;
+}
+
+const matchesPatternList = (value: string, patterns: (string | RegExp)[]): boolean => {
+  if (!value) return false;
+  for (const pattern of patterns) {
+    if (typeof pattern === 'string') {
+      if (value.includes(pattern)) return true;
+    } else if (pattern.test(value)) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const matchesRegexList = (value: string, regexes: RegExp[]): boolean => {
+  if (!value) return false;
+  return regexes.some(regex => regex.test(value));
+};
+
+const normalizeRegistryParamName = (value: string): string => value.toLowerCase().replace(/[^a-z0-9_]/g, '');
+const hasRegistryOptionalParam = (fields: string[] | undefined, target: string): boolean =>
+  (fields ?? []).some((field) => normalizeRegistryParamName(field) === normalizeRegistryParamName(target));
+
+export function inferApiCapabilities(descriptor: ApiModelDescriptor): InferredApiCapabilities {
+  const id = toLower(descriptor.id);
+  const name = toLower(descriptor.name);
+  const providerScope = toLower(descriptor.providerScope);
+  const isSiliconFlowScope = providerScope === 'siliconflow';
+  const modelRecord = findModelRecordById(descriptor.id, { providerScope: descriptor.providerScope });
+  const modelCapabilities = modelRecord?.capabilities;
+  const modelOptionalParams = modelRecord?.param_format?.optional_fields;
+
+  const embeddingOverride = getOverride(descriptor, 'embedding');
+  const embedding = embeddingOverride !== undefined ? embeddingOverride : EMBEDDING_REGEX.test(id) || (name ? EMBEDDING_REGEX.test(name) : false);
+
+  const rerankOverride = getOverride(descriptor, 'rerank');
+  const rerank = rerankOverride !== undefined ? rerankOverride : RERANK_REGEX.test(id) || (name ? RERANK_REGEX.test(name) : false);
+
+  const audioTranscriptionOverride = getOverride(descriptor, 'audio_transcription');
+  const audioTranscription =
+    audioTranscriptionOverride !== undefined
+      ? audioTranscriptionOverride
+      : !embedding &&
+        !rerank &&
+        !AUDIO_TRANSCRIPTION_EXCLUDED_REGEX.test(id) &&
+        !(name ? AUDIO_TRANSCRIPTION_EXCLUDED_REGEX.test(name) : false) &&
+        (AUDIO_TRANSCRIPTION_REGEX.test(id) || (name ? AUDIO_TRANSCRIPTION_REGEX.test(name) : false));
+
+  const imageModelById = IMAGE_MODEL_ID_SET.has(id);
+  const imageModel = imageModelById || IMAGE_MODEL_REGEX.test(id) || (name ? IMAGE_MODEL_REGEX.test(name) : false);
+
+  const reasoningOverride = getOverride(descriptor, 'reasoning');
+  let reasoning = false;
+  if (reasoningOverride !== undefined) {
+    reasoning = reasoningOverride;
+  } else if (modelCapabilities) {
+    reasoning = modelCapabilities.reasoning;
+  } else if (!embedding && !rerank && !imageModel) {
+    reasoning = REASONING_REGEX.test(id) || MIMO_CHAT_REGEX.test(id) || (name ? REASONING_REGEX.test(name) || MIMO_CHAT_REGEX.test(name) : false);
+  }
+
+  const visionOverride = getOverride(descriptor, 'vision');
+  let vision = false;
+  if (visionOverride !== undefined) {
+    vision = visionOverride;
+  } else if (modelCapabilities) {
+    vision = modelCapabilities.vision;
+  } else if (!embedding && !rerank) {
+    const allowed = matchesPatternList(id, VISION_ALLOWED_PATTERNS) || MIMO_MULTIMODAL_REGEX.test(id) || (name ? matchesPatternList(name, VISION_ALLOWED_PATTERNS) || MIMO_MULTIMODAL_REGEX.test(name) : false);
+    const excluded = matchesRegexList(id, VISION_EXCLUDED_REGEXES) || (name ? matchesRegexList(name, VISION_EXCLUDED_REGEXES) : false);
+    vision = allowed && !excluded;
+  }
+
+  const functionOverride = getOverride(descriptor, 'function_calling');
+  let functionCalling = false;
+  if (functionOverride !== undefined) {
+    functionCalling = functionOverride;
+  } else if (modelCapabilities) {
+    functionCalling = modelCapabilities.function_calling;
+  } else if (!embedding && !rerank && !imageModel) {
+    const excluded = matchesRegexList(id, FUNCTION_CALLING_EXCLUDED_REGEXES) || (name ? matchesRegexList(name, FUNCTION_CALLING_EXCLUDED_REGEXES) : false);
+    const allowed = FUNCTION_CALLING_WHITELIST_REGEX.test(id) || (name ? FUNCTION_CALLING_WHITELIST_REGEX.test(name) : false);
+    functionCalling = allowed && !excluded;
+  }
+
+  const webOverride = getOverride(descriptor, 'web_search');
+  let webSearch = false;
+  if (webOverride !== undefined) {
+    webSearch = webOverride;
+  } else if (!embedding && !rerank && !imageModel) {
+    webSearch = WEB_SEARCH_WHITELIST_REGEXES.some(regex => regex.test(id) || (name ? regex.test(name) : false));
+  }
+
+  // OpenAI reasoning_effort 支持：o1/o3/o4系列、gpt-5系列（除gpt-5-chat）、gpt-oss、codex-mini
+  const isOpenAiOReasoningBudget =
+    /(?:^|[/_-])o[134](?:[.\-_/]|$)/.test(id) &&
+    !/(?:^|[/_-])o1-(?:preview|mini)(?:[.\-_/]|$)/.test(id);
+  const isGpt5Chat = /(?:^|[/_-])gpt-5(?:\.\d+)?-chat(?:[.\-_/]|$)/.test(id);
+  const isOpenaiReasoningBudget =
+    isOpenAiOReasoningBudget ||
+    /(?:^|[/_-])gpt-oss(?:[.\-_/]|$)/.test(id) ||
+    /(?:^|[/_-])codex-mini(?:[.\-_/]|$)/.test(id) ||
+    (!isGpt5Chat && /(?:^|[/_-])gpt-5(?:[.\-_/]|$)/.test(id));
+
+  // Grok reasoning_effort：4.3 可关闭，4.5+ 不可关闭；4.20 multi-agent 的
+  // effort 语义为协作 agent 数量。
+  const isGrokReasoningBudget =
+    id.includes('grok-3-mini') ||
+    /grok-4[.-]3\b/.test(id) ||
+    /grok-4[.-]5\b/.test(id) ||
+    /grok-4[.-]20[\w.-]*multi-agent/.test(id) ||
+    id.includes('grok-latest');
+
+  const isPerplexityReasoningBudget = id.includes('sonar-deep-research');
+
+  const isMistralReasoningBudget =
+    id.includes('mistral-medium-latest') ||
+    /mistral-medium-3(?:[.-]?5)(?:$|[/_.-])/.test(id) ||
+    id.includes('mistral-small-latest') ||
+    /mistral-small-4(?:$|[/_.-])/.test(id);
+
+  const isDeepSeekV4 = DEEPSEEK_V4_REGEX.test(id) || (name ? DEEPSEEK_V4_REGEX.test(name) : false);
+  const isDeepSeekLegacyAlias = DEEPSEEK_LEGACY_ALIAS_REGEX.test(id);
+  // DeepSeek V4 exposes high/max effort semantics across official DeepSeek and
+  // SiliconFlow-hosted V4 ids; V3.2 remains thinking-budget based.
+  const isDeepSeekV4EffortCapable = isDeepSeekV4 || isDeepSeekLegacyAlias;
+
+  const isRegistryReasoningEffort = !!(modelCapabilities && hasRegistryOptionalParam(modelOptionalParams, 'reasoning_effort'));
+  const isRegistryReasoningTokens =
+    !!(modelCapabilities && (
+      hasRegistryOptionalParam(modelOptionalParams, 'include_thoughts') ||
+      hasRegistryOptionalParam(modelOptionalParams, 'thinking_budget') ||
+      hasRegistryOptionalParam(modelOptionalParams, 'thinkingConfig') ||
+      hasRegistryOptionalParam(modelOptionalParams, 'enable_thinking')
+    ));
+  const isRegistryHybridReasoning = !!(modelCapabilities && hasRegistryOptionalParam(modelOptionalParams, 'reasoning_mode'));
+
+  const supportsReasoningEffort = !embedding && !rerank && !imageModel && (
+    isOpenaiReasoningBudget ||
+    isGrokReasoningBudget ||
+    isPerplexityReasoningBudget ||
+    isMistralReasoningBudget ||
+    isDeepSeekV4EffortCapable ||
+    isRegistryReasoningEffort
+  );
+
+  const isGeminiThinking =
+    GEMINI_THINKING_REGEX.test(id) &&
+    !GEMINI_IMAGE_EXCLUDE_REGEX.test(id);
+
+  // Vendor-prefixed Qwen3 models (e.g., Qwen/Qwen3-8B from SiliconFlow) also support thinking
+  const isVendorQwen3 = /^qwen\/qwen3[-.]/i.test(id);
+
+  let isQwenTokenModel = false;
+  let isQwenThinkingModel = false;
+  if (!id.includes('coder')) {
+    // Qwen3 系列支持 thinking/non-thinking 模式切换 (包括 vendor-prefixed 如 Qwen/Qwen3-8B)
+    if (id.startsWith('qwen3') || isVendorQwen3) {
+      // qwen3-max-preview 支持 thinking 模式
+      if (id.includes('preview')) {
+        isQwenTokenModel = true;
+      } else if (/qwen3[.-][5-7]/.test(id)) {
+        // qwen3.5/3.6/3.7 全系为混合思考模型（含 max，商业版默认开思考，2026-07 调研 05 §3）
+        isQwenTokenModel = true;
+      } else if (!id.includes('max') && !id.includes('instruct') && !id.includes('thinking')) {
+        isQwenTokenModel = true;
+      }
+      if (id.includes('thinking')) {
+        isQwenThinkingModel = true;
+      }
+    }
+    // qwen-plus/turbo/flash 商业模型支持 thinking token
+    if (QWEN_PLUS_REGEX.test(id) || QWEN_TURBO_REGEX.test(id) || QWEN_FLASH_REGEX.test(id)) {
+      isQwenTokenModel = true;
+    }
+    // qwen3-max-preview / qwen-max-latest 等预览版支持 thinking
+    if (QWEN3_MAX_REGEX.test(id) && id.includes('preview')) {
+      isQwenTokenModel = true;
+    }
+  }
+
+  const isClaudeThinking = CLAUDE_THINKING_PATTERNS.some(pattern => id.includes(pattern));
+
+  // Doubao Seed 1.6/1.8/2.x/evolving 全系列支持 thinking 模式（包括带 -thinking 后缀和不带的，
+  // 2.1 为 2026-06 旗舰，2026-07 调研 06 §1.1）
+  const isDoubaoSeedThinking = /doubao-seed-(?:1[.-][68]|2[.-]\d|evolving)/i.test(id);
+
+  const isDoubaoThinking = matchesRegexList(id, DOUBAO_THINKING_REGEXES) || isDoubaoSeedThinking;
+
+  const isHunyuanThinking = id.includes('hunyuan-a13b') || id.includes('hunyuan-t1');
+
+  const isErnieThinking = ERNIE_THINKING_REGEX.test(id);
+
+  const isZhipuThinking = ZHIPU_GLM_THINKING_REGEX.test(id) && !ZHIPU_GLM_OLD_VISION_REGEX.test(id);
+
+  // Kimi K2 Thinking 系列
+  const isKimiK2Thinking = KIMI_K2_THINKING_REGEX.test(id);
+
+  // MiniMax M2/M2.1/M2.5 系列（思维链必须回传，否则性能下降 3-40%）
+  const isMinimaxThinking = matchesRegexList(id, MINIMAX_THINKING_REGEXES);
+
+  // Gemini 3 系列（工具调用时 thoughtSignature 必须回传）
+  const isGemini3Thinking = GEMINI_3_THINKING_REGEX.test(id) && !GEMINI_IMAGE_EXCLUDE_REGEX.test(id);
+
+  // Perplexity sonar-reasoning-pro（基于 DeepSeek-R1）
+  const isPerplexityReasoning = PERPLEXITY_REASONING_REGEX.test(id);
+
+  const supportsThinkingTokens =
+    !embedding &&
+    !rerank &&
+    !imageModel &&
+    (isGeminiThinking ||
+      isGemini3Thinking ||
+      isQwenTokenModel ||
+      isQwenThinkingModel ||
+      isClaudeThinking ||
+      isDoubaoThinking ||
+      isHunyuanThinking ||
+      isErnieThinking ||
+      isZhipuThinking ||
+      isKimiK2Thinking ||
+      isMinimaxThinking ||
+      isPerplexityReasoning ||
+      isRegistryReasoningTokens);
+
+  const isMimoHybridReasoning = MIMO_CHAT_REGEX.test(id) || (name ? MIMO_CHAT_REGEX.test(name) : false);
+
+  const supportsHybridReasoning =
+    !embedding &&
+    !rerank &&
+    !imageModel &&
+    (DEEPSEEK_HYBRID_REGEXES.some(regex => regex.test(id)) || isMimoHybridReasoning || isRegistryHybridReasoning);
+
+  // 上下文窗口推断：使用 id + name 拼接作为指纹，提高匹配率
+  const inferredWindow = inferContextWindow(`${id} ${name}`);
+  const shouldUseDeepSeekV4Context = isDeepSeekV4 || isDeepSeekV4EffortCapable;
+  const contextWindow =
+    shouldUseDeepSeekV4Context
+      ? 1_000_000
+      : modelCapabilities && typeof modelCapabilities.max_context_tokens === 'number' && modelCapabilities.max_context_tokens > 0
+      ? modelCapabilities.max_context_tokens
+      : inferredWindow;
+
+  return {
+    reasoning,
+    vision,
+    functionCalling,
+    webSearch,
+    embedding,
+    rerank,
+    audioTranscription,
+    imageModel,
+    supportsReasoningEffort,
+    supportsThinkingTokens,
+    supportsHybridReasoning,
+    contextWindow,
+  };
+}

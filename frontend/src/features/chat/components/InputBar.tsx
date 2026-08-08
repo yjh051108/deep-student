@@ -1,0 +1,270 @@
+/**
+ * Chat V2 - InputBar 输入框组件
+ *
+ * @deprecated Legacy 简易输入栏，主聊天路径已由 `input-bar/InputBarV2` 接管。
+ * 仅保留给测试与迁移期外部挂载点使用；新功能请只改 InputBarV2 侧，不要双改。
+ *
+ * 职责：订阅 canSend/sessionStatus，控制发送/停止按钮
+ */
+
+import React, { useCallback, useRef, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { StoreApi } from 'zustand';
+import { cn } from '@/utils/cn';
+import { DsButton } from '@/components/ui/DsButton';
+import { PaperPlaneRight, Square, CircleNotch, Paperclip } from '@phosphor-icons/react';
+import { useIsMobile } from '@/hooks/useBreakpoint';
+import { useSessionStatus, useInputValue, useCanSend, useAttachments } from '../hooks/useChatStore';
+import type { ChatStore } from '../core/types';
+import { ATTACHMENT_MAX_COUNT } from '../core/constants';
+import AttachmentPreview from './AttachmentPreview';
+import AttachmentUploader from './AttachmentUploader';
+
+// ============================================================================
+// Props 定义
+// ============================================================================
+
+export interface InputBarProps {
+  /** Store 实例 */
+  store: StoreApi<ChatStore>;
+  /** 自定义类名 */
+  className?: string;
+  /** 占位符文本 */
+  placeholder?: string;
+  /** 是否启用附件 */
+  enableAttachments?: boolean;
+  /** 最大附件数 */
+  maxAttachments?: number;
+}
+
+// ============================================================================
+// 组件实现
+// ============================================================================
+
+/**
+ * InputBar 输入框组件
+ *
+ * 功能：
+ * 1. 文本输入（支持多行）
+ * 2. 发送/停止按钮（根据状态切换）
+ * 3. 附件管理（添加/删除）
+ * 4. 快捷键支持（Ctrl/Cmd + Enter 发送）
+ */
+export const InputBar: React.FC<InputBarProps> = ({
+  store,
+  className,
+  placeholder,
+  enableAttachments = true,
+  maxAttachments = ATTACHMENT_MAX_COUNT,
+}) => {
+  const { t } = useTranslation('chatV2');
+
+  // ★ L1 修复：与 InputBarUI 的 C-11 约定对齐——移动端软键盘没有 Shift+Enter，
+  // Enter 应为换行，发送只走按钮
+  const isMobile = useIsMobile();
+
+  // Refs
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // 本地输入状态（性能优化：避免每次输入都触发 Store 更新）
+  const [localValue, setLocalValue] = useState('');
+
+  // 订阅 Store 状态
+  const sessionStatus = useSessionStatus(store);
+  const storeInputValue = useInputValue(store);
+  const canSend = useCanSend(store);
+  const attachments = useAttachments(store);
+
+  // 派生状态
+  const isStreaming = sessionStatus === 'streaming';
+  const isAborting = sessionStatus === 'aborting';
+  const isDisabled = !canSend && !isStreaming;
+
+  // 同步 Store 输入值到本地
+  useEffect(() => {
+    setLocalValue(storeInputValue);
+  }, [storeInputValue]);
+
+  // 自动调整高度
+  const adjustTextareaHeight = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = 'auto';
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+    }
+  }, []);
+
+  // 输入变化
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const value = e.target.value;
+      setLocalValue(value);
+      // 延迟同步到 Store（防抖）
+      store.getState().setInputValue(value);
+      adjustTextareaHeight();
+    },
+    [store, adjustTextareaHeight]
+  );
+
+  // 发送消息
+  const handleSend = useCallback(async () => {
+    const trimmedValue = localValue.trim();
+    if (!trimmedValue && attachments.length === 0) return; // 允许仅发送附件
+    if (!canSend) return;
+
+    try {
+      await store.getState().sendMessage(trimmedValue, attachments);
+      setLocalValue('');
+      store.getState().setInputValue('');
+      store.getState().clearAttachments();
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
+    } catch (error: unknown) {
+      console.error('[InputBar] Send failed:', error);
+    }
+  }, [localValue, canSend, store, attachments]);
+
+  // 停止流式
+  const handleStop = useCallback(async () => {
+    if (!isStreaming) return;
+    try {
+      await store.getState().abortStream();
+    } catch (error: unknown) {
+      console.error('[InputBar] Abort failed:', error);
+    }
+  }, [isStreaming, store]);
+
+  // 键盘事件
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      // 🔧 IME 修复：中文输入法合成期间的 Enter 是「确认候选词」，不能触发发送
+      // keyCode 229 兜底覆盖部分 Windows 输入法/旧 WebView 不上报 isComposing 的情况
+      const nativeEvent = e.nativeEvent as KeyboardEvent;
+      if (nativeEvent.isComposing || nativeEvent.keyCode === 229) {
+        return;
+      }
+
+      // Ctrl/Cmd + Enter 发送
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        if (isStreaming) {
+          handleStop();
+        } else {
+          handleSend();
+        }
+        return;
+      }
+
+      // Enter 发送（非 Shift；移动端 Enter=换行，见上方 isMobile 说明）
+      if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
+        e.preventDefault();
+        if (isStreaming) {
+          handleStop();
+        } else {
+          handleSend();
+        }
+      }
+    },
+    [isStreaming, isMobile, handleSend, handleStop]
+  );
+
+  return (
+    <div className={cn('p-4 relative', className)}>
+      {/* 附件预览 - 使用 AttachmentPreview 组件 */}
+      <AttachmentPreview 
+        store={store} 
+        className="mb-3"
+        size="sm" // 输入框上方用小尺寸
+      />
+
+      {/* 输入区域 */}
+      <div className="flex items-end gap-2">
+        {/* 附件按钮 - 使用 AttachmentUploader 组件 */}
+        {enableAttachments && (
+          <AttachmentUploader 
+            store={store} 
+            maxCount={maxAttachments}
+            // 使用 children 模式，不显示 DropZone
+            className="flex-shrink-0"
+          >
+            <DsButton
+              variant="ghost"
+              size="icon"
+              iconOnly
+              disabled={attachments.length >= maxAttachments}
+              className={cn(
+                '!rounded-full bg-muted/50 hover:bg-[var(--interactive-hover)] active:scale-95',
+                attachments.length >= maxAttachments
+                  ? 'opacity-50 text-muted-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+              aria-label={t('inputBar.addAttachment')}
+              title={t('inputBar.addAttachment')}
+            >
+              <Paperclip size={20} />
+            </DsButton>
+          </AttachmentUploader>
+        )}
+
+        {/* 输入框 */}
+        <div className="flex-1 relative group">
+          <textarea
+            ref={textareaRef}
+            value={localValue}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder || t('inputBar.placeholder')}
+            disabled={isDisabled}
+            rows={1}
+            className={cn(
+              'w-full px-4 py-3 pr-12',
+              'bg-muted/30 border border-border/50 rounded-2xl', // 更圆润
+              // ★ L1 修复：达到 maxHeight 后允许内部滚动，光标不再滑出可视区
+              'resize-none overflow-y-auto transition-all duration-200',
+              'focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 focus:bg-background',
+              'placeholder:text-muted-foreground/70',
+              'disabled:opacity-50 disabled:cursor-not-allowed',
+              'text-md leading-relaxed' // 调整字号和行高
+            )}
+            style={{ minHeight: '48px', maxHeight: '200px' }}
+          />
+        </div>
+
+        {/* 发送/停止按钮 */}
+        <DsButton
+          variant={isStreaming ? 'danger' : 'primary'}
+          size="icon"
+          iconOnly
+          onClick={isStreaming ? handleStop : handleSend}
+          disabled={isAborting || (!isStreaming && !canSend)}
+          className={cn(
+            '!rounded-full shadow-sm hover:shadow-md active:scale-95',
+            isStreaming
+              ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+              : 'bg-primary text-primary-foreground hover:bg-primary/90',
+            (isAborting || (!isStreaming && !canSend)) &&
+              'opacity-50 shadow-none'
+          )}
+          aria-label={isStreaming ? t('inputBar.stop') : t('inputBar.send')}
+          title={isStreaming ? t('inputBar.stop') : t('inputBar.send')}
+        >
+          {isAborting ? (
+            <CircleNotch size={20} className="animate-spin" />
+          ) : isStreaming ? (
+            <Square size={20} className="fill-current" />
+          ) : (
+            <PaperPlaneRight size={20} className="ml-0.5" />
+          )}
+        </DsButton>
+      </div>
+
+      {/* 快捷键提示 */}
+      <div className="mt-2 text-2xs text-muted-foreground/60 text-center select-none">
+        {t('inputBar.shortcut')}
+      </div>
+    </div>
+  );
+};
+
+export default InputBar;

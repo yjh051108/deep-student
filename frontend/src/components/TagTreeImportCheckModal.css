@@ -1,0 +1,178 @@
+.tag-tree-modal-backdrop {
+  position: fixed !important;
+  inset: 0 !important;
+  background: transparent !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: var(--z-modal) !important;
+}
+
+/* 材质档位降级：全屏 backdrop-filter 换半透明 scrim */
+:root[data-wb-material='reduced'] .tag-tree-modal-backdrop,
+:root[data-wb-material='minimal'] .tag-tree-modal-backdrop {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: var(--overlay) !important;
+}
+
+.tag-tree-modal {
+  background: var(--surface-elevated);
+  padding: 24px 32px;
+  border-radius: 8px;
+  width: min(420px, 100%);
+  max-width: 90%;
+  box-shadow: 0 10px 40px hsl(var(--shadow-base) / 0.2);
+  /* 小视口下限制高度，中部内容区滚动 */
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 32px);
+}
+
+.tag-tree-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* 窄屏收缩内边距 */
+@media (max-width: 767.98px) {
+  .tag-tree-modal {
+    padding: 16px 20px;
+  }
+}
+
+.tag-tree-modal h3 {
+  margin: 0 0 12px 0;
+  font-size: 20px;
+}
+
+/* 以下通用类名（.summary/.warning-list/.actions 等）一律收敛到 .tag-tree-modal
+   作用域内，避免全局泄漏污染其他同名类（如 TemplateJsonPreviewPage 的 .actions） */
+.tag-tree-modal .summary {
+  margin-bottom: 16px;
+}
+
+.tag-tree-modal .warning-list {
+  color: hsl(var(--warning));
+  padding-left: 0;
+  margin: 8px 0;
+  list-style: none;
+}
+
+.tag-tree-modal .error-list {
+  color: hsl(var(--destructive));
+  padding-left: 0;
+  margin: 8px 0;
+  list-style: none;
+}
+
+.tag-tree-modal .warning-list li,
+.tag-tree-modal .error-list li {
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+.tag-tree-modal .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.tag-tree-modal .actions button {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.tag-tree-modal .actions button.confirm-btn {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+.tag-tree-modal .actions button.confirm-btn:disabled {
+  background: hsl(var(--muted-foreground));
+  cursor: not-allowed;
+}
+
+.tag-tree-modal .actions button:not(.confirm-btn) {
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+/* === Typography & Layout Enhancement === */
+.tag-tree-modal {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  line-height: 1.55;
+}
+
+.tag-tree-modal h3 {
+  font-size: 22px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: hsl(var(--foreground));
+}
+
+.tag-tree-modal h4 {
+  margin: 16px 0 8px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+
+.tag-tree-modal .summary p {
+  margin: 4px 0;
+  font-size: 15px;
+  color: hsl(var(--foreground));
+}
+
+.tag-tree-modal .rules,
+.tag-tree-modal .warning-list,
+.tag-tree-modal .error-list {
+  font-size: 14px;
+}
+
+.tag-tree-modal .rules ul {
+  padding-left: 0;
+  margin: 4px 0 8px 0;
+  list-style: none;
+}
+
+.tag-tree-modal .rules .rule-status {
+  font-size: 13px;
+  margin-top: 4px;
+  color: hsl(var(--primary));
+}
+
+.tag-tree-modal .hard-rule-list li::marker,
+.tag-tree-modal .error-list li::marker {
+  color: hsl(var(--destructive));
+}
+
+.tag-tree-modal .soft-rule-list li::marker,
+.tag-tree-modal .warning-list li::marker {
+  color: hsl(var(--warning));
+}
+
+.tag-tree-modal .warning-list li,
+.tag-tree-modal .error-list li,
+.tag-tree-modal .rules li {
+  margin-bottom: 4px;
+}
+
+.tag-tree-modal .actions button {
+  font-weight: 500;
+}
+
+.tag-tree-modal .actions button.confirm-btn:not(:disabled):hover {
+  background: hsl(var(--primary) / 0.9);
+}
+
+.tag-tree-modal .actions button:not(.confirm-btn):hover {
+  background: hsl(var(--border));
+}

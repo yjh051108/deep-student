@@ -1,0 +1,397 @@
+/* 通知容器 */
+.notification-container {
+  position: fixed;
+
+  /* Android env() 不可靠，--android-safe-area-top 由 platform.ts/SA-1 注入 */
+  top: calc(12px + var(--android-safe-area-top, env(safe-area-inset-top, 0px)));
+  left: 50%;
+  right: auto;
+  width: min(420px, calc(100vw - 24px));
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  z-index: var(--z-toast);
+  pointer-events: none;
+}
+
+/* 统一通知样式 */
+.unified-notification {
+  /* Border color carries the status. Fill is a light tint of accent. */
+  --notif-accent: var(--border);
+  --notif-stroke-color: hsl(var(--border) / 0.58);
+  --notif-fill: hsl(var(--card));
+  --notif-progress-duration: 6000ms;
+  --notif-progress-play-state: running;
+
+  position: relative;
+  overflow: hidden;
+  width: fit-content;
+  max-width: min(320px, calc(100vw - 24px));
+  min-width: 0;
+  min-height: 28px;
+  padding: 4px 12px;
+  border-radius: var(--radius-shell-control);
+  box-shadow:
+    0 6px 14px hsl(var(--foreground) / 0.07),
+    0 1px 3px hsl(var(--foreground) / 0.05);
+  display: flex;
+  align-items: center;
+  gap: 0;
+  z-index: var(--z-toast);
+  color: hsl(var(--foreground));
+  background: var(--notif-fill);
+  border: 1px solid var(--notif-stroke-color);
+  pointer-events: auto;
+
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition: transform 180ms ease-out, opacity 180ms ease-out, border-color 180ms ease-out, background-color 180ms ease-out;
+}
+
+.unified-notification.expanded {
+  overflow: visible;
+}
+
+.unified-notification.show {
+  animation: notificationIn 220ms var(--ease-standard);
+}
+
+.unified-notification.hide {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.98);
+  transition-timing-function: ease-in;
+}
+
+@keyframes notificationIn {
+  from { opacity: 0; transform: translateY(-10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* 移动端：从顶部滑入 */
+@keyframes notificationSlideDown {
+  0% { transform: translateY(-12px) scale(0.98); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.unified-notification-success {
+  --notif-accent: var(--success);
+  --notif-stroke-color: hsl(var(--success) / 0.68);
+  --notif-fill: color-mix(in srgb, hsl(var(--success)) 6%, hsl(var(--card)) 94%);
+}
+
+.unified-notification-error {
+  --notif-accent: var(--destructive);
+  --notif-stroke-color: hsl(var(--destructive) / 0.72);
+  --notif-fill: color-mix(in srgb, hsl(var(--destructive)) 6%, hsl(var(--card)) 94%);
+}
+
+.unified-notification-neutral,
+.unified-notification-info {
+  --notif-accent: var(--border);
+  --notif-stroke-color: color-mix(in hsl, hsl(var(--foreground)) 22%, hsl(var(--border)) 78%);
+  --notif-fill: hsl(0 0% 100%);
+}
+
+.unified-notification-warning {
+  --notif-accent: var(--warning);
+  --notif-stroke-color: hsl(var(--warning) / 0.72);
+  --notif-fill: color-mix(in srgb, hsl(var(--warning)) 6%, hsl(var(--card)) 94%);
+}
+
+.unified-notification-content {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.unified-notification-icon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--notif-stroke-color);
+  opacity: 0.82;
+}
+
+.unified-notification-icon-warning,
+.unified-notification-icon-error {
+  opacity: 0.96;
+}
+
+.unified-notification-status-icon {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2.2;
+}
+
+.unified-notification-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: hsl(var(--foreground));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-height: 1.35em;
+  transition: max-height 250ms var(--ease-standard), white-space 0ms 250ms;
+}
+
+.unified-notification-text.expanded {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  max-height: 60dvh;
+  overflow-y: auto;
+  transition: max-height 300ms var(--ease-standard), white-space 0ms;
+}
+
+.unified-notification-count {
+  flex: 0 0 auto;
+  min-width: 20px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid hsl(var(--notif-accent) / 0.22);
+  background: hsl(var(--notif-accent) / 0.08);
+  color: hsl(var(--foreground) / 0.72);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.unified-notification-action {
+  flex: 0 0 auto;
+  height: auto;
+  min-height: 0;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  background: transparent;
+  box-shadow: none;
+  color: hsl(var(--foreground));
+  opacity: 0.82;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  transition: color 150ms ease-out, opacity 150ms ease-out, text-decoration-color 150ms ease-out;
+}
+
+.unified-notification-action:hover,
+.unified-notification-action:focus-visible {
+  background: hsl(var(--foreground) / 0.06);
+  color: hsl(var(--foreground));
+  opacity: 1;
+}
+
+.unified-notification-close {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin-right: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: hsl(var(--foreground) / 0.58);
+  background: transparent;
+  box-shadow: none;
+  opacity: 0.74;
+  cursor: pointer;
+  transition: background-color 150ms ease-out, color 150ms ease-out, opacity 150ms ease-out;
+}
+
+.unified-notification-close:hover,
+.unified-notification-close:focus-visible {
+  color: hsl(var(--foreground) / 0.88);
+  background: hsl(var(--foreground) / 0.08);
+  opacity: 1;
+}
+
+.unified-notification-close-icon {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2;
+}
+
+.unified-notification-copy {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: hsl(var(--foreground) / 0.58);
+  background: transparent;
+  opacity: 0.74;
+  cursor: pointer;
+  transition: background-color 150ms ease-out, color 150ms ease-out, opacity 150ms ease-out;
+}
+
+.unified-notification-copy:hover,
+.unified-notification-copy:focus-visible {
+  color: hsl(var(--foreground) / 0.88);
+  background: hsl(var(--foreground) / 0.08);
+  opacity: 1;
+}
+
+.unified-notification-copy-icon {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2;
+}
+
+.unified-notification-progress {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 2px;
+  height: 1px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent 0%, var(--notif-stroke-color) 18%, var(--notif-stroke-color) 82%, transparent 100%);
+  opacity: 0.28;
+  transform-origin: left center;
+  animation: notificationProgress var(--notif-progress-duration) linear forwards;
+  animation-play-state: var(--notif-progress-play-state);
+}
+
+@keyframes notificationProgress {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+[data-theme="dark"] .unified-notification-neutral,
+[data-theme="dark"] .unified-notification-info {
+  --notif-fill: hsl(0 0% 12%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .unified-notification.show,
+  .unified-notification.hide {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .unified-notification-progress {
+    display: none;
+  }
+}
+
+/* ★ 2026-07-08 移动端审计：触屏设备关闭/复制按钮触控目标放大
+   （基准 18px 对指尖过小；桌面鼠标环境保持紧凑） */
+@media (pointer: coarse) {
+  .unified-notification-close,
+  .unified-notification-copy {
+    position: relative;
+    width: 32px;
+    height: 32px;
+  }
+
+  /* L-6：视觉保持 32px，用透明伪元素把命中区扩到 44×44（TouchTarget extend
+     同款做法）。相邻按钮扩区有少量重叠，按 DOM 后者（关闭钮）优先，可接受。 */
+  .unified-notification-close::before,
+  .unified-notification-copy::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+
+  .unified-notification-close {
+    margin-right: -8px;
+  }
+
+  .unified-notification-close-icon,
+  .unified-notification-copy-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .unified-notification-action {
+    min-height: 32px;
+    padding: 0 6px;
+  }
+}
+
+/* 响应式设计 - 移动端优化
+   CSS-3: 断点与 shell <768 对齐；top 避让 56px 移动顶栏（--mobile-header-total-height 已含安全区） */
+@media (max-width: 767.98px) {
+  .notification-container {
+    /* 容器挂在 body 上，--mobile-header-total-height（app-shell 作用域）不可见时
+       fallback 必须走 :root 级 --android-safe-area-top 链（Android env() 不可靠） */
+    top: calc(var(--mobile-header-total-height, calc(56px + var(--android-safe-area-top, env(safe-area-inset-top, 0px)))) + 8px);
+    left: 50%;
+    right: auto;
+    width: calc(100vw - 20px);
+    transform: translateX(-50%);
+    align-items: center;
+  }
+
+  .unified-notification {
+    max-width: min(320px, calc(100vw - 20px));
+    min-width: 0;
+    width: fit-content;
+    min-height: 28px;
+    padding: 4px 10px;
+    gap: 0;
+    border-radius: var(--radius-shell-control);
+    border-width: 1px;
+    box-shadow:
+      0 6px 14px hsl(var(--foreground) / 0.09),
+      0 1px 3px hsl(var(--foreground) / 0.05);
+  }
+
+  .unified-notification.show {
+    animation: notificationSlideDown 200ms ease-out;
+  }
+
+  .unified-notification.hide {
+    transform: translateY(-10px);
+    transition-timing-function: ease-in;
+  }
+
+  .unified-notification-text {
+    font-size: 12px;
+  }
+
+  /* ★ 2026-07-20（R11）：移动端收起态放宽为最多两行 —— 两击确认
+     （unifiedConfirm）的「再次点击确认」提示与长错误文案在单行省略下
+     不点开完全读不到；两行 clamp 保证关键信息首屏可见。
+     展开态（.expanded，专属更高优先级选择器）仍走整段换行 + 60vh 滚动。 */
+  .unified-notification-text {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    max-height: 2.7em;
+  }
+
+  .unified-notification-text.expanded {
+    display: block;
+    -webkit-line-clamp: unset;
+    max-height: 60dvh;
+  }
+}

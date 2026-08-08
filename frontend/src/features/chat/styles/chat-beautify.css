@@ -1,0 +1,397 @@
+/**
+ * Chat Beautify Styles - 聊天界面美化样式
+ *
+ * 作用域：所有样式限定在 .chat-v2 内
+ * 暗色模式：使用 CSS 变量自动响应
+ *
+ * ★ 2026-07 死代码清理：
+ *   旧版 .chat-container / .chat-header / .chat-input / .send-button /
+ *   .message-* / .thinking-container / .summary-box / .chat-action-* 等
+ *   DOM 结构已不再渲染（grep 验证零引用），对应美化规则已删除。
+ *   保留：输入条 dock/undock 动效、空会话 composer 布局、加载骨架屏、
+ *   Streamdown 排版契约、用户消息气泡（UserMessageBubble）。
+ */
+
+/* ============================================================================
+   增强的CSS变量定义 - Enhanced Design Tokens
+   ============================================================================ */
+:root {
+  /* 动画时长/缓动 — 历史别名，统一指向 motion.css 的 chat 动效令牌
+     （--chat-motion-* → transitions-dev token，单一来源）。新代码请直接
+     使用 --chat-motion-fast / --chat-motion-base / --chat-motion-ease。 */
+  --chat-animation-fast: var(--chat-motion-fast, 150ms);
+  --chat-ease-smooth: var(--chat-motion-ease, cubic-bezier(0.22, 1, 0.36, 1));
+
+  /* 美观的字体系统 - 使用全局字体变量 */
+  --chat-font-family: var(--font-family);
+
+  /* 空会话 composer 的黄金分割视觉轴 */
+  --chat-empty-composer-top-space: 0.382fr;
+  --chat-empty-composer-bottom-space: 0.618fr;
+  --chat-composer-motion-duration: var(--chat-motion-base, 200ms); /* 200ms */
+  --chat-composer-motion-ease: var(--chat-motion-ease, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+/* ============================================================================
+   Dock/Undock 输入条动画与安全区适配
+   ============================================================================ */
+.chat-v2 .unified-input-docked {
+  --unified-input-bottom-fade-size: 42px;
+  --unified-input-shell-surface: var(--surface-root);
+
+  /* 只提示 transform：bottom 是布局属性，进 will-change 无合成收益、
+     还会让常驻输入壳强制持有独立合成层 */
+  will-change: transform;
+  background: transparent;
+  border-top: 0;
+}
+
+.chat-v2 .unified-input-docked::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--unified-input-bottom-fade-size);
+  pointer-events: none;
+  background: linear-gradient(to bottom, hsl(var(--background) / 0%) 0%, var(--shell-workspace-panel) 100%);
+}
+
+.chat-v2 .chat-composer-motion-frame {
+  width: 100%;
+  transform-origin: center bottom;
+  will-change: transform, opacity;
+}
+
+.chat-v2 .chat-composer-motion-frame--empty {
+  animation: chatComposerFloatIn var(--chat-composer-motion-duration) var(--chat-composer-motion-ease) both;
+}
+
+.chat-v2 .chat-composer-motion-frame--docked {
+  animation: chatComposerDockIn var(--chat-composer-motion-duration) var(--chat-composer-motion-ease) both;
+}
+
+@keyframes chatComposerDockIn {
+  from {
+    opacity: 0.92;
+    transform: translate3d(0, -18px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes chatComposerFloatIn {
+  from {
+    opacity: 0.94;
+    transform: translate3d(0, 14px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/*
+ * 加载骨架屏延迟淡入：挂载即渲染但先保持透明，~150ms 后才淡入。
+ * 快速加载在可见前即被真实内容替换（等效不显示，无闪动）；
+ * 慢速加载则骨架屏及时出现，避免过去"空白等 500ms"的感知延迟。
+ */
+.chat-v2 .chat-loading-shell-defer,
+.chat-loading-shell-defer {
+  opacity: 0;
+  animation: chat-loading-shell-in var(--chat-motion-base, 200ms) var(--chat-motion-ease, cubic-bezier(0.22, 1, 0.36, 1)) 150ms forwards;
+}
+
+@keyframes chat-loading-shell-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/*
+ * 会话切换的消息区轻入场（transitions-dev 观感语言）：
+ * 仅 fade + 4px 上移，150ms，不用 blur（消息区面积大，filter 代价高）。
+ * 由 ChatContainer threadShellRef 在 sessionId 变化时重播，不 remount MessageList。
+ */
+.chat-v2 .chat-thread-enter {
+  animation: chat-thread-enter var(--chat-motion-fast, 150ms) var(--chat-motion-ease, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+@keyframes chat-thread-enter {
+  from {
+    opacity: 0;
+    translate: 0 var(--chat-motion-rise-distance, 4px);
+  }
+
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-v2 .chat-loading-shell-defer,
+  .chat-loading-shell-defer {
+    opacity: 1;
+    animation: none;
+  }
+
+  .chat-v2 .chat-thread-enter {
+    animation: none;
+  }
+}
+
+.chat-v2 .chat-empty-composer-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: var(--chat-empty-composer-top-space) auto var(--chat-empty-composer-bottom-space);
+  padding: clamp(1rem, 2.6vh, 2rem) 0;
+}
+
+.chat-v2 .chat-empty-composer-layout__stack {
+  grid-row: 2;
+}
+
+.chat-v2 .chat-empty-composer-layout__message-list {
+  min-height: 0;
+}
+
+.chat-v2 .chat-empty-composer-layout__message-list > div {
+  height: auto;
+}
+
+.chat-v2 .chat-empty-composer-layout__message-list [data-slot="thread-empty-state"] {
+  padding-top: 0;
+  padding-bottom: 1.125rem;
+}
+
+.chat-v2 .chat-empty-composer-layout__message-list [data-slot="thread-empty-primary-action"] {
+  font-size: clamp(1.35rem, 2vw, 1.75rem);
+}
+
+.chat-v2 .chat-empty-composer-layout__footer {
+  border-top: 0;
+  margin-bottom: 0.5rem;
+}
+
+.chat-v2 .chat-empty-composer-layout__input.unified-input-docked {
+  --unified-input-shell-surface: var(--surface-root);
+
+  border-top: 0;
+  background: var(--surface-root);
+  padding: 0 !important;
+}
+
+.chat-v2 .chat-empty-composer-layout__input.unified-input-docked::after {
+  content: none;
+}
+
+.chat-v2 .chat-empty-composer-layout__input.unified-input-docked > div {
+  max-width: none;
+}
+
+.chat-v2 [data-slot="chat-loading-shell"] {
+  justify-content: flex-end;
+}
+
+.chat-v2 [data-slot="chat-loading-messages"] {
+  padding-top: 0.25rem;
+}
+
+.chat-v2 .chat-loading-shell__composer-panel {
+  --unified-input-shell-surface: var(--surface-root);
+  --composer-panel-surface: var(--surface-root);
+  --composer-panel-border: color-mix(in hsl, var(--border-default) 62%, transparent 38%);
+  --composer-panel-shadow: var(--shadow-shell-soft); /* 2026-07 二轮：改用 shell 阴影 token，暗色随 --shadow-base 自适应 */
+
+  background: var(--surface-root);
+}
+
+@media (width <= 767.98px) {
+  .chat-v2 .unified-input-docked {
+    --unified-input-bottom-fade-size: 28px;
+  }
+
+  .chat-v2 .chat-empty-composer-layout__input.unified-input-docked > div {
+    padding-inline: 0.875rem;
+  }
+}
+
+@media (width <= 767.98px) {
+  .chat-v2 .chat-empty-composer-layout {
+    --chat-empty-composer-top-space: 0.32fr;
+    --chat-empty-composer-bottom-space: 0.68fr;
+
+    padding-top: clamp(0.75rem, 3vh, 1.25rem);
+  }
+
+  .chat-v2 .chat-empty-composer-layout__stack {
+    padding: 0 0.875rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-v2 .chat-composer-motion-frame--empty,
+  .chat-v2 .chat-composer-motion-frame--docked {
+    animation: none;
+  }
+}
+
+/* ============================================================================
+   Streamdown-inspired Typography
+   ============================================================================ */
+
+/* 更加舒展、以阅读为中心的正文字体节奏 */
+.chat-v2 .message.assistant .message-content .markdown-content {
+  font-size: var(--chat-body-font-size);
+  font-weight: var(--chat-body-font-weight);
+  line-height: var(--chat-body-line-height);
+  letter-spacing: var(--chat-body-letter-spacing);
+  color: hsl(var(--foreground));
+
+  --chat-heading-h2-font-size: calc(var(--chat-heading-font-size) * 1.35);
+  --chat-heading-h3-font-size: calc(var(--chat-heading-font-size) * 1.15);
+}
+
+.chat-v2 .message.assistant .message-content .markdown-content p {
+  margin: var(--chat-md-paragraph-gap) 0;
+}
+
+.chat-v2 .message.assistant .message-content .markdown-content h2 {
+  font-size: var(--chat-heading-h2-font-size);
+  font-weight: var(--chat-heading-font-weight);
+  margin: var(--chat-md-heading-top-gap) 0 var(--chat-md-heading-bottom-gap);
+}
+
+.chat-v2 .message.assistant .message-content .markdown-content h3 {
+  font-size: var(--chat-heading-h3-font-size);
+  font-weight: var(--chat-heading-font-weight);
+  margin: var(--chat-md-heading-top-gap) 0 var(--chat-md-heading-bottom-gap);
+}
+
+/* Blockquote 在 assistant 消息中保持 markdown.css 的中性边框 + 圆角设计，
+ * 不再用品牌色（info）覆盖。这里只调整背景色稍深以适配 assistant 上下文。 */
+.chat-v2 .message.assistant .message-content .markdown-content blockquote {
+  background: hsl(var(--muted) / 60%);
+}
+
+.chat-v2 .message.assistant .message-content .markdown-content code:not(pre code) {
+  background: hsl(var(--muted) / 60%);
+  border-radius: var(--chat-radius-xs, 6px);
+  padding: 0.2em 0.4em;
+}
+
+.chat-v2 .message.assistant .message-content .markdown-content pre {
+  background: transparent; /* 透明背景 */
+  color: hsl(var(--card-foreground));
+  border-radius: var(--chat-block-radius, 12px); /* 对齐内容块半径 token（原裸 10px） */
+  box-shadow: none; /* 移除内部阴影 */
+  border: none; /* 移除内部边框 */
+}
+
+/* ============================================================================
+   用户消息气泡 - User Message Bubble (Codex-style)
+   ============================================================================ */
+
+.chat-v2 .user-message-bubble {
+  position: relative;
+  background: hsl(var(--muted));
+  border: none;
+  border-radius: var(--chat-radius-md);
+  padding: 0.75rem 1rem;
+  max-width: 85%;
+  word-break: break-word;
+}
+
+.chat-v2 .user-message-bubble .chat-message-body,
+.chat-v2 .user-message-bubble .chat-message-body :where(.markdown-content) {
+  font-size: var(--chat-user-font-size);
+  font-weight: var(--chat-user-font-weight);
+  line-height: var(--chat-user-line-height);
+  letter-spacing: var(--chat-user-letter-spacing);
+  color: var(--chat-user-message-text, hsl(var(--foreground)));
+}
+
+.chat-v2 .user-message-bubble .chat-message-body p {
+  margin: 0.25rem 0;
+}
+
+.chat-v2 .user-message-bubble .chat-message-body p:where(:first-child) {
+  margin-top: 0;
+}
+
+.chat-v2 .user-message-bubble .chat-message-body p:where(:last-child) {
+  margin-bottom: 0;
+}
+
+/* 截断状态：渐隐遮罩 */
+.chat-v2 .user-message-bubble__content {
+  position: relative;
+  overflow: hidden;
+  transition: max-height var(--chat-motion-slow, 300ms) var(--chat-ease-smooth);
+}
+
+.chat-v2 .user-message-bubble__content--truncated {
+  mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+}
+
+/* 展开/收起按钮 */
+.chat-v2 .user-message-bubble__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--chat-spacing-xs, 4px);
+  margin-top: 0.5rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.8125rem; /* 13px */
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--chat-animation-fast) var(--chat-ease-smooth);
+  font-family: var(--chat-font-family);
+}
+
+.chat-v2 .user-message-bubble__toggle:hover {
+  color: hsl(var(--foreground));
+}
+
+.chat-v2 .user-message-bubble__toggle:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-radius: calc(var(--radius, 0.5rem) - 4px);
+}
+
+/* 暗色模式微调：muted 底降到 60% 避免过亮；加 1px 内描边（inset shadow，
+   不改盒模型）提升气泡与深色画布的边界对比度 */
+:root.dark .chat-v2 .user-message-bubble,
+.dark .chat-v2 .user-message-bubble {
+  background: hsl(var(--muted) / 60%);
+  box-shadow: inset 0 0 0 1px hsl(var(--border) / 55%);
+}
+
+/* ============================================================================
+   减少动态效果 - Reduced Motion
+   ----------------------------------------------------------------------------
+   ★ 2026-07 二轮：原 `0.01ms !important` 扫射会误伤需要"立刻到位"的
+   状态类，且与 ui-motion.css 的无 !important 策略冲突——已移除。
+   兜底扫射（无 !important）统一由 motion.css 提供；本文件的动画
+   （loading shell / thread-enter / composer frame）已在上方各自点名关闭。
+   ============================================================================ */
+
+/* ============================================================================
+   深色模式支持 - Dark Mode Support
+   ============================================================================ */
+
+/* 暗色模式通过 :root.dark / .dark 类（useTheme 同时设置 data-theme）统一管理，
+ * 所有颜色均使用 CSS 变量，自动适配暗色模式。 */

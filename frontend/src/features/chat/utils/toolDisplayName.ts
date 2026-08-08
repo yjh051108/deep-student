@@ -1,0 +1,394 @@
+import i18nInstance from '@/i18n';
+import { getToolDisplayNameKey } from '@/mcp/builtinMcpServer';
+
+type TranslateFn = (key: string, options?: Record<string, unknown>) => string;
+
+const ZH_TOKEN_MAP: Record<string, string> = {
+  tools: '',
+  tool: '工具',
+  template: '模板',
+  fork: '复制',
+  get: '获取',
+  create: '创建',
+  update: '更新',
+  list: '列表',
+  read: '读取',
+  write: '写入',
+  delete: '删除',
+  search: '搜索',
+  add: '添加',
+  set: '设置',
+  replace: '替换',
+  submit: '提交',
+  answer: '答案',
+  question: '题目',
+  questions: '题目',
+  qbank: '题库',
+  memory: '记忆',
+  resource: '资源',
+  resources: '资源',
+  web: '网络',
+  fetch: '抓取',
+  knowledge: '知识',
+  extract: '提取',
+  internalize: '内化',
+  workspace: '工作区',
+  query: '查询',
+  send: '发送',
+  context: '上下文',
+  document: '文档',
+  documents: '文档',
+  load: '加载',
+  skills: '技能',
+  multimodal: '多模态',
+  rag: '知识库',
+  unified: '统一',
+  todo: '待办',
+  init: '初始化',
+  stats: '统计',
+  next: '下一',
+  batch: '批量',
+  import: '导入',
+  export: '导出',
+  mindmap: '知识导图',
+  edit: '编辑',
+  nodes: '节点',
+  node: '节点',
+  folder: '文件夹',
+  move: '移动',
+  rename: '重命名',
+  save: '保存',
+  open: '打开',
+  close: '关闭',
+  copy: '复制',
+  paste: '粘贴',
+  remove: '移除',
+  analyze: '分析',
+  generate: '生成',
+  convert: '转换',
+  upload: '上传',
+  download: '下载',
+  preview: '预览',
+  parse: '解析',
+  check: '检查',
+  review: '复习',
+  summarize: '总结',
+  translate: '翻译',
+  explain: '讲解',
+  practice: '练习',
+  grading: '评分',
+  grade: '评分',
+  card: '卡片',
+  cards: '卡片',
+  anki: 'Anki',
+  chat: '对话',
+  title: '标题',
+  tag: '标签',
+  tags: '标签',
+  file: '文件',
+  files: '文件',
+  image: '图片',
+  images: '图片',
+  ocr: 'OCR',
+  content: '内容',
+  note: '笔记',
+  notes: '笔记',
+  ask: '提问',
+  user: '用户',
+  arxiv: 'arXiv',
+  scholar: '学术',
+  paper: '论文',
+  cite: '引用',
+  format: '格式化',
+  pptx: '演示文稿',
+  xlsx: '电子表格',
+  docx: '文档',
+  structured: '结构化',
+  tables: '表格',
+  table: '表格',
+  metadata: '信息',
+  cells: '单元格',
+  cell: '单元格',
+  spec: '规格',
+  text: '文本',
+  to: '转',
+  self: '环境',
+  inspect: '自检',
+  session: '会话',
+  browser: '浏览器',
+  automation: '自动化',
+  backup: '备份',
+  sync: '同步',
+  shell: '命令',
+  execute: '执行',
+  preflight: '预检',
+  runtime: '运行时',
+  root: '目录',
+  request: '请求',
+  propose: '提议',
+  workshop: '工坊',
+  apply: '应用',
+  install: '安装',
+  scan: '扫描',
+  skill: '技能',
+  server: '服务器',
+  mcp: 'MCP',
+  essay: '作文',
+  translation: '翻译',
+  pomodoro: '番茄钟',
+  overview: '总览',
+  learning: '学习',
+  learner: '学习者',
+  profile: '画像',
+  local: '本地',
+  stage: '暂存',
+  attachment: '附件',
+  webpage: '网页',
+  index: '索引',
+  rebuild: '重建',
+  status: '状态',
+  bookmarks: '书签',
+  bookmark: '书签',
+  highlights: '高亮',
+  highlight: '高亮',
+  textbook: '教材',
+  pdf: 'PDF',
+  page: '页面',
+  settings: '设置',
+  model: '模型',
+  assignments: '分配',
+  usage: '用量',
+  llm: '模型',
+  pack: '包',
+  subagent: '子代理',
+  call: '调用',
+  archive: '归档',
+  restore: '恢复',
+  suspend: '暂停',
+  resume: '恢复',
+  schedule: '安排',
+  due: '到期',
+  plan: '计划',
+  favorite: '收藏',
+  purge: '彻底删除',
+  trash: '回收站',
+  dstu: '资源',
+  group: '分组',
+  messages: '消息',
+  message: '消息',
+  artifact: '产物',
+  revert: '撤销',
+  change: '变更',
+  versions: '版本',
+  version: '版本',
+  diff: '对比',
+  relation: '关联',
+  complete: '完成',
+  item: '事项',
+  items: '事项',
+  lists: '清单',
+  reorder: '重排',
+  summary: '摘要',
+  today: '今日',
+  daily: '每日',
+  navigate: '导航',
+  click: '点击',
+  type: '输入',
+  scroll: '滚动',
+  snapshot: '快照',
+  back: '后退',
+  enabled: '启用',
+  runs: '运行记录',
+  run: '运行',
+  retry: '重试',
+  cancel: '取消',
+  now: '立即',
+  job: '任务',
+  market: '市场',
+  detail: '详情',
+  connector: '连接器',
+  registry: '注册表',
+  operation: '操作',
+  commit: '提交',
+  confirm: '确认',
+  draft: '草案',
+  manager: '管理',
+  lineage: '数据血缘',
+  forget: '清除',
+  media: '媒体',
+  capabilities: '能力',
+  transcribe: '转写',
+  office: 'Office',
+  fidelity: '保真度',
+  screenshot: '截图',
+  downloads: '下载',
+  audit: '审计',
+  role: '角色',
+  validate: '校验',
+  task: '任务',
+  verify: '验证',
+  and: '并',
+};
+
+export interface ToolDisplayNameOptions {
+  /**
+   * `external` 禁止命中内置工具词条，避免第三方 MCP/技能工具与内置短名碰撞。
+   * `auto` 根据 mcp_ / mcp.tools. 前缀识别外部 MCP 工具。
+   */
+  source?: 'auto' | 'builtin' | 'external';
+  /** 外部工具的来源显示名（如 MCP 服务器名或技能名）。 */
+  providerName?: string;
+}
+
+/** 从工具参数中读取运行时注入的外部提供方标识。 */
+export function getExternalToolProviderName(
+  args: Record<string, unknown> | undefined,
+): string | undefined {
+  if (!args) return undefined;
+  const value = args._serverId ?? args.serverId ?? args.server_id;
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+/**
+ * 将工具注册名（如 tools.template_fork）转换为可读名称（如 Tools / Template Fork）。
+ */
+export function humanizeToolName(toolName: string): string {
+  if (!toolName) return toolName;
+
+  const normalized = toolName
+    .replace(/^builtin[-:]/, '')
+    .replace(/^mcp_/, '')
+    .replace(/^mcp\.tools\./, '');
+
+  const segments = normalized
+    .split(/[.:/]/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+  if (segments.length === 0) return toolName;
+
+  const prettySegments = segments.map((segment) => {
+    const withWordBoundaries = segment.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+    return withWordBoundaries
+      .split(/[_-\s]+/)
+      .filter(Boolean)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  });
+
+  return prettySegments.join(' / ');
+}
+
+/**
+ * 中文环境兜底：尽量把注册名映射成中文可读短语。
+ */
+export function humanizeToolNameZh(toolName: string): string {
+  if (!toolName) return toolName;
+
+  const normalized = toolName
+    .replace(/^builtin[-:]/, '')
+    .replace(/^mcp_/, '')
+    .replace(/^mcp\.tools\./, '');
+
+  const segments = normalized
+    .split(/[.:/]/)
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .filter((segment) => segment !== 'tools');
+
+  if (segments.length === 0) return toolName;
+
+  const localizedSegments = segments.map((segment) => {
+    const withWordBoundaries = segment.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+    const words = withWordBoundaries
+      .split(/[_-\s]+/)
+      .map((word) => word.trim())
+      .filter(Boolean);
+
+    const translatedWords = words
+      .map((word) => {
+        const lower = word.toLowerCase();
+        return ZH_TOKEN_MAP[lower] ?? word;
+      })
+      .filter(Boolean);
+
+    // 中文词根紧凑拼接；只要一侧仍含 ASCII，就保留空格，避免“技能market搜索”。
+    const translated = translatedWords.reduce((result, word, index) => {
+      if (!result) return word;
+      const previousWord = translatedWords[index - 1] ?? '';
+      const needsSpace = /[A-Za-z0-9]/.test(previousWord) || /[A-Za-z0-9]/.test(word);
+      return `${result}${needsSpace ? ' ' : ''}${word}`;
+    }, '');
+
+    return translated || segment;
+  });
+
+  return localizedSegments.join(' / ');
+}
+
+function resolveToolDisplayNameKey(toolName: string): string | undefined {
+  if (toolName.startsWith('tools.')) {
+    return toolName;
+  }
+  const fromBuiltin = getToolDisplayNameKey(toolName);
+  if (fromBuiltin) {
+    return fromBuiltin;
+  }
+  // 无前缀短名（如 self_inspect）也尝试 mcp.tools.* 词条
+  const bare = toolName.replace(/^builtin[-:]/, '').replace(/^mcp_/, '');
+  if (/^[a-z][a-z0-9_]*$/.test(bare)) {
+    return `tools.${bare}`;
+  }
+  return undefined;
+}
+
+function isChineseLocale(t: TranslateFn): boolean {
+  const fromT = (t as TranslateFn & { i18n?: { resolvedLanguage?: string; language?: string } }).i18n;
+  const lang =
+    fromT?.resolvedLanguage ||
+    fromT?.language ||
+    i18nInstance.resolvedLanguage ||
+    i18nInstance.language ||
+    '';
+  return lang.toLowerCase().startsWith('zh');
+}
+
+function isExternalToolName(toolName: string): boolean {
+  return toolName.startsWith('mcp_') || toolName.startsWith('mcp.tools.');
+}
+
+function getExternalToolDisplayName(
+  toolName: string,
+  options: ToolDisplayNameOptions,
+): string {
+  const providerName = options.providerName?.trim() || 'MCP';
+  return `${providerName} · ${humanizeToolName(toolName)}`;
+}
+
+/**
+ * 统一解析工具可读名称：外部工具保留来源，内置工具优先 i18n，其次可读化注册名。
+ */
+export function getReadableToolName(
+  toolName: string,
+  t: TranslateFn,
+  options: ToolDisplayNameOptions = {},
+): string {
+  const source = options.source ?? 'auto';
+  if (source === 'external' || (source === 'auto' && isExternalToolName(toolName))) {
+    return getExternalToolDisplayName(toolName, options);
+  }
+
+  const displayNameKey = resolveToolDisplayNameKey(toolName);
+  if (displayNameKey) {
+    const translated = t(displayNameKey, { ns: 'mcp', defaultValue: '' });
+    if (translated) {
+      return translated;
+    }
+  }
+
+  if (isChineseLocale(t)) {
+    return humanizeToolNameZh(toolName);
+  }
+
+  return humanizeToolName(toolName);
+}

@@ -1,0 +1,97 @@
+{
+  "sections": {
+    "flat_analysis": "Flat Analysis",
+    "stereoscopic_analysis": "Stereoscopic Analysis",
+    "anki_tools": "Anki Tools",
+    "system_tools": "System Tools",
+    "pinned": "Pinned",
+    "topics": "Topics",
+    "conversations": "Conversations",
+    "emptyGroup": "No conversations yet"
+  },
+  "theme": "Theme",
+  "mobile_drawer": {
+    "section_app": "App",
+    "section_chat": "Chats",
+    "section_learning": "Learning Resources"
+  },
+  "navigation": {
+    "batch": "Batch Analysis",
+    "textbook_library": "Textbook Library",
+    "rag_query": "RAG Query",
+    "anki_generation": "Card Tasks",
+    "template_management": "Template Management",
+    "notes": "Notes",
+    "pdf_reader": "PDF Reader",
+    "pdf_ocr": "PDF OCR Converter",
+    "textbook_study_mode": "Textbook Study",
+    "chat_style_test": "Chat Style Test",
+    "dashboard": "Data Statistics",
+    "data_management": "Data Management",
+    "gemini_adapter_test": "Gemini Adapter Test",
+    "settings": "Settings",
+    "exam_sheet": "Question Set",
+    "translation": "Translation",
+    "essay_grading": "Essay Grading",
+    "canvas_board": "Canvas Board",
+    "learning_hub": "Learning Hub",
+    "extensions": "Extensions",
+    "chat_v2": "Smart Chat",
+    "skills_management": "Skills Management",
+    "todo": "Todo",
+    "ui_lab": "UI Lab",
+    "command_palette": "Search & Commands",
+    "workbench_mode": "Learning Desktop",
+    "show_workbench_mode": "Show Learning Desktop",
+    "hide_workbench_mode": "Hide Learning Desktop"
+  },
+  "aria": {
+    "sidebar_navigation": "Main navigation",
+    "workspace_primary_entry": "Primary workspace entry",
+    "pinned_sessions": "Pinned sessions",
+    "topic_sessions": "Topics",
+    "conversation_sessions": "Conversations",
+    "pin_session": "Pin session",
+    "unpin_session": "Unpin session",
+    "archive_session": "Archive session",
+    "confirm_archive_session": "Confirm archive"
+  },
+  "actions": {
+    "collapse_all_topics": "Collapse all topics",
+    "expand_all_topics": "Expand all topics",
+    "create_topic": "New topic",
+    "create_conversation": "New conversation",
+    "expand_group_sessions": "Show more",
+    "collapse_group_sessions": "Show less",
+    "rename_session": "Rename session",
+    "delete_session": "Delete session"
+  },
+  "rename": {
+    "title": "Rename conversation",
+    "label": "Conversation name"
+  },
+  "delete": {
+    "confirm_hint": "Delete permanently? This cannot be undone"
+  },
+  "search": {
+    "placeholder": "Search sessions...",
+    "clear": "Clear search",
+    "no_results": "No matching sessions"
+  },
+  "update": {
+    "short": "Update",
+    "available": "Update available",
+    "downloading": "Downloading..."
+  },
+  "expand": "Expand sidebar",
+  "collapse": "Collapse sidebar",
+  "theme_toggle": {
+    "toggle": "Toggle theme",
+    "switch_to_light": "Switch to light mode",
+    "switch_to_dark": "Switch to dark mode",
+    "switch_to_auto": "Switch to auto mode",
+    "light": "Light mode",
+    "dark": "Dark mode",
+    "auto": "Auto mode"
+  }
+}

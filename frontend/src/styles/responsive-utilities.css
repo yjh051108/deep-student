@@ -1,0 +1,185 @@
+/**
+ * 响应式工具类
+ *
+ * 清理记录（2026-07-05，CSS-1）：移除了 .responsive-table(-card)/.responsive-grid(-2)/
+ * .responsive-container/.responsive-section/.responsive-title/.responsive-subtitle/
+ * .responsive-text/.responsive-button-group/.show-mobile(-flex/-inline)/.hide-mobile/
+ * .show-tablet/.hide-tablet/.smooth-scroll 等全库零引用的死类。
+ * 仅保留在 JSX 中实际使用的 .touch-target 与 .safe-area-* 家族。
+ */
+
+/* =================== 触摸优化 =================== */
+
+/*
+ * Apple HIG 推荐触摸目标至少 44x44pt，但不应一刀切应用到所有 button/a 元素
+ * （曾导致 Android 上所有按钮高度异常）。只对明确标记 .touch-target 的元素
+ * 应用 44px 最小尺寸；其他按钮由组件自行设置合适的触摸区域。
+ */
+@media (hover: none) and (pointer: coarse) {
+  /* 触屏没有可靠 hover：侧栏图标按钮只保留按压态，避免 hover 残留成半圆/方块。 */
+  .shell-icon-button.shell-icon-button:hover {
+    background: var(--button-plain-bg);
+    color: var(--shell-navigation-muted);
+  }
+
+  .shell-icon-button.shell-icon-button:active {
+    background: var(--button-plain-active-bg);
+    color: var(--shell-navigation-foreground);
+  }
+
+  .touch-target {
+    min-height: 44px !important;
+    min-width: 44px !important;
+  }
+}
+
+/* =================== 安全区域适配 =================== */
+
+/*
+ * 为刘海屏等留出安全区域（CSS-2 统一抽象：优先用这些工具类，
+ * 避免各组件手写 var(--android-safe-area-*)）。
+ * Android 上 --android-safe-area-* 由 platform.ts / MainActivity SA-1 注入真实值。
+ */
+.safe-area-top {
+  padding-top: var(--android-safe-area-top, env(safe-area-inset-top, 0px));
+}
+
+.safe-area-bottom {
+  padding-bottom: var(--android-safe-area-bottom, env(safe-area-inset-bottom, 0px));
+}
+
+.safe-area-left {
+  padding-left: var(--android-safe-area-left, env(safe-area-inset-left, 0px));
+}
+
+/* =================== 移动统一抽屉（页内 sidebar + 全局 nav 单滚动） =================== */
+
+/* 767.98px 与 useBreakpoint 的 not (min-width: 768px) 判定对齐：
+   Android 显示缩放/分屏下视口宽可能为 767.x 的小数，767px 整数上限会漏判 */
+@media (max-width: 767.98px) {
+  /* 移动 header 顶部保留一段实色，向内容区自然淡出，避免硬边压住首行内容 */
+  [data-mobile-shell='header'] {
+    background: linear-gradient(
+      to bottom,
+      var(--shell-titlebar-surface) 0%,
+      transparent 100%
+    ) !important;
+    border-bottom-color: transparent !important;
+  }
+
+  [data-mobile-shell='floating-sidebar-trigger'] [data-mobile-floating-menu-button] {
+    background: color-mix(in srgb, var(--shell-titlebar-surface) 88%, transparent) !important;
+    color: var(--shell-navigation-foreground) !important;
+    box-shadow: 0 8px 20px -16px hsl(var(--shadow-base) / 0.45) !important;
+  }
+
+  /* 移动抽屉是独立的导航层：用导航表面与工作区区分，并在右缘保留浮层边界 */
+  [data-mobile-unified-drawer] {
+    background: var(--shell-navigation-surface) !important;
+    color: var(--shell-navigation-foreground) !important;
+    border-right: 1px solid var(--shell-navigation-border) !important;
+    box-shadow: 8px 0 24px -18px hsl(var(--shadow-base) / 0.48) !important;
+  }
+
+  [data-mobile-unified-drawer] [data-mobile-drawer-page] > *,
+  [data-mobile-unified-drawer] [data-mobile-drawer-page] aside[role='navigation'] {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  [data-mobile-unified-drawer] [data-mobile-drawer-page] .study-shell-sidebar-frame,
+  [data-mobile-unified-drawer] [data-mobile-drawer-page] .sidebar-shell-surface {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  [data-mobile-unified-drawer] [data-mobile-drawer-page] .sidebar-shell-surface {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  [data-mobile-unified-drawer]
+    [data-mobile-drawer-page]
+    [data-overlayscrollbars~='host'] {
+    flex: 0 0 auto !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  [data-mobile-unified-drawer]
+    [data-mobile-drawer-page]
+    [data-overlayscrollbars-viewport] {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  /* 移动统一抽屉：导航行/分组标题字号整体放大，便于触控阅读 */
+  [data-mobile-unified-drawer] .desktop-shell-nav-section-label {
+    font-size: 14px !important;
+    line-height: 18px !important;
+  }
+
+  [data-mobile-unified-drawer] .desktop-shell-sidebar-row,
+  [data-mobile-unified-drawer] .desktop-shell-nav-row,
+  [data-mobile-unified-drawer] .desktop-shell-thread-row {
+    font-size: 16px !important;
+    /* 豁免 app.css 的 min-height:32px !important 桌面密度（该处同为
+       !important，但本选择器特异性 (0,2,0) 更高）：移动抽屉导航行
+       必须满足 44px 触控高度基线 */
+    min-height: 44px !important;
+  }
+
+  [data-mobile-unified-drawer] .desktop-shell-nav-row svg,
+  [data-mobile-unified-drawer] .desktop-shell-thread-row svg {
+    width: 1.25rem !important;
+    height: 1.25rem !important;
+  }
+
+  /* 笔记树等页内侧栏内容 */
+  [data-mobile-unified-drawer] .rct-tree {
+    font-size: 16px;
+  }
+
+  [data-mobile-unified-drawer] .rct-tree-item-button {
+    min-height: 2.75rem;
+    height: auto;
+  }
+
+  [data-mobile-unified-drawer] .sidebar-shell-search {
+    font-size: 16px !important;
+  }
+}
+
+/* =================== 触控列表行（2026-07 mobile 基建，追加区） =================== */
+
+/*
+ * .touch-row —— 列表行/菜单项/设置行的触控高度基线。
+ * 桌面精确指针保持 44px（与 --control-height-touch 一致的紧凑档），
+ * coarse pointer（触屏）下抬到 48px 并加大纵向内边距，保证拇指可点。
+ * 与 .touch-target（44×44 双向最小值）的区别：本类只约束高度，
+ * 适合占满整行宽度的行元素。
+ */
+.touch-row {
+  min-height: var(--control-height-touch, 44px);
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .touch-row {
+    min-height: 48px;
+    padding-top: var(--touch-row-pad-y, 0.5rem);
+    padding-bottom: var(--touch-row-pad-y, 0.5rem);
+  }
+}
+
+.safe-area-right {
+  padding-right: var(--android-safe-area-right, env(safe-area-inset-right, 0px));
+}
+
+.safe-area-all {
+  padding-top: var(--android-safe-area-top, env(safe-area-inset-top, 0px));
+  padding-bottom: var(--android-safe-area-bottom, env(safe-area-inset-bottom, 0px));
+  padding-left: var(--android-safe-area-left, env(safe-area-inset-left, 0px));
+  padding-right: var(--android-safe-area-right, env(safe-area-inset-right, 0px));
+}

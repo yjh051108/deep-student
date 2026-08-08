@@ -1,0 +1,167 @@
+import React, { useEffect, useRef, useCallback, useLayoutEffect, useState } from 'react';
+import { DsButton } from '@/components/ui/DsButton';
+import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
+import { EyeSlash, Eye, TextB } from '@phosphor-icons/react';
+import { Z_INDEX } from '@/config/zIndex';
+import {
+  BACK_PRIORITY,
+  registerBackHandler,
+} from '@/app/navigation/androidBackCoordinator';
+import { useMindMapIsActive } from '../../MindMapActiveContext';
+
+export interface BlankActionPopupProps {
+  x: number;
+  y: number;
+  isAlreadyBlanked: boolean;
+  /** 背诵模式：仅挖空；编辑选区：加粗 + 标记挖空 */
+  mode?: 'recite' | 'edit';
+  /** 当前节点是否已加粗（编辑模式） */
+  isBold?: boolean;
+  onBlank: () => void;
+  onUnblank: () => void;
+  onToggleBold?: () => void;
+  onClose: () => void;
+}
+
+export const BlankActionPopup: React.FC<BlankActionPopupProps> = ({
+  x,
+  y,
+  isAlreadyBlanked,
+  mode = 'recite',
+  isBold = false,
+  onBlank,
+  onUnblank,
+  onToggleBold,
+  onClose,
+}) => {
+  const { t } = useTranslation('mindmap');
+  const ref = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
+  const [viewportRevision, setViewportRevision] = useState(0);
+  const isMindMapActive = useMindMapIsActive();
+
+  useLayoutEffect(() => {
+    const popup = ref.current;
+    if (!popup) return;
+    const width = popup.offsetWidth;
+    const height = popup.offsetHeight;
+    const padding = 8;
+    const viewport = window.visualViewport;
+    const viewportLeft = viewport?.offsetLeft ?? 0;
+    const viewportTop = viewport?.offsetTop ?? 0;
+    const viewportWidth = viewport?.width ?? window.innerWidth;
+    const viewportHeight = viewport?.height ?? window.innerHeight;
+    const minLeft = viewportLeft + padding;
+    const minTop = viewportTop + padding;
+    const maxLeft = Math.max(minLeft, viewportLeft + viewportWidth - width - padding);
+    const maxTop = Math.max(minTop, viewportTop + viewportHeight - height - padding);
+    const left = Math.min(Math.max(x - width / 2, minLeft), maxLeft);
+    const top = Math.min(Math.max(y - 36, minTop), maxTop);
+    setPosition((current) => current?.left === left && current.top === top ? current : { left, top });
+  }, [x, y, mode, isAlreadyBlanked, isBold, onToggleBold, t, viewportRevision]);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const update = () => setViewportRevision((value) => value + 1);
+    window.addEventListener('resize', update);
+    viewport?.addEventListener('resize', update);
+    viewport?.addEventListener('scroll', update);
+    return () => {
+      window.removeEventListener('resize', update);
+      viewport?.removeEventListener('resize', update);
+      viewport?.removeEventListener('scroll', update);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isMindMapActive) return;
+    return registerBackHandler(() => {
+      onClose();
+      return true;
+    }, BACK_PRIORITY.overlay);
+  }, [isMindMapActive, onClose]);
+
+  const handleClickOutside = useCallback((e: MouseEvent) => {
+    if (ref.current && !ref.current.contains(e.target as Node)) {
+      onClose();
+    }
+  }, [onClose]);
+
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      onClose();
+    }
+  }, [onClose]);
+
+  useEffect(() => {
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [handleClickOutside, handleKeyDown]);
+
+  const btnClass =
+    '!px-2 !h-7 [@media(pointer:coarse)]:!h-11 [@media(pointer:coarse)]:!px-3 !rounded text-xs font-medium whitespace-nowrap text-[var(--mm-text-secondary)] hover:text-[var(--mm-text)] hover:bg-[var(--mm-bg-hover)]';
+
+  return createPortal(
+    <div
+      ref={ref}
+      role="toolbar"
+      className="mindmap-container fixed flex items-center gap-0.5 rounded-[var(--mm-radius-popup,8px)] border border-[var(--mm-border)] shadow-[var(--mm-popover-shadow)] ui-zoom-fade-in bg-[var(--mm-bg-elevated)] p-1"
+      style={{
+        left: `${position?.left ?? -9999}px`,
+        top: `${position?.top ?? -9999}px`,
+        visibility: position ? 'visible' : 'hidden',
+        zIndex: Z_INDEX.contextMenu,
+      }}
+      // 阻止 mousedown 抢先让编辑框 blur，否则加粗/挖空点击会失效
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      {mode === 'edit' && onToggleBold && (
+        <DsButton
+          variant="ghost"
+          size="sm"
+          className={`${btnClass} ${isBold ? 'bg-[var(--mm-bg-active)] text-[var(--mm-text)]' : ''}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleBold();
+          }}
+        >
+          <TextB size={12} />
+          {t('contextMenu.bold')}
+        </DsButton>
+      )}
+      {isAlreadyBlanked ? (
+        <DsButton
+          variant="ghost"
+          size="sm"
+          className={btnClass}
+          onClick={(e) => {
+            e.stopPropagation();
+            onUnblank();
+          }}
+        >
+          <Eye size={12} />
+          {t('recite.unblank')}
+        </DsButton>
+      ) : (
+        <DsButton
+          variant="ghost"
+          size="sm"
+          className={`${btnClass} bg-[var(--mm-warning-soft)] text-[var(--mm-warning)] hover:bg-[var(--mm-warning-soft)]`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onBlank();
+          }}
+        >
+          <EyeSlash size={12} />
+          {mode === 'edit' ? t('recite.markBlank') : t('recite.blank')}
+        </DsButton>
+      )}
+    </div>,
+    document.body,
+  );
+};

@@ -34,6 +34,7 @@ import (
 	"github.com/helixnow/deep-student-go/pkg/config"
 	"github.com/helixnow/deep-student-go/pkg/index"
 	"github.com/helixnow/deep-student-go/pkg/llm"
+	"github.com/helixnow/deep-student-go/pkg/store"
 	"github.com/helixnow/deep-student-go/pkg/vfs"
 )
 
@@ -1311,3 +1312,26 @@ func (a *App) QuickClear() { a.Quick.Clear() }
 
 // QuickSummary 摘要。
 func (a *App) QuickSummary() map[string]any { return a.Quick.Summary() }
+
+// ===== 设置 KV（对齐原版 get_setting / save_setting / delete_setting）=====
+
+// GetSetting 读取设置；不存在返回空串。
+func (a *App) GetSetting(key string) (string, error) {
+	v, _, err := a.store.GetSetting(key)
+	return v, err
+}
+
+// SaveSetting 保存设置。
+func (a *App) SaveSetting(key, value string) error {
+	return a.store.SaveSetting(key, value)
+}
+
+// DeleteSetting 删除设置。
+func (a *App) DeleteSetting(key string) (bool, error) {
+	return a.store.DeleteSetting(key)
+}
+
+// GetSettingsByPrefix 按前缀查询设置。
+func (a *App) GetSettingsByPrefix(prefix string) ([]store.SettingRow, error) {
+	return a.store.GetSettingsByPrefix(prefix)
+}

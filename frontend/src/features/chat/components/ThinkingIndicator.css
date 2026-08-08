@@ -1,0 +1,9 @@
+/* ThinkingIndicator — "正在思考"等待提示（文字样式由 motion.css 的 .chat-wait-text 承担） */
+
+.thinking-indicator {
+  display: flex;
+  align-items: center;
+  padding: 8px 0 2px;
+  user-select: none;
+  -webkit-user-select: none;
+}

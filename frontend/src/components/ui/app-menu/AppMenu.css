@@ -1,0 +1,536 @@
+/**
+ * AppMenu — 下拉菜单 / 右键菜单 外壳
+ *
+ * 设计原则（一劳永逸）：
+ * 1. 外壳视觉完全由 --menu-shell-* token 驱动（theme-colors.css 定义），
+ *    与 composer shell / input shell 同族，看起来像"从输入框延伸出来的一片"。
+ * 2. 任何硬编码的 radius / shadow / border / padding 都不允许出现在本文件。
+ * 3. Dark mode 通过 token 自动响应，无需为本组件单独重写颜色。
+ * 4. 子项圆角 < 容器圆角（token 层已保证）——子项填满时不会被容器裁切四角。
+ */
+
+/* ============ Shared Interaction Tokens ============ */
+
+.app-menu-content,
+.app-menu-sub-content,
+.app-menu-trigger {
+  --app-menu-row-hover: var(--menu-shell-row-hover);
+  --app-menu-row-active: var(--menu-shell-row-active);
+  --app-menu-row-foreground: var(--menu-shell-foreground);
+  --app-menu-row-radius: var(--menu-shell-row-radius);
+}
+
+.app-menu-trigger:hover,
+.app-menu-trigger:focus-visible {
+  background-color: var(--app-menu-row-hover);
+  color: var(--app-menu-row-foreground);
+}
+
+.app-menu-trigger[aria-expanded="true"],
+.app-menu-trigger:active {
+  background-color: var(--app-menu-row-active);
+  color: var(--app-menu-row-foreground);
+}
+
+/* ============ Content 容器 ============ */
+
+.app-menu-content {
+  z-index: 110;
+  min-width: 180px;
+  max-width: 280px;
+  overflow: visible;
+  padding: var(--menu-shell-padding);
+
+  border-radius: var(--menu-shell-radius);
+  background-color: var(--menu-shell-surface);
+  border: 1px solid var(--menu-shell-border);
+  color: var(--menu-shell-foreground);
+  box-shadow: var(--menu-shell-shadow);
+  backdrop-filter: var(--menu-shell-backdrop-filter);
+  -webkit-backdrop-filter: var(--menu-shell-backdrop-filter);
+
+  /* transitions.dev dropdown motion */
+  transform-origin: top left;
+  transform: scale(var(--dropdown-pre-scale, 0.97)) translateY(-4px);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--dropdown-open-dur, 250ms) var(--dropdown-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    opacity var(--dropdown-open-dur, 250ms) var(--dropdown-ease, cubic-bezier(0.22, 1, 0.36, 1));
+  will-change: transform, opacity;
+}
+
+/* 打开时焦点先落在菜单容器上（键盘入口），容器本身不显示焦点环 */
+.app-menu-content:focus,
+.app-menu-sub-content:focus {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-menu-content,
+  .app-menu-sub-content {
+    transition: none !important;
+  }
+}
+
+.app-menu-origin-bottom {
+  transform-origin: bottom left;
+  transform: scale(var(--dropdown-pre-scale, 0.97)) translateY(4px);
+}
+
+.app-menu-open {
+  transform: scale(1) translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.app-menu-closing {
+  transform: scale(var(--dropdown-closing-scale, 0.99)) translateY(-2px);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--dropdown-close-dur, 150ms) var(--dropdown-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    opacity var(--dropdown-close-dur, 150ms) var(--dropdown-ease, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+.app-menu-origin-bottom.app-menu-closing {
+  transform: scale(var(--dropdown-closing-scale, 0.99)) translateY(2px);
+}
+
+/* ============ Search 搜索框 ============ */
+
+.app-menu-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  margin: 2px 2px 6px 2px;
+  border-radius: var(--menu-shell-row-radius);
+  background-color: color-mix(in hsl, var(--menu-shell-surface) 88%, var(--menu-shell-row-hover) 12%);
+  border: 1px solid var(--menu-shell-border);
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.app-menu-search:focus-within {
+  border-color: hsl(var(--border));
+}
+
+.app-menu-search-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--menu-shell-muted-foreground);
+  flex-shrink: 0;
+}
+
+.app-menu-search-input {
+  flex: 1;
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  background: transparent;
+  font-size: var(--menu-shell-font-size);
+  color: var(--menu-shell-foreground);
+  outline: none;
+  box-shadow: none;
+}
+
+.app-menu-search-input:focus,
+.app-menu-search-input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.app-menu-search-input::placeholder {
+  color: var(--menu-shell-muted-foreground);
+}
+
+/* ============ Group 分组 ============ */
+
+.app-menu-group {
+  padding: 2px 0;
+}
+
+.app-menu-group + .app-menu-group {
+  border-top: 1px solid var(--menu-shell-border);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.app-menu-group-label {
+  padding: 4px 10px 2px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--menu-shell-muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* 内容型分组标签（如模型选择菜单里的供应商名）保留原始大小写 */
+.app-menu-group--natural-case > .app-menu-group-label {
+  text-transform: none;
+}
+
+/* ============ Item 菜单项 ============ */
+
+.app-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: var(--menu-shell-row-padding-y) var(--menu-shell-row-padding-x);
+  border: none;
+  border-radius: var(--menu-shell-row-radius);
+  background: transparent;
+  color: var(--menu-shell-foreground);
+  font-size: var(--menu-shell-font-size);
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+  gap: var(--menu-shell-row-gap);
+}
+
+.app-menu-item:hover,
+.app-menu-item:focus {
+  outline: none;
+  background-color: var(--app-menu-row-hover);
+  color: var(--app-menu-row-foreground);
+}
+
+.app-menu-item:active {
+  background-color: var(--app-menu-row-active);
+  color: var(--app-menu-row-foreground);
+}
+
+/* Item 图标 */
+.app-menu-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--menu-shell-muted-foreground);
+}
+
+.app-menu-item-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.app-menu-item:hover .app-menu-item-icon,
+.app-menu-item:focus .app-menu-item-icon {
+  color: var(--app-menu-row-foreground);
+}
+
+/* Item 选中标记 */
+.app-menu-item-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: currentColor;
+}
+
+/* Item 内容 */
+.app-menu-item-content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Item 后缀 */
+.app-menu-item-suffix {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* Item 快捷键 */
+.app-menu-item-shortcut {
+  flex-shrink: 0;
+  margin-left: 12px;
+  padding: 1px 5px;
+  font-size: 11px;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: var(--menu-shell-muted-foreground);
+  background-color: color-mix(in hsl, var(--menu-shell-surface) 80%, var(--menu-shell-row-hover) 20%);
+  border-radius: 4px;
+}
+
+/* 危险操作 */
+.app-menu-item-destructive {
+  color: hsl(var(--destructive));
+}
+
+.app-menu-item-destructive:hover,
+.app-menu-item-destructive:focus {
+  background-color: hsl(var(--destructive) / 0.1);
+  color: hsl(var(--destructive));
+}
+
+.app-menu-item-destructive .app-menu-item-icon {
+  color: hsl(var(--destructive));
+}
+
+/* 禁用状态 */
+.app-menu-item-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* 选中状态 */
+.app-menu-item-checked {
+  background-color: var(--app-menu-row-active);
+  color: var(--app-menu-row-foreground);
+}
+
+/* ============ SubMenu 子菜单 ============ */
+
+.app-menu-sub {
+  position: relative;
+}
+
+.app-menu-sub-trigger {
+  cursor: default;
+}
+
+.app-menu-sub-arrow {
+  width: 14px;
+  height: 14px;
+  margin-left: auto;
+  color: var(--menu-shell-muted-foreground);
+  flex-shrink: 0;
+}
+
+.app-menu-sub-content {
+  z-index: 110;
+  min-width: 140px;
+  padding: var(--menu-shell-padding);
+  border-radius: var(--menu-shell-sub-radius);
+  background-color: var(--menu-shell-surface);
+  border: 1px solid var(--menu-shell-border);
+  color: var(--menu-shell-foreground);
+  box-shadow: var(--menu-shell-shadow);
+  backdrop-filter: var(--menu-shell-backdrop-filter);
+  -webkit-backdrop-filter: var(--menu-shell-backdrop-filter);
+  animation: card-submenu-in 0.12s ease-out;
+}
+
+@keyframes card-submenu-in {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ============ Separator 分隔线 ============ */
+
+.app-menu-separator {
+  height: 1px;
+  margin: 4px 8px;
+  background-color: var(--menu-shell-border);
+}
+
+/* ============ Label 标签 ============ */
+
+.app-menu-label {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--menu-shell-muted-foreground);
+}
+
+/* ============ Footer 底部区域 ============ */
+
+.app-menu-footer {
+  padding: 6px 10px;
+  margin-top: 2px;
+  border-top: 1px solid var(--menu-shell-border);
+  font-size: 11px;
+  color: var(--menu-shell-muted-foreground);
+  line-height: 1.5;
+}
+
+/* ============ Switch 开关 ============ */
+
+.app-menu-switch-item {
+  cursor: pointer;
+}
+
+.app-menu-switch {
+  position: relative;
+  /* 固定尺寸 - 使用 !important 确保 Android WebView 正确渲染 */
+  width: 28px !important;
+  min-width: 28px !important;
+  max-width: 28px !important;
+  height: 16px !important;
+  min-height: 16px !important;
+  max-height: 16px !important;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background-color: hsl(var(--muted));
+  cursor: pointer;
+  transition: background-color 0.2s;
+  flex-shrink: 0;
+  flex-grow: 0;
+  box-sizing: border-box;
+}
+
+.app-menu-switch:hover {
+  background-color: var(--app-menu-row-hover);
+}
+
+.app-menu-switch-checked {
+  background-color: hsl(var(--primary));
+}
+
+.app-menu-switch-checked:hover {
+  background-color: hsl(var(--primary) / 0.9);
+}
+
+.app-menu-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  /* 固定尺寸 - 确保 Android WebView 正确渲染 */
+  width: 12px !important;
+  min-width: 12px !important;
+  max-width: 12px !important;
+  height: 12px !important;
+  min-height: 12px !important;
+  max-height: 12px !important;
+  border-radius: 50%;
+  background-color: white;
+  box-shadow: 0 1px 2px hsl(0 0% 0% / 0.2);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+  flex-grow: 0;
+  box-sizing: border-box;
+}
+
+.app-menu-switch-checked .app-menu-switch-thumb {
+  transform: translateX(12px);
+}
+
+/* ============ Checkbox 复选框菜单项 ============ */
+
+.app-menu-checkbox-item {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.app-menu-checkbox-item:hover {
+  background-color: var(--app-menu-row-hover);
+}
+
+.app-menu-checkbox-item-checked {
+  color: hsl(var(--primary));
+}
+
+.app-menu-checkbox-item.app-menu-item-disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ============ Option Group 选项组 ============ */
+
+.app-menu-option-group {
+  display: flex;
+  gap: 4px;
+  padding: 4px 6px;
+  overflow-x: auto;
+}
+
+.app-menu-option-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--menu-shell-row-radius);
+  background-color: transparent;
+  color: var(--menu-shell-foreground);
+  font-size: 12px;
+  cursor: pointer;
+  /* 显式属性过渡（原 transition: all 会连带 layout 属性） */
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.app-menu-option-item:hover {
+  background-color: var(--app-menu-row-hover);
+}
+
+.app-menu-option-item-selected {
+  background-color: hsl(var(--primary) / 0.1);
+  border-color: hsl(var(--primary));
+  color: hsl(var(--primary));
+}
+
+.app-menu-option-label {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.app-menu-option-description {
+  font-size: 10px;
+  color: var(--menu-shell-muted-foreground);
+  margin-top: 2px;
+}
+
+.app-menu-option-item-selected .app-menu-option-description {
+  color: hsl(var(--primary) / 0.8);
+}
+
+/* ============ Tool Buttons 工具按钮 ============ */
+
+.app-menu-tool-label {
+  font-weight: 600;
+  font-size: var(--menu-shell-font-size);
+}
+
+/* ============ Shortcut 快捷键 ============ */
+
+.app-menu-shortcut {
+  font-size: 11px;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: var(--menu-shell-muted-foreground);
+}
+
+/* ============ 响应式 - 移动端适配 ============ */
+
+@media (max-width: 639.98px) {
+  .app-menu-content {
+    min-width: 160px;
+    max-width: calc(100vw - 24px);
+  }
+
+  .app-menu-item {
+    padding: 9px 12px;
+  }
+
+  .app-menu-item-shortcut {
+    display: none;
+  }
+}
+
+/* 触屏设备（无 hover）：菜单项触控目标 ≥40px（移动端契约），
+   用 pointer:coarse 而非视口宽度判定，覆盖 640-767px 触屏平板 */
+@media (hover: none) and (pointer: coarse) {
+  .app-menu-item {
+    min-height: 40px;
+  }
+}

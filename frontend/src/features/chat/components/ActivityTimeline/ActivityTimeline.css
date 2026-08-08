@@ -1,0 +1,105 @@
+/**
+ * ActivityTimeline 时间线组件样式
+ * 使用 !important 确保 Android WebView 正确渲染
+ */
+
+/* 时间线节点圆点 - 固定 8px 尺寸 */
+.timeline-node-dot {
+  width: 8px !important;
+  min-width: 8px !important;
+  max-width: 8px !important;
+  height: 8px !important;
+  min-height: 8px !important;
+  max-height: 8px !important;
+  flex-shrink: 0 !important;
+  flex-grow: 0 !important;
+  box-sizing: border-box !important;
+}
+
+/* 可点击的时间线节点圆点按钮 */
+button.timeline-node-dot {
+  padding: 0 !important;
+  border: none;
+}
+
+.activity-timeline {
+  margin-block: 0 var(--chat-activity-content-gap, 0.75rem);
+  font-size: var(--chat-activity-font-size, var(--chat-body-font-size, 1rem));
+  font-weight: var(--chat-activity-font-weight, var(--chat-body-font-weight, 400));
+  line-height: var(--chat-activity-line-height, var(--chat-body-line-height, 1.5));
+}
+
+.activity-timeline__node {
+  padding-bottom: var(--chat-activity-node-gap, 0.75rem);
+}
+
+.activity-timeline__node:last-child {
+  padding-bottom: 0;
+}
+
+.activity-timeline-icon-column {
+  height: var(--chat-activity-summary-row-height, 1.75rem);
+  width: var(--chat-activity-summary-row-height, 1.75rem);
+}
+
+.activity-timeline-summary,
+.activity-timeline-tool-name,
+.activity-timeline-thinking-trigger,
+.activity-timeline-tool-trigger {
+  font-size: var(--chat-activity-summary-font-size, var(--chat-body-font-size, 1rem));
+  font-weight: var(--chat-activity-summary-font-weight, var(--chat-body-font-weight, 400));
+  line-height: var(--chat-activity-summary-line-height, var(--chat-body-line-height, 1.5));
+}
+
+.activity-timeline-thinking-trigger,
+.activity-timeline-tool-trigger {
+  min-height: var(--chat-activity-summary-row-height, 1.75rem);
+}
+
+.activity-timeline-thinking-details,
+.activity-timeline-thinking-content {
+  font-size: var(--chat-activity-detail-font-size, var(--chat-body-font-size, 1rem));
+  font-weight: var(--chat-activity-detail-font-weight, var(--chat-body-font-weight, 400));
+  line-height: var(--chat-activity-detail-line-height, var(--chat-body-line-height, 1.5));
+}
+
+.activity-timeline-tool-details {
+  font-size: var(--chat-activity-tool-detail-font-size, var(--chat-md-compact-font-size, 0.9375rem));
+  line-height: var(--chat-activity-tool-detail-line-height, var(--chat-md-compact-line-height, 1.6));
+}
+
+.activity-timeline-tool-command {
+  font-size: var(--chat-md-compact-font-size, 0.9375rem);
+  line-height: var(--chat-md-compact-line-height, 1.6);
+}
+
+.activity-timeline-status {
+  font-size: var(--chat-activity-status-font-size, var(--font-size-sm, 0.75rem));
+  font-weight: var(--chat-body-font-weight, 400);
+  line-height: var(--chat-activity-status-line-height, 1.5rem);
+}
+
+/* When tool activity hands off to the answer body, avoid stacking the
+   timeline's paragraph gap with the markdown first-block margin. */
+.chat-v2 .message.assistant .message-content .activity-timeline + .block-renderer,
+.chat-v2 .message.assistant .message-content .activity-timeline + .block-renderer .prose,
+.chat-v2 .message.assistant .message-content .activity-timeline + .block-renderer .streaming-block-renderer {
+  margin-top: 0;
+}
+
+.chat-v2 .message.assistant .message-content .activity-timeline + .block-renderer .streaming-blocks > .stream-block:first-child,
+.chat-v2 .message.assistant .message-content .activity-timeline + .block-renderer .markdown-content > :first-child,
+.chat-v2 .message.assistant .message-content .activity-timeline + .block-renderer .markdown-content > p:first-child {
+  margin-top: 0;
+}
+
+.thinking-summary-sticky {
+  position: sticky;
+  isolation: isolate;
+  overflow: visible;
+}
+
+.thinking-summary-trigger:hover,
+.thinking-summary-trigger:focus-visible {
+  background: transparent;
+}
