@@ -20,7 +20,7 @@ import { isMobilePlatform } from '@/utils/platform';
 export type SettingsSidebarNavItem = {
   value: string;
   label: string;
-  icon: ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string; weight?: 'thin' | 'light' | 'regular' | 'bold' | 'fill' | 'duotone' }>;
   tourId?: string;
   mobileDescription?: string;
   mobileAccent?: string;

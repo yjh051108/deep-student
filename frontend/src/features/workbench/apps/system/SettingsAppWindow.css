@@ -132,3 +132,94 @@
   will-change: auto;
   transition: none;
 }
+
+/* ════════════════════════════════════════════════════════════
+   macOS System Settings 全面视觉增强层（用户要求大规模优化）
+   ════════════════════════════════════════════════════════════ */
+
+/* —— 侧栏导航行：44px 高、10px 圆角、悬停浅灰 —— */
+[data-wb-settings-host] .desktop-shell-nav-row {
+  min-height: 44px !important;
+  border-radius: 10px !important;
+  padding-left: 10px !important;
+  padding-right: 12px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  margin-bottom: 1px;
+}
+[data-wb-settings-host] .desktop-shell-nav-row:hover:not(.desktop-shell-nav-row--active) {
+  background: hsl(var(--muted) / 0.6) !important;
+}
+
+/* —— 图标瓦片（macOS squircle 瓦片，选中态 accent 底 + fill 图标）—— */
+[data-wb-settings-host] .wb-settings-nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: transparent;
+  transition: background-color 150ms ease;
+}
+[data-wb-settings-host] .desktop-shell-nav-row:hover:not(.desktop-shell-nav-row--active) .wb-settings-nav-icon {
+  background: hsl(var(--muted));
+}
+[data-wb-settings-host] .desktop-shell-nav-row--active .wb-settings-nav-icon {
+  background: hsl(var(--primary) / 0.16);
+}
+
+/* —— 分组标题间距微调 —— */
+[data-wb-settings-host] .wb-settings-group-title {
+  padding: 16px 14px 6px;
+}
+
+/* —— 内容卡片：macOS 白卡 + 12px 圆角 + 细阴影 + hairline 边框 —— */
+[data-wb-settings-host] [data-wb-settings-content-ready] [class*='rounded-2xl'] {
+  background: hsl(var(--card)) !important;
+  border-radius: 12px !important;
+  border: 0.5px solid hsl(var(--border) / 0.55) !important;
+  box-shadow:
+    0 1px 2px rgb(16 24 40 / 0.04),
+    0 1px 3px rgb(16 24 40 / 0.03) !important;
+}
+
+/* —— 卡片内行：hairline 分隔 + 44px 基准行高 —— */
+[data-wb-settings-host] [data-wb-settings-content-ready] [class*='space-y-px'] > * {
+  border-bottom: 0.5px solid hsl(var(--border) / 0.45);
+  min-height: 44px;
+  padding-top: 10px !important;
+  padding-bottom: 10px !important;
+}
+[data-wb-settings-host] [data-wb-settings-content-ready] [class*='space-y-px'] > *:last-child {
+  border-bottom: none;
+}
+
+/* —— 分区标题 h2 / 组标题 h3 / 描述：macOS 字号阶梯 —— */
+[data-wb-settings-host] [data-wb-settings-content-ready] h2 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: hsl(var(--foreground));
+}
+[data-wb-settings-host] [data-wb-settings-content-ready] h3 {
+  font-size: 14px;
+  font-weight: 500;
+  color: hsl(var(--foreground));
+}
+[data-wb-settings-host] [data-wb-settings-content-ready] .text-xs {
+  font-size: 12px;
+  color: hsl(var(--muted-foreground) / 0.9);
+}
+
+/* —— 内容区行（非卡片内）：48px 高、分隔线 —— */
+[data-wb-settings-host] [data-wb-settings-content-ready] [class*='space-y-4'] > [class*='flex'],
+[data-wb-settings-host] [data-wb-settings-content-ready] [class*='space-y-6'] > [class*='flex'] {
+  min-height: 48px;
+}
+
+/* —— 主内容滚动区背景透出（保持亮色玻璃）—— */
+[data-wb-settings-host] [data-wb-settings-content-ready] #settings-main-content {
+  background: transparent;
+}

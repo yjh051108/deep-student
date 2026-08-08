@@ -31,8 +31,8 @@ export interface SettingsSidebarProps {
   sidebarSearchFocused: boolean;
   setSidebarSearchFocused: (v: boolean) => void;
   settingsSearchIndex: Array<{ label: string; keywords: string[]; tab: string }>;
-  sidebarNavItems: Array<{ value: string; label: string; icon: React.ComponentType<{ className?: string }> }>;
-  sidebarNavGroups?: Array<Array<{ value: string; label: string; icon: React.ComponentType<{ className?: string }> }>>;
+  sidebarNavItems: Array<{ value: string; label: string; icon: React.ComponentType<{ className?: string; weight?: 'thin' | 'light' | 'regular' | 'bold' | 'fill' | 'duotone' }> }>;
+  sidebarNavGroups?: Array<Array<{ value: string; label: string; icon: React.ComponentType<{ className?: string; weight?: 'thin' | 'light' | 'regular' | 'bold' | 'fill' | 'duotone' }> }>>;
   activeTab: string;
   setActiveTab: (tab: string) => void;
   setSidebarOpen: (v: boolean) => void;
@@ -198,7 +198,14 @@ export const SettingsSidebar: React.FC<SettingsSidebarProps> = ({
                           }}
                           className={isActive ? 'cursor-default' : undefined}
                           title={undefined}
-                          leftSlot={<Icon className="h-[18px] w-[18px] flex-shrink-0" />}
+                          leftSlot={
+                            <span className="wb-settings-nav-icon">
+                              <Icon
+                                className="h-[18px] w-[18px]"
+                                weight={isActive ? 'fill' : 'regular'}
+                              />
+                            </span>
+                          }
                         >
                           {!isCollapsed && (
                             <WorkbenchSidebarRowLabel>
@@ -232,7 +239,14 @@ export const SettingsSidebar: React.FC<SettingsSidebarProps> = ({
                     }}
                     className={isActive ? 'cursor-default' : undefined}
                     title={undefined}
-                    leftSlot={<Icon className="h-[18px] w-[18px] flex-shrink-0" />}
+                    leftSlot={
+                      <span className="wb-settings-nav-icon">
+                        <Icon
+                          className="h-[18px] w-[18px]"
+                          weight={isActive ? 'fill' : 'regular'}
+                        />
+                      </span>
+                    }
                   >
                     {!isCollapsed && (
                       <WorkbenchSidebarRowLabel>
