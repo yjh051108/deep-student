@@ -1483,6 +1483,19 @@ export const Settings: React.FC<SettingsProps> = ({ onBack, isActive = true }) =
           >
           {/* key 按 tab：切换时重挂载并播放入场动画（与桌面壳层视图切换同款观感） */}
           <div key={activeTab} className="desktop-shell-content-enter mx-auto w-full max-w-[72rem]">
+            {/* macOS System Settings 风格页面大标题（桌面端；移动端由 header 接管） */}
+            {!mobilePageMode && !effectiveMobilePanelMode && (
+              <header className="mb-6">
+                <h1 className="wb-settings-page-title">
+                  {activeNavItem?.label ?? t('settings:title')}
+                </h1>
+                {activeNavItem?.mobileDescription ? (
+                  <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
+                    {activeNavItem.mobileDescription}
+                  </p>
+                ) : null}
+              </header>
+            )}
             <React.Suspense fallback={<SettingsTabFallback />}>
             <div className="space-y-6">
         {/* API配置管理 */}

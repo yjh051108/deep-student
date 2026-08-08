@@ -19,6 +19,9 @@ import {
   SETTINGS_NAV_ITEM_LABEL_CLASS_NAME,
 } from './sidebarSettings';
 
+// macOS 风格分组标题的跨语言兜底（en 语言缺 key 时）
+const GROUP_FALLBACK_TITLES: string[] = ['模型', '通用', '工具与搜索', '数据', '其他'];
+
 export interface SettingsSidebarProps {
   isSmallScreen: boolean;
   globalLeftPanelCollapsed: boolean;
@@ -29,6 +32,7 @@ export interface SettingsSidebarProps {
   setSidebarSearchFocused: (v: boolean) => void;
   settingsSearchIndex: Array<{ label: string; keywords: string[]; tab: string }>;
   sidebarNavItems: Array<{ value: string; label: string; icon: React.ComponentType<{ className?: string }> }>;
+  sidebarNavGroups?: Array<Array<{ value: string; label: string; icon: React.ComponentType<{ className?: string }> }>>;
   activeTab: string;
   setActiveTab: (tab: string) => void;
   setSidebarOpen: (v: boolean) => void;
@@ -45,6 +49,7 @@ export const SettingsSidebar: React.FC<SettingsSidebarProps> = ({
   setSidebarSearchFocused,
   settingsSearchIndex,
   sidebarNavItems,
+  sidebarNavGroups,
   activeTab,
   setActiveTab,
   setSidebarOpen,
@@ -170,6 +175,45 @@ export const SettingsSidebar: React.FC<SettingsSidebarProps> = ({
                 {t('sidebar.no_results')}
               </p>
             )
+          ) : sidebarNavGroups && sidebarNavGroups.length > 0 && !isSmallScreen ? (
+            /* 桌面端：macOS 风格分组导航（组标题 + 组内项） */
+            sidebarNavGroups.map((group, groupIndex) => (
+              <div key={`settings-group-${groupIndex}`} className="mb-1">
+                <h2 className="wb-settings-group-title">
+                  {t(`sidebar.mobile_groups.${groupIndex}`, { defaultValue: GROUP_FALLBACK_TITLES[groupIndex] ?? '' })}
+                </h2>
+                <ul className="space-y-0.5">
+                  {group.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = activeTab === item.value;
+                    return (
+                      <li key={item.value}>
+                        <WorkbenchSidebarRow
+                          rowType="nav"
+                          isActive={isActive}
+                          aria-current={isActive ? 'page' : undefined}
+                          onClick={isActive ? undefined : () => {
+                            setActiveTab(item.value as any);
+                            if (isSmallScreen) setSidebarOpen(false);
+                          }}
+                          className={isActive ? 'cursor-default' : undefined}
+                          title={undefined}
+                          leftSlot={<Icon className="h-[18px] w-[18px] flex-shrink-0" />}
+                        >
+                          {!isCollapsed && (
+                            <WorkbenchSidebarRowLabel>
+                              <span className={SETTINGS_NAV_ITEM_LABEL_CLASS_NAME}>
+                                {item.label}
+                              </span>
+                            </WorkbenchSidebarRowLabel>
+                          )}
+                        </WorkbenchSidebarRow>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))
           ) : (
           <ul className="space-y-0.5">
             {sidebarNavItems.map((item) => {

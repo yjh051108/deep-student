@@ -1,5 +1,42 @@
 /** SettingsAppWindow — 真实内容常驻，长列表由设置模块虚拟化。 */
 
+/* ── 沉浸式系统设置中心（macOS System Settings 亮色 OS 体系）──
+ * 设置窗口子树强制亮色：不随全局暗色主题变灰黑（用户明确反馈灰黑难看）。
+ * 颜色对齐 macOS 设置：页面浅灰底 #f5f5f7、白卡片、浅灰侧栏、hairline 分隔。
+ * 子树作用域覆写基础 token，--shell-* / --surface-* 派生变量自动跟随。 */
+[data-wb-settings-host] {
+  /* macOS 亮色体系（近似 HIG/系统实测值） */
+  --background: 220 14% 96%;       /* 页面底 #f5f5f7 */
+  --card: 0 0% 100%;               /* 白卡片 */
+  --card-foreground: 220 6% 12%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 6% 12%;
+  --secondary: 220 12% 92%;
+  --secondary-foreground: 220 6% 12%;
+  --muted: 220 12% 92%;
+  --muted-foreground: 220 5% 44%;  /* 次级文字 #6e6e73 */
+  --accent: 220 12% 92%;
+  --accent-foreground: 220 6% 12%;
+  --border: 220 12% 89%;           /* hairline 分隔 */
+  --input: 220 12% 93%;
+  --nav-background: 220 14% 93%;   /* 侧栏 #ececec */
+  --titlebar-background: 220 14% 96%;
+  --foreground: 220 6% 12%;        /* 主文字 #1d1d1f */
+  /* 派生 shell token 在 :root 定义（var 在定义元素上解析），
+     子树覆写基础 token 不会传导，必须在此显式覆写 */
+  --shell-panel: hsl(220 14% 96%);
+  --shell-workspace-panel: hsl(220 14% 96%);
+  --shell-inspector-panel: hsl(220 14% 96%);
+  --sidebar: hsl(220 14% 93%);
+  --shell-navigation-panel: hsl(220 14% 93%);
+  --surface-elevated: hsl(0 0% 100%);
+  --shell-navigation-foreground: hsl(220 6% 12%);
+  --shell-navigation-muted: hsl(220 5% 44%);
+  /* 窗口壳毛玻璃底色统一为亮色（macOS 设置实体亮底） */
+  --wb-window-bg: hsl(220 14% 96%);
+  color-scheme: light;
+}
+
 /* ── 沉浸式系统设置中心（Puter/macOS 系统设置风格）──
  * 窗口壳整体毛玻璃：半透明背景 + 强模糊，透出桌面壁纸；
  * 内部侧栏/内容主表面同步半透明，保持「浑然天成」的 OS 感。
@@ -31,20 +68,53 @@
 
 /* 设置内容主表面：高档位半透明透出玻璃 */
 [data-wb-settings-host] [data-wb-settings-content-ready] {
-  background: color-mix(in srgb, var(--shell-workspace-panel, hsl(var(--card))) 92%, transparent);
+  background: color-mix(in srgb, var(--shell-workspace-panel, hsl(var(--background))) 92%, transparent);
 }
 :root:not([data-wb-material='reduced']):not([data-wb-material='minimal'])
   [data-wb-settings-host] [data-wb-settings-content-ready] {
-  background: color-mix(in srgb, var(--shell-workspace-panel, hsl(var(--card))) 52%, transparent);
+  background: color-mix(in srgb, var(--shell-workspace-panel, hsl(var(--background))) 52%, transparent);
 }
 
-/* 设置侧栏表面：高档位半透明透出玻璃 */
-[data-wb-settings-host] .study-shell-sidebar-frame {
-  background: color-mix(in srgb, var(--shell-navigation-panel, hsl(var(--card))) 92%, transparent);
+/* 设置侧栏表面：高档位半透明透出玻璃。
+ * 覆盖 SystemWindowShared 的 legacy 透明化规则（同 !important，选择器更具体胜出） */
+[data-wb-settings-host] .wb-sys-aside .study-shell-sidebar-frame {
+  background: color-mix(in srgb, var(--shell-navigation-panel, hsl(var(--nav-background))) 92%, transparent) !important;
+  border-right: 1px solid hsl(var(--border) / 0.6) !important;
 }
 :root:not([data-wb-material='reduced']):not([data-wb-material='minimal'])
-  [data-wb-settings-host] .study-shell-sidebar-frame {
-  background: color-mix(in srgb, var(--shell-navigation-panel, hsl(var(--card))) 64%, transparent);
+  [data-wb-settings-host] .wb-sys-aside .study-shell-sidebar-frame {
+  background: color-mix(in srgb, var(--shell-navigation-panel, hsl(var(--nav-background))) 64%, transparent) !important;
+}
+
+/* 侧栏导航 macOS 化：选中态 accent 高亮（非选中/悬停保持浅灰） */
+[data-wb-settings-host] .desktop-shell-nav-row--active {
+  background: hsl(var(--primary) / 0.12) !important;
+  color: hsl(var(--primary)) !important;
+  font-weight: 500 !important;
+}
+[data-wb-settings-host] .desktop-shell-nav-row--active .settings-nav-item-label {
+  color: hsl(var(--primary)) !important;
+}
+[data-wb-settings-host] .desktop-shell-nav-row--active svg {
+  color: hsl(var(--primary)) !important;
+}
+
+/* 设置分组标题（macOS 侧栏分区小标题） */
+[data-wb-settings-host] .wb-settings-group-title {
+  padding: 12px 14px 4px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: hsl(var(--muted-foreground) / 0.85);
+  text-transform: uppercase;
+}
+
+/* 内容区页面大标题（macOS System Settings 无下划线大标题） */
+[data-wb-settings-host] [data-wb-settings-content-ready] .wb-settings-page-title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: hsl(var(--foreground));
 }
 
 /* 跟手期停动画：animation-play-state 不继承，必须点名子元素 */

@@ -19,7 +19,7 @@ export const SettingsShellSidebar: React.FC<SettingsShellSidebarProps> = ({
   const [sidebarSearchQuery, setSidebarSearchQuery] = useState('');
   const [sidebarSearchFocused, setSidebarSearchFocused] = useState(false);
   const [internalSidebarOpen, setInternalSidebarOpen] = useState(false);
-  const { sidebarNavItems, settingsSearchIndex } = useSettingsNavigation();
+  const { sidebarNavGroups, sidebarNavItems, settingsSearchIndex } = useSettingsNavigation();
   const activeTab = useSettingsShellStore((state) => state.activeTab);
   const setActiveTab = useSettingsShellStore((state) => state.setActiveTab);
 
@@ -34,6 +34,7 @@ export const SettingsShellSidebar: React.FC<SettingsShellSidebarProps> = ({
       setSidebarSearchFocused={setSidebarSearchFocused}
       settingsSearchIndex={settingsSearchIndex}
       sidebarNavItems={sidebarNavItems}
+      sidebarNavGroups={sidebarNavGroups}
       activeTab={activeTab}
       setActiveTab={setActiveTab}
       setSidebarOpen={setSidebarOpen ?? setInternalSidebarOpen}

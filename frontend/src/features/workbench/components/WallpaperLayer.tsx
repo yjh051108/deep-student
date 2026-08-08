@@ -90,7 +90,7 @@ export const WALLPAPER_PRESETS: readonly WallpaperPreset[] = [
   { id: 'dusk-flow', nameKey: 'workbench:wallpaper.duskFlow', animated: true },
 ] as const;
 
-export const DEFAULT_WALLPAPER: WallpaperConfig = { kind: 'theme', value: 'aurora' };
+export const DEFAULT_WALLPAPER: WallpaperConfig = { kind: 'theme', value: 'mountain-mist' };
 
 const PRESET_MAP = new Map(WALLPAPER_PRESETS.map((p) => [p.id, p]));
 
