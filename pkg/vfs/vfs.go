@@ -435,3 +435,11 @@ func splitTags(s string) []string {
 	}
 	return out
 }
+
+// AllResourceTypes 返回全部资源类型（遍历顺序稳定）。
+func AllResourceTypes() []ResourceType {
+	return []ResourceType{
+		TypeNote, TypeTextbook, TypeQBank, TypeMindmap,
+		TypeTranslation, TypeFlashcard, TypePaper, TypeChat,
+	}
+}

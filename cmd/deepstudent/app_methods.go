@@ -2,6 +2,7 @@ package deepstudent
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"time"
@@ -1339,4 +1340,141 @@ func (a *App) GetSettingsByPrefix(prefix string) ([]store.SettingRow, error) {
 // LLMCfgListApiConfigurations 列出全部 API 配置（对齐原版 get_api_configurations）。
 func (a *App) LLMCfgListApiConfigurations() []llmcfg.ApiConfig {
 	return a.LLMCfg.ListApiConfigurations()
+}
+
+// ===== VFS 文件通路（对齐原版 vfs_* 命令）=====
+
+// VfsListFiles 列出资源（原版 vfs_list_files）。
+func (a *App) VfsListFiles(fileType, limit string, offset int) []vfs.Entry {
+	_ = limit
+	_ = offset
+	if fileType != "" && fileType != "all" {
+		// 原版 fileType: document/image/audio/video；Go 侧按类型映射粗略过滤
+		mapped := map[string]string{
+			"document": string(vfs.TypeNote), "image": string(vfs.TypeTextbook),
+			"audio": string(vfs.TypeTranslation), "video": string(vfs.TypeFlashcard),
+		}[fileType]
+		if mapped != "" {
+			return a.Hub.List(vfs.ResourceType(mapped))
+		}
+	}
+	return a.Hub.ListAll()
+}
+
+// VfsGetFile 按 ID 获取资源（原版 vfs_get_file）。
+func (a *App) VfsGetFile(fileID string) (map[string]any, error) {
+	uri, e, ok := a.Hub.FindByID(fileID)
+	if !ok {
+		return nil, nil
+	}
+	_ = uri
+	return entryToVfsFile(e), nil
+}
+
+// VfsGetFileContent 获取资源内容（原版 vfs_get_file_content）。
+func (a *App) VfsGetFileContent(fileID string) (map[string]any, error) {
+	uri, _, ok := a.Hub.FindByID(fileID)
+	if !ok {
+		return map[string]any{"content": nil, "found": false}, nil
+	}
+	data, _, err := a.Hub.Get(uri)
+	if err != nil {
+		return map[string]any{"content": nil, "found": false}, nil
+	}
+	return map[string]any{"content": string(data), "found": true}, nil
+}
+
+// VfsDeleteFile 删除资源（原版 vfs_delete_file）。
+func (a *App) VfsDeleteFile(fileID string) error {
+	uri, _, ok := a.Hub.FindByID(fileID)
+	if !ok {
+		return nil
+	}
+	return a.Hub.Delete(uri)
+}
+
+// entryToVfsFile 把 vfs.Entry 转换为原版 VfsFile 形状。
+func entryToVfsFile(e vfs.Entry) map[string]any {
+	tags := []string{}
+	if e.Tags != nil {
+		tags = e.Tags
+	}
+	ts := e.CreatedAt
+	return map[string]any{
+		"id":         e.ID,
+		"resourceId": e.ID,
+		"sha256":     e.BlobRef,
+		"fileName":   e.Title,
+		"size":       e.Size,
+		"fileType":   "document",
+		"tags":       tags,
+		"isFavorite": false,
+		"bookmarks":  []any{},
+		"status":     "ready",
+		"createdAt":  isoTime(ts),
+		"updatedAt":  isoTime(e.UpdatedAt),
+	}
+}
+
+// isoTime 把 unix 秒转为 ISO8601 字符串。
+func isoTime(ts int64) string {
+	if ts <= 0 {
+		return ""
+	}
+	return time.Unix(ts, 0).UTC().Format(time.RFC3339)
+}
+
+// VfsUploadFile 上传文件（原版 vfs_upload_file）。
+// params: { name, mimeType, base64Content, fileType?, folderId? }
+func (a *App) VfsUploadFile(params map[string]any) (map[string]any, error) {
+	name, _ := params["name"].(string)
+	b64, _ := params["base64Content"].(string)
+	if name == "" || b64 == "" {
+		return nil, errors.New("vfs: name/base64Content required")
+	}
+	data, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		return nil, err
+	}
+	typ := vfs.TypeNote
+	if t, ok := params["fileType"].(string); ok {
+		switch t {
+		case "document":
+			typ = vfs.TypeNote
+		case "image":
+			typ = vfs.TypeTextbook
+		case "audio":
+			typ = vfs.TypeTranslation
+		case "video":
+			typ = vfs.TypeFlashcard
+		}
+	}
+	uri, err := a.Hub.ImportResource(a.Ctx, typ, name, data, nil)
+	if err != nil {
+		return nil, err
+	}
+	_, e, ok := a.Hub.FindByID(mustID(uri))
+	if !ok {
+		return nil, nil
+	}
+	return map[string]any{
+		"file": entryToVfsFile(e), "sourceId": e.ID, "isNew": true,
+	}, nil
+}
+
+// mustID 从 vfs://type/id 提取 id 段。
+func mustID(uri string) string {
+	if i := lastIndexByte(uri, '/'); i >= 0 {
+		return uri[i+1:]
+	}
+	return uri
+}
+
+func lastIndexByte(s string, b byte) int {
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i] == b {
+			return i
+		}
+	}
+	return -1
 }

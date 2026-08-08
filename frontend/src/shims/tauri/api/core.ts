@@ -94,6 +94,13 @@ const BRIDGES: Record<string, CommandBridge> = {
   hub_delete: { method: 'HubDelete', args: (p) => [p.uri] },
   hub_continue_note: { method: 'HubContinueNote', args: (p) => [p.uri, p.prompt] },
 
+  // —— vfs 文件通路（对齐原版 vfsFileApi）——
+  vfs_list_files: { method: 'VfsListFiles', args: (p) => [p.fileType ?? 'all', p.limit ?? 200, p.offset ?? 0] },
+  vfs_get_file: { method: 'VfsGetFile', args: (p) => [p.fileId ?? p.file_id] },
+  vfs_get_file_content: { method: 'VfsGetFileContent', args: (p) => [p.fileId ?? p.file_id] },
+  vfs_delete_file: { method: 'VfsDeleteFile', args: (p) => [p.fileId ?? p.file_id] },
+  vfs_upload_file: { method: 'VfsUploadFile', args: (p) => [p.params ?? p] },
+
   // —— chat v2 ——
   chat_v2_create_group: { method: 'ChatCreateGroup', args: (p) => [p.name] },
   chat_v2_create_session: { method: 'ChatCreateSession', args: (p) => [p.groupId ?? p.group_id ?? '', p.title ?? '', p.model ?? '', p.systemPrompt ?? p.system_prompt ?? ''] },

@@ -93,3 +93,27 @@ func (s *Service) ContinueNote(ctx context.Context, uri, prompt string) (<-chan 
 	}()
 	return out, nil
 }
+
+// FindByID 按资源 ID（uuid）查找 URI 与条目；未找到返回空串。
+func (s *Service) FindByID(id string) (string, vfs.Entry, bool) {
+	if id == "" {
+		return "", vfs.Entry{}, false
+	}
+	for _, typ := range vfs.AllResourceTypes() {
+		for _, e := range s.vfs.List(typ) {
+			if e.ID == id {
+				return e.URI, e, true
+			}
+		}
+	}
+	return "", vfs.Entry{}, false
+}
+
+// ListAll 列出全部类型资源（原版 vfs_list_files 语义）。
+func (s *Service) ListAll() []vfs.Entry {
+	var out []vfs.Entry
+	for _, typ := range vfs.AllResourceTypes() {
+		out = append(out, s.vfs.List(typ)...)
+	}
+	return out
+}

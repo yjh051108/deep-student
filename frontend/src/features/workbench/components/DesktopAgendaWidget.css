@@ -10,13 +10,26 @@
   padding: 16px;
   overflow: hidden;
   border-radius: var(--wb-radius-xl, 18px);
-  box-shadow: var(--wb-shadow-idle);
+  /* macOS/Puter 玻璃面板：半透明白玻璃 + 强模糊 + 细边框 + 内缘高光 */
+  background: var(--wb-glass-bg-strong, hsl(var(--card) / 0.28));
+  -webkit-backdrop-filter: var(--wb-glass-blur-strong, blur(24px) saturate(1.8));
+  backdrop-filter: var(--wb-glass-blur-strong, blur(24px) saturate(1.8));
+  border: 1px solid hsl(var(--border) / 0.55);
+  box-shadow: var(--wb-shadow-idle), inset 0 1px 0 hsl(0 0% 100% / 0.07);
   pointer-events: auto;
   color: var(--text-primary, hsl(var(--foreground)));
   transition:
     box-shadow 180ms ease,
     border-color 180ms ease,
     opacity var(--wb-motion-standard, 280ms) var(--wb-ease-out, ease-out);
+}
+
+/* 材质降级档（reduced/minimal）：关闭 blur，提升不透明度保证可读 */
+:root[data-wb-material='reduced'] .wb-agenda-widget,
+:root[data-wb-material='minimal'] .wb-agenda-widget {
+  background: color-mix(in srgb, var(--wb-window-bg, hsl(var(--card))) 94%, transparent);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .wb-agenda-widget:hover,
